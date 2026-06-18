@@ -15,7 +15,7 @@ import {
   getAIDifficultyLabel
 } from "./game/variants.js";
 import { buildReviewTimeline } from "./game/replay.js";
-import { DEV_COMMANDS, DEV_CONSOLE_UNLOCK_SEQUENCE, findDevCommand } from "./game/devCommands.js";
+import { DEV_COMMANDS, DEV_CONSOLE_UNLOCK_SEQUENCE, findDevCommand, getDevCommandHelp, getDevCommandListLines } from "./game/devCommands.js";
 
 const VIEWS = ["XZ", "XY", "YZ", "ISO"];
 const REVIEW_PLAY_DELAY_MS = 650;
@@ -255,7 +255,12 @@ export default function App() {
     }
 
     if (command.action === "help") {
-      appendDevLines(DEV_COMMANDS.map((entry) => entry.usage));
+      if (args.length) {
+        const target = findDevCommand(args.join(" ")) || findDevCommand(args[0]);
+        appendDevLines(getDevCommandHelp(target));
+      } else {
+        appendDevLines(["available commands:", ...getDevCommandListLines(), "type help [command_name] for details."]);
+      }
       return;
     }
 
@@ -856,9 +861,11 @@ function DevConsole({ open, input, lines, unlocked, history, historyIndex, onHis
   return (
     <div className="dev-console" role="dialog" aria-label="Developer command console">
       <div className="dev-console-output" ref={outputRef}>
-        {lines.length === 0 ? <div className="dev-console-line muted">type help</div> : lines.map((line, index) => (
-          <div key={`${line}-${index}`} className={`dev-console-line ${String(line).startsWith("!") ? "error" : ""}`}>{line}</div>
-        ))}
+        {lines.length === 0 ? <div className="dev-console-line muted">type help</div> : lines.map((line, index) => {
+          const text = String(line);
+          const tone = text.startsWith("!") ? "error" : text.startsWith(">") ? "command" : "result";
+          return <div key={`${text}-${index}`} className={`dev-console-line ${tone}`}>{text}</div>;
+        })}
       </div>
       <form className="dev-console-input-row" onSubmit={onSubmit}>
         <span>/</span>

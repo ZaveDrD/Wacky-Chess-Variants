@@ -1851,11 +1851,19 @@ select {
   font-family: "Cascadia Code", "Consolas", monospace;
   font-size: 12px;
   line-height: 1.45;
-  color: rgba(230, 236, 245, 0.92);
+  color: rgba(230, 236, 245, 0.72);
 }
 
 .dev-console-line {
   white-space: pre-wrap;
+}
+
+.dev-console-line.command {
+  color: rgba(246, 250, 255, 0.98);
+}
+
+.dev-console-line.result {
+  color: rgba(184, 198, 216, 0.78);
 }
 
 .dev-console-line.error {

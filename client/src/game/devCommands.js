@@ -478,6 +478,160 @@ export const DEV_COMMANDS = [
   },
 ];
 
+
+export const DEV_COMMAND_PARAMETER_DOCS = {
+  help: [{ name: "command_name", required: false, description: "Optional command or alias to inspect. Omit it to list all commands." }],
+  clear: [],
+  findOpenMatches: [],
+  spectateMatch: [{ name: "room code | random", required: true, description: "Room code to spectate, or random to pick any active open room." }],
+  joinCode: [{ name: "room code", required: true, description: "Room code to join using normal player/spectator assignment." }],
+  startMatch: [
+    { name: "variant_name", required: true, description: "Variant key/name, for example 3d, threed, threeD, normal." },
+    { name: "num_bots", required: true, description: "0, 1, or 2. With 2 bots, you join as spectator." },
+    { name: "bot_difficulty", required: false, description: "easy, medium, or hard. Defaults to medium." }
+  ],
+  exitMatch: [],
+  roomInfo: [{ name: "room code", required: false, description: "Room to inspect. Defaults to your current room." }],
+  copyRoom: [],
+  setView: [{ name: "view", required: true, description: "Local board view: xz, xy, yz, or iso." }],
+  setLayer: [{ name: "layer", required: true, description: "Layer index from 0 to 7 for the current plane view." }],
+  addPiece: [
+    { name: "location", required: true, description: "Target square as x,y,z, x y z, or e4 for Normal Chess." },
+    { name: "piecetype", required: true, description: "pawn, knight, bishop, rook, queen, or king." },
+    { name: "colour", required: false, description: "white or black. Defaults to the current turn." }
+  ],
+  removePiece: [{ name: "location", required: true, description: "Square to clear as x,y,z, x y z, or e4." }],
+  replaceWithBot: [
+    { name: "name", required: true, description: "Player name, colour slot, or bot name to replace." },
+    { name: "difficulty", required: false, description: "easy, medium, or hard. Defaults to medium." }
+  ],
+  replacePlayer: [{ name: "name", required: true, description: "Player, bot, or colour slot you will take over." }],
+  endMatch: [{ name: "winner", required: false, description: "white, black, none, draw, or nowinner. Defaults to no winner." }],
+  findPlayer: [{ name: "name", required: true, description: "Name or partial name to search across active rooms." }],
+  playerCount: [],
+  spectatorOverride: [{ name: "player", required: false, description: "Participant to grant all-piece movement to. Defaults to yourself." }],
+  clearOverride: [{ name: "player", required: false, description: "Participant to remove override from. Defaults to yourself." }],
+  setTimer: [
+    { name: "time", required: true, description: "Clock value as seconds, mm:ss, or hh:mm:ss." },
+    { name: "player", required: false, description: "white or black. Defaults to the current turn." }
+  ],
+  setPlayerColour: [
+    { name: "name", required: true, description: "Player/spectator name. Quote names with spaces." },
+    { name: "colour", required: true, description: "white, black, or spectator." }
+  ],
+  listPieces: [{ name: "colour", required: false, description: "Optional filter: white or black." }],
+  setTurn: [{ name: "colour", required: true, description: "white or black." }],
+  teleportPiece: [
+    { name: "from", required: true, description: "Source square as x,y,z, x y z, or e4." },
+    { name: "to", required: true, description: "Destination square. Bypasses normal legality and does not record a normal move." }
+  ],
+  moveForce: [
+    { name: "from", required: true, description: "Source square as x,y,z, x y z, or e4." },
+    { name: "to", required: true, description: "Destination square. Bypasses legality and records the move." }
+  ],
+  legalMovesAt: [{ name: "location", required: true, description: "Square containing the piece to inspect." }],
+  checkStatus: [],
+  validateBoard: [],
+  resetMatch: [],
+  clonePosition: [],
+  loadPosition: [{ name: "code", required: true, description: "Encoded position string created by cloneposition." }],
+  aiThink: [
+    { name: "colour", required: true, description: "white or black side to evaluate." },
+    { name: "difficulty", required: false, description: "easy, medium, or hard. Defaults to the room/selected difficulty." }
+  ],
+  forceAIMove: [
+    { name: "colour", required: true, description: "white or black side to move." },
+    { name: "difficulty", required: false, description: "easy, medium, or hard. Defaults to the room/selected difficulty." }
+  ],
+  setAIDifficulty: [
+    { name: "colour", required: true, description: "white or black bot slot." },
+    { name: "difficulty", required: true, description: "easy, medium, or hard." }
+  ],
+  pauseBots: [],
+  resumeBots: [],
+  botBattle: [
+    { name: "variant", required: true, description: "normal or 3d/threed." },
+    { name: "difficulty1", required: false, description: "White bot difficulty. Defaults to selected AI difficulty/medium." },
+    { name: "difficulty2", required: false, description: "Black bot difficulty. Currently maps to the same room bot difficulty if unsupported separately." }
+  ],
+  evalPosition: [{ name: "colour", required: true, description: "white or black perspective to evaluate." }],
+  topMoves: [
+    { name: "colour", required: true, description: "white or black side to inspect." },
+    { name: "n", required: false, description: "Number of candidate moves to list. Defaults to 5." }
+  ],
+  kickPlayer: [{ name: "name", required: true, description: "Player/spectator to remove from the room." }],
+  lockRoom: [],
+  unlockRoom: [],
+  renameRoom: [{ name: "name", required: true, description: "New display name for the current room." }],
+  broadcast: [{ name: "message", required: true, description: "System message text to add to the current room chat." }],
+  systemChat: [{ name: "message", required: true, description: "System chat text to add to the current room chat." }],
+  listRoomsDetailed: [{ name: "detailed", required: false, description: "Use detailed to request expanded room metadata." }],
+  pauseTimer: [],
+  resumeTimer: [],
+  addTime: [
+    { name: "colour", required: true, description: "white or black clock to modify." },
+    { name: "time", required: true, description: "Time to add as seconds, mm:ss, or hh:mm:ss." }
+  ],
+  setTimeControl: [{ name: "time_control", required: true, description: "classical, rapid, blitz, or bullet. Resets both clocks." }],
+  flagPlayer: [{ name: "colour", required: true, description: "white or black player to flag on time." }],
+  showCoords: [],
+  showAttacks: [{ name: "colour", required: true, description: "white or black attack map to highlight." }],
+  showChecks: [],
+  highlightSquare: [{ name: "location", required: true, description: "Square to highlight as x,y,z, x y z, or e4." }],
+  clearHighlights: [],
+  ghostMove: [
+    { name: "from", required: true, description: "Source square for the visual ghost arrow/marker." },
+    { name: "to", required: true, description: "Destination square for the visual ghost arrow/marker." }
+  ],
+  chaosMove: [],
+  swapKings: [],
+  promoteAll: [
+    { name: "colour", required: true, description: "white or black pawns to promote." },
+    { name: "piece", required: true, description: "New piece type: knight, bishop, rook, or queen." }
+  ],
+  army: [
+    { name: "colour", required: true, description: "white or black side to modify." },
+    { name: "piece", required: true, description: "Piece type to use for all non-king pieces." }
+  ],
+  mirrorBoard: [],
+  shuffleBackRank: [],
+  spawnArmy: [
+    { name: "colour", required: true, description: "white or black side to spawn pieces for." },
+    { name: "piece", required: true, description: "Piece type to spawn." },
+    { name: "count", required: true, description: "Number of pieces to add." }
+  ],
+  nuke: [
+    { name: "location", required: true, description: "Centre square of the removal radius." },
+    { name: "radius", required: true, description: "Integer distance around the centre. Non-king pieces are removed." }
+  ],
+  kingOfTheHill: []
+};
+
+export function getDevCommandHelp(command) {
+  if (!command) return ["! command not found"];
+  const aliases = command.aliases?.length ? command.aliases.join(", ") : "none";
+  const params = DEV_COMMAND_PARAMETER_DOCS[command.action] || [];
+  const lines = [
+    `${command.name}`,
+    `usage: ${command.usage}`,
+    `aliases: ${aliases}`,
+    `function: ${command.summary || "No summary available."}`
+  ];
+  if (!params.length) {
+    lines.push("parameters: none");
+  } else {
+    lines.push("parameters:");
+    for (const param of params) {
+      lines.push(`- ${param.name} (${param.required ? "required" : "optional"}): ${param.description}`);
+    }
+  }
+  return lines;
+}
+
+export function getDevCommandListLines() {
+  return DEV_COMMANDS.map((entry) => entry.usage);
+}
+
 export function findDevCommand(inputName) {
   const normalised = normaliseCommandName(inputName);
   return DEV_COMMANDS.find((command) => {
