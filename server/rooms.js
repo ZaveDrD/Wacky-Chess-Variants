@@ -1,7 +1,7 @@
 import { customAlphabet } from "nanoid";
 import { createGame } from "./rules/setup.js";
 import { getLegalMoves } from "./rules/check.js";
-import { getPieceById, opponent } from "./rules/utils.js";
+import { getPieceById, opponent, recordCurrentPosition } from "./rules/utils.js";
 
 const nanoid = customAlphabet("ABCDEFGHJKLMNPQRSTUVWXYZ23456789", 6);
 export const rooms = new Map();
@@ -25,6 +25,7 @@ export function createRoom(hostSocket, hostName, options = {}) {
     game.status = "playing";
     game.message = "white to move.";
     game.lastTurnStartedAt = Date.now();
+    ensureInitialPositionRecorded(game);
   }
 
   rooms.set(roomCode, game);
@@ -64,6 +65,7 @@ export function createDevMatch(socket, playerName, options = {}) {
     game.status = "playing";
     game.message = "white to move.";
     game.lastTurnStartedAt = Date.now();
+    ensureInitialPositionRecorded(game);
     rooms.set(roomCode, game);
     socket.join(roomCode);
     return { ok: true, game, roomCode, color: "spectator", role: "spectator" };
@@ -85,6 +87,7 @@ export function createDevMatch(socket, playerName, options = {}) {
     game.status = "playing";
     game.message = "white to move.";
     game.lastTurnStartedAt = Date.now();
+    ensureInitialPositionRecorded(game);
   }
 
   rooms.set(roomCode, game);
@@ -208,6 +211,7 @@ export function joinRoom(socket, roomCodeRaw, playerName) {
     game.status = "playing";
     game.message = "white to move.";
     game.lastTurnStartedAt = Date.now();
+    ensureInitialPositionRecorded(game);
     return { ok: true, game, color: "black", role: "player" };
   }
 
@@ -372,6 +376,12 @@ function getParticipant(game, socketId) {
 
 function capitalise(value) {
   return String(value || "").slice(0, 1).toUpperCase() + String(value || "").slice(1);
+}
+
+function ensureInitialPositionRecorded(game) {
+  if (!game || game.status !== "playing") return;
+  if (Array.isArray(game.positionHistory) && game.positionHistory.length > 0) return;
+  recordCurrentPosition(game);
 }
 
 function cleanName(name) {

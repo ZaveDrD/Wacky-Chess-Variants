@@ -9,7 +9,8 @@ import {
   opponent,
   pawnZDir,
   removePieceAt,
-  samePos
+  samePos,
+  recordCurrentPosition
 } from "./utils.js";
 
 export function isSquareAttacked(game, square, byColor) {
@@ -83,6 +84,85 @@ export function getGameEndState(game, colorToMove) {
   };
 }
 
+
+export function applyAutomaticDrawRules(game) {
+  if (!game || game.status !== "playing") return game;
+
+  const repeatCount = recordCurrentPosition(game);
+  if (repeatCount >= 3) {
+    const adjudicatedWinner = getBotOnlyAdjudicationWinner(game);
+    game.check = null;
+    game.checkmate = false;
+    game.stalemate = false;
+    game.repetition = true;
+    game.winner = adjudicatedWinner;
+    game.status = "finished";
+    game.message = adjudicatedWinner
+      ? `${adjudicatedWinner} wins by anti-loop adjudication.`
+      : "Draw by threefold repetition.";
+    game.lastTurnStartedAt = null;
+    return game;
+  }
+
+  if ((Number(game.halfmoveClock) || 0) >= 100) {
+    const adjudicatedWinner = getBotOnlyAdjudicationWinner(game);
+    game.check = null;
+    game.checkmate = false;
+    game.stalemate = false;
+    game.fiftyMoveRule = true;
+    game.winner = adjudicatedWinner;
+    game.status = "finished";
+    game.message = adjudicatedWinner
+      ? `${adjudicatedWinner} wins by no-progress adjudication.`
+      : "Draw by fifty-move rule.";
+    game.lastTurnStartedAt = null;
+  }
+
+  return game;
+}
+
+function getBotOnlyAdjudicationWinner(game) {
+  const aiColors = Array.isArray(game?.ai?.colors) ? game.ai.colors : [];
+  const botOnly = game?.ai?.enabled && aiColors.includes("white") && aiColors.includes("black");
+  if (!botOnly) return null;
+
+  const whiteScore = adjudicationScore(game, "white");
+  const blackScore = adjudicationScore(game, "black");
+  if (Math.abs(whiteScore - blackScore) < 0.001) return null;
+  return whiteScore > blackScore ? "white" : "black";
+}
+
+function adjudicationScore(game, color) {
+  const values = { pawn: 100, knight: 320, bishop: 330, rook: 500, queen: 900, king: 0 };
+  const pieces = game.pieces || [];
+  let score = 0;
+
+  for (const piece of pieces) {
+    if (piece.color !== color) continue;
+    score += values[piece.type] || 0;
+    if (piece.type === "pawn") {
+      const zProgress = color === "white" ? piece.z : 7 - piece.z;
+      const yProgress = game.variant === "threeD" ? piece.y : 0;
+      score += zProgress * 18 + yProgress * 12;
+    }
+    if (piece.type === "king") {
+      score += 3.5 - Math.abs(3.5 - piece.x);
+      score += 3.5 - Math.abs(3.5 - piece.z);
+      if (game.variant === "threeD") score += (3.5 - Math.abs(3.5 - piece.y)) * 0.5;
+    }
+  }
+
+  const enemyKing = pieces.find((piece) => piece.color === opponent(color) && piece.type === "king");
+  if (enemyKing) {
+    for (const piece of pieces.filter((item) => item.color === color && item.type !== "king")) {
+      const distance = Math.abs(piece.x - enemyKing.x) + Math.abs(piece.y - enemyKing.y) + Math.abs(piece.z - enemyKing.z);
+      score += Math.max(0, 12 - distance) * 2;
+    }
+  }
+
+  return score;
+}
+
 function getCastleMoves(game, king) {
   const moves = [];
   const z = homeRank(king.color);
@@ -128,6 +208,7 @@ export function applyMoveUnchecked(game, pieceId, move, options = {}) {
   const piece = getPieceById(game, pieceId);
   if (!piece) return { ok: false, reason: "Piece not found." };
 
+  const originalType = piece.type;
   const from = { x: piece.x, y: piece.y, z: piece.z };
   const to = { x: move.x, y: move.y, z: move.z };
   if (!inBounds(to)) return { ok: false, reason: "Target out of bounds." };
@@ -163,12 +244,13 @@ export function applyMoveUnchecked(game, pieceId, move, options = {}) {
     piece.type = promotedTo;
   }
 
-  const wasDoubleStep = piece.type === "pawn" && Math.abs(to.z - from.z) === 2 && to.y === from.y;
+  const wasDoubleStep = originalType === "pawn" && Math.abs(to.z - from.z) === 2 && to.y === from.y;
+  game.halfmoveClock = originalType === "pawn" || captured ? 0 : (Number(game.halfmoveClock) || 0) + 1;
 
   const moveRecord = {
     pieceId,
     pieceColor: piece.color,
-    pieceType: promotedTo ? "pawn" : piece.type,
+    pieceType: promotedTo ? "pawn" : originalType,
     from,
     to,
     captured: captured ? { id: captured.id, type: captured.type, color: captured.color } : null,
@@ -206,6 +288,7 @@ export function attemptLegalMove(game, playerId, pieceId, to, options = {}) {
 
   game.turn = opponent(game.turn);
   Object.assign(game, getGameEndState(game, game.turn));
+  applyAutomaticDrawRules(game);
   if (game.status === "playing") {
     game.lastTurnStartedAt = Date.now();
   } else {

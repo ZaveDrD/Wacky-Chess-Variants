@@ -4,7 +4,7 @@ export const VARIANT_OPTIONS = [
 ];
 
 export const TIME_CONTROL_OPTIONS = [
-  { id: "classical", label: "Classical", seconds: 60 * 60 },
+  { id: "classical", label: "Classical", seconds: 30 * 60 },
   { id: "rapid", label: "Rapid", seconds: 10 * 60 },
   { id: "blitz", label: "Blitz", seconds: 5 * 60 },
   { id: "bullet", label: "Bullet", seconds: 60 }

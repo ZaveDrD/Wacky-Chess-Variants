@@ -38,7 +38,9 @@ export function cloneGame(game) {
       black: game.players.black ? { ...game.players.black } : null
     },
     pieces: game.pieces.map((piece) => ({ ...piece })),
-    moveHistory: game.moveHistory.map((move) => ({ ...move, from: { ...move.from }, to: { ...move.to } })),
+    moveHistory: (game.moveHistory || []).map((move) => ({ ...move, from: { ...move.from }, to: { ...move.to } })),
+    positionHistory: Array.isArray(game.positionHistory) ? [...game.positionHistory] : [],
+    positionCounts: game.positionCounts ? { ...game.positionCounts } : {},
     lastMove: game.lastMove
       ? {
           ...game.lastMove,
@@ -78,4 +80,33 @@ export function removePieceAt(game, pos) {
   if (index === -1) return null;
   const [removed] = game.pieces.splice(index, 1);
   return removed;
+}
+
+
+export function positionSignature(game) {
+  const pieces = (game.pieces || [])
+    .map((piece) => `${piece.color[0]}${piece.type[0]}${piece.hasMoved ? 1 : 0}@${piece.x},${piece.y},${piece.z}`)
+    .sort()
+    .join("|");
+
+  const lastDoubleStep = game.lastMove?.wasDoubleStep
+    ? `${game.lastMove.pieceColor}:${game.lastMove.to.x},${game.lastMove.to.y},${game.lastMove.to.z}`
+    : "-";
+
+  return `${game.variant || "threeD"};turn=${game.turn};ep=${lastDoubleStep};${pieces}`;
+}
+
+export function recordCurrentPosition(game) {
+  if (!game) return 0;
+  if (!Array.isArray(game.positionHistory)) game.positionHistory = [];
+  if (!game.positionCounts || typeof game.positionCounts !== "object") game.positionCounts = {};
+
+  const signature = positionSignature(game);
+  game.positionHistory.push(signature);
+  game.positionCounts[signature] = (game.positionCounts[signature] || 0) + 1;
+  return game.positionCounts[signature];
+}
+
+export function getPositionRepeatCount(game, signature = positionSignature(game)) {
+  return Number(game?.positionCounts?.[signature] || 0);
 }
