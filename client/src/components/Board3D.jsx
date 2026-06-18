@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls as ThreeOrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { COLORS, PIECE_ICONS } from "../game/config.js";
+import { COLORS, PIECE_SYMBOLS } from "../game/config.js";
 
 const ORBIT_TARGET = new THREE.Vector3(0, 2.4, 0);
 const GIZMO_AXIS_LENGTH = 1.65;
@@ -161,12 +161,33 @@ function Piece3D({ piece, selected, onClick }) {
 }
 
 function PieceLabel({ piece }) {
-  const texture = useMemo(() => new THREE.TextureLoader().load(PIECE_ICONS[piece.color][piece.type]), [piece.color, piece.type]);
+  const texture = useMemo(() => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 128;
+    canvas.height = 128;
+    const ctx = canvas.getContext("2d");
+
+    ctx.clearRect(0, 0, 128, 128);
+    ctx.fillStyle = piece.color === "white" ? "rgba(255,255,255,0.92)" : "rgba(15,15,15,0.92)";
+    ctx.beginPath();
+    ctx.arc(64, 64, 52, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = piece.color === "white" ? "#111111" : "#ffffff";
+    ctx.font = '72px "Segoe UI Symbol", "DejaVu Sans", "Noto Sans Symbols 2", serif';
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(PIECE_SYMBOLS[piece.color][piece.type], 64, 68);
+
+    const canvasTexture = new THREE.CanvasTexture(canvas);
+    canvasTexture.needsUpdate = true;
+    return canvasTexture;
+  }, [piece.color, piece.type]);
 
   useEffect(() => () => texture.dispose(), [texture]);
 
   return (
-    <sprite position={[0, 0.52, 0]} scale={[0.76, 0.76, 0.76]}>
+    <sprite position={[0, 0.52, 0]} scale={[0.7, 0.7, 0.7]}>
       <spriteMaterial map={texture} transparent />
     </sprite>
   );

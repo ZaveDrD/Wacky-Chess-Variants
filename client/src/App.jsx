@@ -2,7 +2,7 @@ import React, { Suspense, lazy, useEffect, useMemo, useRef, useState } from "rea
 import { socket } from "./socket.js";
 import Board2D from "./components/Board2D.jsx";
 const Board3D = lazy(() => import("./components/Board3D.jsx"));
-import { PIECE_ICONS } from "./game/config.js";
+import { PIECE_SYMBOLS } from "./game/config.js";
 import { UI_TEXT } from "./game/text.js";
 import {
   VARIANT_OPTIONS,
@@ -826,7 +826,7 @@ export default function App() {
           <h2>{UI_TEXT.headings.selected}</h2>
           {selectedPiece ? (
             <div className="selected-card">
-              <span className={`piece-preview ${selectedPiece.color}`}><img src={PIECE_ICONS[selectedPiece.color][selectedPiece.type]} alt={`${selectedPiece.color} ${selectedPiece.type}`} className="piece-preview-icon" draggable="false" /></span>
+              <span className="piece-preview">{PIECE_SYMBOLS[selectedPiece.color][selectedPiece.type]}</span>
               <div>
                 <strong>{selectedPiece.color} {selectedPiece.type}</strong>
                 <p>x {selectedPiece.x}, y {selectedPiece.y}, z {selectedPiece.z}</p>

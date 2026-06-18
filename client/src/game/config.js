@@ -1,16 +1,3 @@
-import whiteKingIcon from "../assets/pieces/white-king.svg";
-import whiteQueenIcon from "../assets/pieces/white-queen.svg";
-import whiteRookIcon from "../assets/pieces/white-rook.svg";
-import whiteBishopIcon from "../assets/pieces/white-bishop.svg";
-import whiteKnightIcon from "../assets/pieces/white-knight.svg";
-import whitePawnIcon from "../assets/pieces/white-pawn.svg";
-import blackKingIcon from "../assets/pieces/black-king.svg";
-import blackQueenIcon from "../assets/pieces/black-queen.svg";
-import blackRookIcon from "../assets/pieces/black-rook.svg";
-import blackBishopIcon from "../assets/pieces/black-bishop.svg";
-import blackKnightIcon from "../assets/pieces/black-knight.svg";
-import blackPawnIcon from "../assets/pieces/black-pawn.svg";
-
 export const COLORS = {
   lightSquare: "#eeeed2",
   darkSquare: "#769656",
@@ -42,24 +29,5 @@ export const PIECE_SYMBOLS = {
     bishop: "♝",
     knight: "♞",
     pawn: "♟"
-  }
-};
-
-export const PIECE_ICONS = {
-  white: {
-    king: whiteKingIcon,
-    queen: whiteQueenIcon,
-    rook: whiteRookIcon,
-    bishop: whiteBishopIcon,
-    knight: whiteKnightIcon,
-    pawn: whitePawnIcon
-  },
-  black: {
-    king: blackKingIcon,
-    queen: blackQueenIcon,
-    rook: blackRookIcon,
-    bishop: blackBishopIcon,
-    knight: blackKnightIcon,
-    pawn: blackPawnIcon
   }
 };

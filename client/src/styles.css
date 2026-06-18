@@ -3553,3 +3553,69 @@ select {
     padding-right: 0.85rem;
   }
 }
+
+
+/* Revert piece visuals to the original desktop-style Unicode chess symbols. */
+.piece,
+.piece-preview {
+  font-family: "Segoe UI Symbol", "DejaVu Sans", "Noto Sans Symbols 2", "Arial Unicode MS", serif !important;
+  font-variant-emoji: text;
+  color: inherit;
+}
+
+.piece {
+  display: inline-block !important;
+  font-size: clamp(1.6rem, 6vw, 4rem) !important;
+  line-height: 1 !important;
+  filter: none !important;
+}
+
+.piece.white {
+  color: #ffffff !important;
+  text-shadow: 0 1px 1px #111, 0 2px 2px rgba(0,0,0,0.35) !important;
+}
+
+.piece.black {
+  color: #1f2933 !important;
+  text-shadow: 0 1px 1px rgba(255,255,255,0.45) !important;
+}
+
+.piece-preview {
+  font-size: 2.2rem !important;
+  line-height: 1 !important;
+}
+
+.piece-icon,
+.piece-preview-icon {
+  display: none !important;
+}
+
+
+/* Keep the layer badge off the board so all squares stay fully visible. */
+.layer-stack {
+  margin-top: 1.55rem;
+}
+
+.layer-badge {
+  top: -1.55rem !important;
+  right: 0 !important;
+  bottom: auto !important;
+  z-index: 18;
+  transform: none !important;
+  background: rgba(238, 238, 210, 0.9);
+  color: #171614;
+  box-shadow: 0 6px 16px rgba(0,0,0,0.22);
+}
+
+@media (max-width: 700px) {
+  .layer-stack {
+    margin-top: 1.35rem;
+  }
+
+  .layer-badge {
+    top: -1.35rem !important;
+    right: 0 !important;
+    font-size: 0.62rem;
+    padding: 0.18rem 0.36rem;
+  }
+}
