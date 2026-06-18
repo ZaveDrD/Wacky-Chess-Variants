@@ -46,7 +46,13 @@ export default function App() {
   const [clockTick, setClockTick] = useState(Date.now());
   const [devConsoleOpen, setDevConsoleOpen] = useState(false);
   const [devConsoleInput, setDevConsoleInput] = useState("");
-  const [devConsoleLines, setDevConsoleLines] = useState(["> developer console armed. type help."]);
+  const [devConsoleLines, setDevConsoleLines] = useState(["> developer console locked."]);
+  const [devConsoleUnlocked, setDevConsoleUnlocked] = useState(false);
+  const [devCommandHistory, setDevCommandHistory] = useState([]);
+  const [devHistoryIndex, setDevHistoryIndex] = useState(-1);
+  const [devVisuals, setDevVisuals] = useState({ showCoords: false, highlights: [], ghostMove: null });
+  const [showVariantGuide, setShowVariantGuide] = useState(false);
+  const [guideStep, setGuideStep] = useState(0);
   const devSequenceIndexRef = useRef(0);
 
   useEffect(() => {
@@ -66,6 +72,7 @@ export default function App() {
       setDismissedGameOver(false);
       setShowForfeitConfirm(false);
       setNotice(`Room created: ${newRoomCode}`);
+      if (newGame.variant !== "normal") { setShowVariantGuide(true); setGuideStep(0); }
     });
 
     socket.on("roomJoined", ({ roomCode: newRoomCode, color: playerColor, role: playerRole, game: newGame }) => {
@@ -81,6 +88,7 @@ export default function App() {
       setDismissedGameOver(false);
       setShowForfeitConfirm(false);
       setNotice(playerColor === "spectator" ? `Spectating room: ${newRoomCode}` : `Joined room: ${newRoomCode}`);
+      if (newGame.variant !== "normal") { setShowVariantGuide(true); setGuideStep(0); }
     });
 
     socket.on("gameState", (newGame) => {
@@ -109,7 +117,9 @@ export default function App() {
     socket.on("invalidMove", (message) => setNotice(message));
     socket.on("chatError", (message) => setNotice(message || UI_TEXT.notices.chatFailed));
     socket.on("devCommandResult", (result = {}) => {
-      appendDevLines((result.lines || [result.ok ? "OK" : "Command failed."]).map((line) => result.ok === false ? `! ${line}` : String(line)));
+      if (result.unlocked) setDevConsoleUnlocked(true);
+      const lines = result.lines || [result.ok ? "OK" : "Command failed."];
+      if (lines.length) appendDevLines(lines.map((line) => result.ok === false ? `! ${line}` : String(line)));
     });
 
     socket.on("legalMoves", ({ pieceId, legalMoves: moves, reason }) => {
@@ -178,6 +188,15 @@ export default function App() {
   const showGameOverModal = Boolean(gameIsOver && !reviewMode && !dismissedGameOver);
   const activeView = is3DVariant ? view : "XZ";
   const activeLayer = is3DVariant ? layer : 0;
+  const hasDevMoveOverride = Boolean(game?.devOverrides?.moveAllPieceSocketIds?.includes(socket.id));
+
+  useEffect(() => {
+    if (!game || !socket.id) return;
+    const membership = getClientMembership(game, socket.id);
+    if (!membership) return;
+    setColor((current) => current === membership.color ? current : membership.color);
+    setRole((current) => current === membership.role ? current : membership.role);
+  }, [game]);
 
   useEffect(() => {
     if (!reviewMode) return;
@@ -209,7 +228,7 @@ export default function App() {
 
   function appendDevLines(lines) {
     const nextLines = Array.isArray(lines) ? lines : [String(lines ?? "")];
-    setDevConsoleLines((current) => [...current, ...nextLines].slice(-80));
+    setDevConsoleLines((current) => [...current, ...nextLines].slice(-200));
   }
 
   function runDevCommand(event) {
@@ -217,6 +236,14 @@ export default function App() {
     const raw = devConsoleInput.trim();
     if (!raw) return;
     setDevConsoleInput("");
+    setDevCommandHistory((current) => [raw, ...current.filter((item) => item !== raw)].slice(0, 60));
+    setDevHistoryIndex(-1);
+
+    if (!devConsoleUnlocked) {
+      socket.emit("devCommand", { action: "devUnlock", password: raw });
+      return;
+    }
+
     appendDevLines(`> ${raw}`);
 
     const [rawCommandName, ...args] = parseCommandLine(raw);
@@ -234,6 +261,21 @@ export default function App() {
 
     if (command.action === "clear") {
       setDevConsoleLines([]);
+      return;
+    }
+
+    if (command.action === "botBattle") {
+      const variant = args[0] || selectedVariant;
+      const difficulty = args[1] || selectedAIDifficulty || "medium";
+      socket.emit("devCommand", {
+        action: "startMatch",
+        args: [variant, "2", difficulty],
+        name: name.trim() || "Developer",
+        currentRoomCode: roomCode,
+        selectedVariant,
+        selectedTimeControl,
+        selectedAIDifficulty: difficulty
+      });
       return;
     }
 
@@ -262,6 +304,52 @@ export default function App() {
       }
       setLayer(nextLayer);
       appendDevLines(`layer=${nextLayer}`);
+      return;
+    }
+
+    if (command.action === "showCoords") {
+      setDevVisuals((current) => ({ ...current, showCoords: !current.showCoords }));
+      appendDevLines("coordinate labels toggled.");
+      return;
+    }
+
+    if (command.action === "clearHighlights") {
+      setDevVisuals((current) => ({ ...current, highlights: [], ghostMove: null }));
+      appendDevLines("dev highlights cleared.");
+      return;
+    }
+
+    if (command.action === "highlightSquare") {
+      const loc = parseDevLocation(args, 0)?.location;
+      if (!loc) { appendDevLines("! usage: highlight [location]"); return; }
+      setDevVisuals((current) => ({ ...current, highlights: [...current.highlights, loc].slice(-64) }));
+      appendDevLines(`highlighted (${loc.x},${loc.y},${loc.z}).`);
+      return;
+    }
+
+    if (command.action === "ghostMove") {
+      const from = parseDevLocation(args, 0);
+      const to = from ? parseDevLocation(args, from.nextIndex) : null;
+      if (!from || !to) { appendDevLines("! usage: ghostmove [from] [to]"); return; }
+      setDevVisuals((current) => ({ ...current, ghostMove: { from: from.location, to: to.location } }));
+      appendDevLines(`ghost move ${coordText(from.location)} → ${coordText(to.location)}.`);
+      return;
+    }
+
+    if (command.action === "showChecks") {
+      const kings = (game?.pieces || []).filter((piece) => piece.type === "king").map(({x,y,z}) => ({x,y,z}));
+      setDevVisuals((current) => ({ ...current, highlights: kings }));
+      appendDevLines(`highlighted ${kings.length} king square(s).`);
+      return;
+    }
+
+    if (command.action === "showAttacks") {
+      // Visual aid: asks the server for legal moves of every piece indirectly is expensive;
+      // locally mark occupied pieces for the requested colour as a quick attack/debug layer.
+      const side = String(args[0] || game?.turn || "").toLowerCase();
+      const highlights = (game?.pieces || []).filter((piece) => !side || piece.color === side).map(({x,y,z}) => ({x,y,z}));
+      setDevVisuals((current) => ({ ...current, highlights }));
+      appendDevLines(`debug-highlighted ${highlights.length} ${side || "all"} piece origin square(s).`);
       return;
     }
 
@@ -381,15 +469,15 @@ export default function App() {
   function selectPiece(piece) {
     if (reviewMode) return;
     if (!game || !roomCode || !piece) return;
-    if (role === "spectator" || color === "spectator") {
+    if ((role === "spectator" || color === "spectator") && !hasDevMoveOverride) {
       setNotice(UI_TEXT.notices.spectatorNoMove);
       return;
     }
-    if (piece.color !== color) {
+    if (piece.color !== color && !hasDevMoveOverride) {
       setNotice(UI_TEXT.notices.opponentPiece);
       return;
     }
-    if (game.turn !== color) {
+    if (game.turn !== color && !hasDevMoveOverride) {
       setNotice(UI_TEXT.notices.notYourTurn);
       return;
     }
@@ -397,7 +485,7 @@ export default function App() {
   }
 
   function attemptMove(to) {
-    if (reviewMode || role === "spectator" || color === "spectator") return;
+    if (reviewMode || ((role === "spectator" || color === "spectator") && !hasDevMoveOverride)) return;
     if (!selectedPieceId) return;
     socket.emit("attemptMove", {
       roomCode,
@@ -409,13 +497,13 @@ export default function App() {
 
   function handleSquareClick(coord) {
     if (reviewMode || !game) return;
-    if (role === "spectator" || color === "spectator") {
+    if ((role === "spectator" || color === "spectator") && !hasDevMoveOverride) {
       setNotice(UI_TEXT.notices.spectatorNoMove);
       return;
     }
     const piece = game.pieces.find((candidate) => sameCoord(candidate, coord));
 
-    if (piece && piece.color === color && game.turn === color) {
+    if (piece && ((piece.color === color && game.turn === color) || hasDevMoveOverride)) {
       selectPiece(piece);
       return;
     }
@@ -524,6 +612,10 @@ export default function App() {
           open={devConsoleOpen}
           input={devConsoleInput}
           lines={devConsoleLines}
+          unlocked={devConsoleUnlocked}
+          history={devCommandHistory}
+          historyIndex={devHistoryIndex}
+          onHistoryIndexChange={setDevHistoryIndex}
           onInputChange={setDevConsoleInput}
           onSubmit={runDevCommand}
           onClose={() => setDevConsoleOpen(false)}
@@ -536,7 +628,7 @@ export default function App() {
     <main className="app game-app">
       <section className="top-bar">
         <div>
-          <h1>{getVariantLabel(game.variant)}</h1>
+          <h1>{getVariantLabel(game.variant)} {game.variant !== "normal" && <button className="variant-info-button" type="button" onClick={() => { setShowVariantGuide(true); setGuideStep(0); }} aria-label="Show variant guide">i</button>}</h1>
           <p className="subtle">
             {UI_TEXT.labels.room}{" "}
             <strong className="room-code-copy" onClick={copyRoomCode} title="Click to copy room code">{roomCode}</strong>
@@ -624,6 +716,7 @@ export default function App() {
                     legalMoveKeys={legalMoveKeys}
                     onPieceClick={selectPiece}
                     onCameraChange={setIsoGizmoAxes}
+                    devVisuals={devVisuals}
                   />
                 </Suspense>
               </ErrorBoundary>
@@ -638,6 +731,7 @@ export default function App() {
                 onLayerChange={is3DVariant ? setLayer : null}
                 stacked={is3DVariant}
                 title={is3DVariant ? undefined : getVariantLabel(game.variant)}
+                devVisuals={devVisuals}
               />
             )}
             {is3DVariant && <OrientationGizmo view={activeView} layer={activeLayer} isoAxes={isoGizmoAxes} />}
@@ -718,10 +812,22 @@ export default function App() {
         />
       )}
 
+      {showVariantGuide && game.variant !== "normal" && (
+        <VariantGuideModal
+          step={guideStep}
+          onStep={setGuideStep}
+          onClose={() => setShowVariantGuide(false)}
+        />
+      )}
+
       <DevConsole
         open={devConsoleOpen}
         input={devConsoleInput}
         lines={devConsoleLines}
+        unlocked={devConsoleUnlocked}
+        history={devCommandHistory}
+        historyIndex={devHistoryIndex}
+        onHistoryIndexChange={setDevHistoryIndex}
         onInputChange={setDevConsoleInput}
         onSubmit={runDevCommand}
         onClose={() => setDevConsoleOpen(false)}
@@ -731,7 +837,7 @@ export default function App() {
 }
 
 
-function DevConsole({ open, input, lines, onInputChange, onSubmit, onClose }) {
+function DevConsole({ open, input, lines, unlocked, history, historyIndex, onHistoryIndexChange, onInputChange, onSubmit, onClose }) {
   const inputRef = useRef(null);
   const outputRef = useRef(null);
 
@@ -760,13 +866,81 @@ function DevConsole({ open, input, lines, onInputChange, onSubmit, onClose }) {
           ref={inputRef}
           value={input}
           onChange={(event) => onInputChange(event.target.value)}
-          placeholder="developer command"
+          onKeyDown={(event) => {
+            if (event.key === "ArrowUp") {
+              event.preventDefault();
+              const next = Math.min((history?.length || 0) - 1, historyIndex + 1);
+              if (next >= 0) { onHistoryIndexChange(next); onInputChange(history[next] || ""); }
+            } else if (event.key === "ArrowDown") {
+              event.preventDefault();
+              const next = Math.max(-1, historyIndex - 1);
+              onHistoryIndexChange(next);
+              onInputChange(next === -1 ? "" : history[next] || "");
+            }
+          }}
+          placeholder={unlocked ? "developer command" : "password"}
+          type={unlocked ? "text" : "password"}
           spellCheck="false"
         />
         <button type="button" onClick={onClose} aria-label="Close developer console">Esc</button>
       </form>
     </div>
   );
+}
+
+
+function VariantGuideModal({ step, onStep, onClose }) {
+  const steps = [
+    { title: "1. Choose a slice", body: "Pick XZ, XY, or YZ to look at one chess-board plane.", art: "planes" },
+    { title: "2. Scroll layers", body: "Wheel over the board to flick through stacked layers.", art: "layers" },
+    { title: "3. Check ISO", body: "Use ISO view when you need to understand where pieces sit in 3D.", art: "iso" },
+    { title: "4. Move in one plane", body: "Pieces move like normal chess, but each move stays inside one plane.", art: "move" }
+  ];
+  const current = steps[Math.min(step, steps.length - 1)];
+  return (
+    <div className="modal-backdrop tutorial-backdrop">
+      <section className="modal-card tutorial-card">
+        <div className="tutorial-art" data-art={current.art}>
+          <span className="tutorial-cube a" />
+          <span className="tutorial-cube b" />
+          <span className="tutorial-cube c" />
+          <span className="tutorial-arrow" />
+        </div>
+        <h2>{current.title}</h2>
+        <p>{current.body}</p>
+        <div className="tutorial-dots">
+          {steps.map((_, index) => <button key={index} className={index === step ? "active" : ""} onClick={() => onStep(index)} aria-label={`Guide step ${index + 1}`} />)}
+        </div>
+        <div className="modal-actions">
+          <button type="button" onClick={() => onStep(Math.max(0, step - 1))} disabled={step === 0}>Back</button>
+          {step < steps.length - 1 ? (
+            <button className="primary" type="button" onClick={() => onStep(step + 1)}>Next</button>
+          ) : (
+            <button className="primary" type="button" onClick={onClose}>Play</button>
+          )}
+          <button type="button" onClick={onClose}>Close</button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function parseDevLocation(args, startIndex = 0) {
+  if (!Array.isArray(args) || args.length <= startIndex) return null;
+  const first = String(args[startIndex] || "").trim();
+  const chess = /^([a-h])([1-8])$/i.exec(first);
+  if (chess) return { location: { x: chess[1].toLowerCase().charCodeAt(0) - 97, y: 0, z: Number(chess[2]) - 1 }, nextIndex: startIndex + 1 };
+  const parts = first.replace(/[()\[\]{}]/g, "").split(/[,:/]/).map((part) => Number.parseInt(part.trim(), 10));
+  if (parts.length === 3 && parts.every(Number.isInteger)) return { location: { x: parts[0], y: parts[1], z: parts[2] }, nextIndex: startIndex + 1 };
+  if (args.length >= startIndex + 3) {
+    const xyz = [args[startIndex], args[startIndex + 1], args[startIndex + 2]].map((part) => Number.parseInt(part, 10));
+    if (xyz.every(Number.isInteger)) return { location: { x: xyz[0], y: xyz[1], z: xyz[2] }, nextIndex: startIndex + 3 };
+  }
+  return null;
+}
+
+function coordText(coord) {
+  return `(${coord.x},${coord.y},${coord.z})`;
 }
 
 class ErrorBoundary extends React.Component {
@@ -1115,6 +1289,15 @@ function getOrientationLayout(view, isoAxes) {
     axes: { x: "axis-iso-x", y: "axis-up", z: "axis-iso-z" },
     caption: () => "orbit"
   };
+}
+
+
+function getClientMembership(game, socketId) {
+  if (!game || !socketId) return null;
+  if (game.players?.white?.id === socketId) return { role: "player", color: "white" };
+  if (game.players?.black?.id === socketId) return { role: "player", color: "black" };
+  if ((game.spectators || []).some((spectator) => spectator.id === socketId)) return { role: "spectator", color: "spectator" };
+  return null;
 }
 
 function PlayerLine({ label, player, active }) {

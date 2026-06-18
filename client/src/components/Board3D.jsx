@@ -7,13 +7,13 @@ import { COLORS, PIECE_SYMBOLS } from "../game/config.js";
 const ORBIT_TARGET = new THREE.Vector3(0, 2.4, 0);
 const GIZMO_AXIS_LENGTH = 1.65;
 
-export default function Board3D({ game, selectedPieceId, legalMoveKeys, onPieceClick, onCameraChange }) {
+export default function Board3D({ game, selectedPieceId, legalMoveKeys, onPieceClick, onCameraChange, devVisuals = {} }) {
   return (
     <div className="board-3d">
       <Canvas camera={{ position: [9, 10, 11], fov: 45 }}>
         <ambientLight intensity={0.7} />
         <directionalLight position={[7, 10, 5]} intensity={1.1} />
-        <GridCage legalMoveKeys={legalMoveKeys} />
+        <GridCage legalMoveKeys={legalMoveKeys} devVisuals={devVisuals} />
         {game.pieces.map((piece) => (
           <Piece3D
             key={piece.id}
@@ -89,13 +89,16 @@ function projectAxis(camera, origin, projectedOrigin, axisVector) {
   };
 }
 
-function GridCage({ legalMoveKeys }) {
+function GridCage({ legalMoveKeys, devVisuals = {} }) {
   const squares = [];
   for (let y = 0; y < 8; y += 1) {
     for (let x = 0; x < 8; x += 1) {
       for (let z = 0; z < 8; z += 1) {
         const isBaseLayer = y === 0;
         const legalMove = legalMoveKeys.get(`${x},${y},${z}`);
+        const highlighted = (devVisuals.highlights || []).some((item) => item.x === x && item.y === y && item.z === z);
+        const ghostFrom = devVisuals.ghostMove?.from && devVisuals.ghostMove.from.x === x && devVisuals.ghostMove.from.y === y && devVisuals.ghostMove.from.z === z;
+        const ghostTo = devVisuals.ghostMove?.to && devVisuals.ghostMove.to.x === x && devVisuals.ghostMove.to.y === y && devVisuals.ghostMove.to.z === z;
         squares.push(
           <group key={`${x}-${y}-${z}`}>
             <mesh position={[x - 3.5, y * 0.8, z - 3.5]}>
@@ -107,6 +110,7 @@ function GridCage({ legalMoveKeys }) {
               />
             </mesh>
             {legalMove && <LegalMoveMarker x={x} y={y} z={z} capture={Boolean(legalMove.capture)} />}
+            {(highlighted || ghostFrom || ghostTo) && <DevMarker x={x} y={y} z={z} kind={ghostFrom ? "from" : ghostTo ? "to" : "highlight"} />}
           </group>
         );
       }
@@ -114,6 +118,16 @@ function GridCage({ legalMoveKeys }) {
   }
 
   return <>{squares}</>;
+}
+
+function DevMarker({ x, y, z, kind }) {
+  const color = kind === "from" ? "#67e8f9" : kind === "to" ? "#fb7185" : "#facc15";
+  return (
+    <mesh position={[x - 3.5, y * 0.8 + 0.88, z - 3.5]}>
+      <sphereGeometry args={[0.18, 18, 18]} />
+      <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.35} transparent opacity={0.88} />
+    </mesh>
+  );
 }
 
 function LegalMoveMarker({ x, y, z, capture }) {

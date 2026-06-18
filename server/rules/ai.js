@@ -23,13 +23,20 @@ const MAX_BRANCHING = {
 
 const DRAW_AVOIDANCE_SCORE = 260000;
 const REPEAT_AVOIDANCE_SCORE = 22000;
+const HANGING_MATING_PIECE_PENALTY = 52000;
+const WON_ENDGAME_BONUS = 18000;
 
 export function normaliseAIDifficulty(value) {
   return ["easy", "medium", "hard"].includes(value) ? value : "medium";
 }
 
+
+function getAIDifficultyForTurn(game) {
+  return normaliseAIDifficulty(game?.ai?.difficulties?.[game.turn] || game?.ai?.difficulty);
+}
+
 export function isAITurn(game) {
-  if (!game?.ai?.enabled || game.status !== "playing") return false;
+  if (!game?.ai?.enabled || game.status !== "playing" || game.ai?.paused) return false;
   const activePlayer = game.players?.[game.turn];
   const aiColors = Array.isArray(game.ai.colors) ? game.ai.colors : [game.ai.color].filter(Boolean);
   return Boolean(aiColors.includes(game.turn) || String(activePlayer?.id || "").startsWith("AI:"));
@@ -50,7 +57,7 @@ export function runAIMove(game) {
 
   if (result.moveRecord) {
     result.moveRecord.ai = true;
-    result.moveRecord.aiDifficulty = game.ai.difficulty;
+    result.moveRecord.aiDifficulty = getAIDifficultyForTurn(game);
   }
 
   game.turn = opponent(game.turn);
@@ -66,7 +73,7 @@ export function chooseAIMove(game) {
   const legalMoves = getAllLegalMoves(game, color);
   if (legalMoves.length === 0) return null;
 
-  const difficulty = normaliseAIDifficulty(game.ai?.difficulty);
+  const difficulty = getAIDifficultyForTurn(game);
   const ranked = rankCandidates(game, legalMoves, color);
 
   if (difficulty === "easy") {
@@ -132,6 +139,25 @@ function minimax(game, depth, aiColor, alpha, beta) {
   return value;
 }
 
+export function getAllAICandidates(game, color) {
+  return getAllLegalMoves(game, color);
+}
+
+export function evaluateAIPosition(game, color) {
+  return evaluateBoard(game, color);
+}
+
+export function scoreAICandidates(game, color) {
+  return rankCandidates(game, getAllLegalMoves(game, color), color).map(({ candidate, score }) => ({
+    score,
+    pieceId: candidate.pieceId,
+    pieceType: candidate.piece.type,
+    from: { x: candidate.piece.x, y: candidate.piece.y, z: candidate.piece.z },
+    to: { x: candidate.move.x, y: candidate.move.y, z: candidate.move.z },
+    capture: Boolean(candidate.move.capture)
+  }));
+}
+
 function getAllLegalMoves(game, color) {
   const moves = [];
   for (const piece of game.pieces) {
@@ -169,7 +195,9 @@ function prioritiseCandidates(game, ranked, color) {
 
   const captureOrThreatMoves = sterileFiltered.filter(({ candidate }) => {
     const nextGame = simulateCandidate(game, candidate, true);
-    return Boolean(getCapturedPiece(game, candidate)) || candidate.piece.type === "pawn" || nextGame.check === opponent(color);
+    const safety = moveSafetyScore(game, candidate, nextGame, color);
+    const tacticallyUseful = Boolean(getCapturedPiece(game, candidate)) || candidate.piece.type === "pawn" || nextGame.check === opponent(color);
+    return tacticallyUseful && safety > -HANGING_MATING_PIECE_PENALTY * 0.5;
   });
 
   if (captureOrThreatMoves.length > 0 && isEndgame(game)) {
@@ -193,6 +221,13 @@ function quickMoveScore(game, candidate, color) {
   if (captured) {
     score += PIECE_VALUES[captured.type] * 7.5;
     score -= PIECE_VALUES[piece.type] * 0.85;
+
+    // In won endgames, do not let the AI grab irrelevant material if the move hangs
+    // one of the remaining mating pieces. It is better to keep the winning piece safe
+    // than to win a low-value capture and simplify into stalemate material.
+    if (isWonMaterialEndgame(game, color) && PIECE_VALUES[piece.type] >= 300) {
+      score -= PIECE_VALUES[piece.type] * 0.45;
+    }
   }
 
   if (move.promotedTo || move.promotion || wouldPromote(piece, move, game)) score += 8500;
@@ -202,6 +237,8 @@ function quickMoveScore(game, candidate, color) {
   const nextGame = simulateCandidate(game, candidate, true);
   const repeatPenalty = repetitionPenalty(game, candidate, nextGame);
   score -= repeatPenalty;
+  score += moveSafetyScore(game, candidate, nextGame, color);
+  score += wonEndgamePlanScore(game, candidate, nextGame, color);
 
   if (nextGame.status === "finished") {
     if (nextGame.winner === color) score += 1000000;
@@ -226,6 +263,142 @@ function quickMoveScore(game, candidate, color) {
   score += evaluateBoard(nextGame, color) * 0.08;
 
   return score;
+}
+
+
+function moveSafetyScore(game, candidate, nextGame, color) {
+  if (nextGame.status === "finished" && nextGame.winner === color) return 0;
+
+  const opponentColor = opponent(color);
+  const ownMaterial = nonKingMaterialValue(game, color);
+  const enemyMaterial = nonKingMaterialValue(game, opponentColor);
+  const wonEndgame = isWonMaterialEndgame(game, color);
+  const endgame = isEndgame(game);
+  let score = 0;
+
+  const opponentCaptures = getOpponentCaptureThreats(nextGame, opponentColor, color);
+  if (opponentCaptures.length === 0) return score + protectedMatingMaterialBonus(nextGame, color);
+
+  const movedPieceThreat = opponentCaptures.find((threat) => threat.captured?.id === candidate.pieceId);
+  if (movedPieceThreat) {
+    const value = PIECE_VALUES[candidate.piece.type] || 0;
+    const isMatingPiece = candidate.piece.type !== "king" && candidate.piece.type !== "pawn";
+    let penalty = value * 8;
+    if (endgame) penalty += value * 6;
+    if (wonEndgame) penalty += HANGING_MATING_PIECE_PENALTY;
+    if (isMatingPiece && enemyMaterial <= 250) penalty += value * 10;
+    score -= penalty;
+  }
+
+  // If the opponent has only a king or almost no material, any move that allows them
+  // to take a rook/queen/bishop/knight is usually catastrophic for actually finishing.
+  for (const threat of opponentCaptures) {
+    const capturedValue = PIECE_VALUES[threat.captured?.type] || 0;
+    if (capturedValue <= 0) continue;
+    let penalty = capturedValue * 1.6;
+    if (wonEndgame && threat.captured.type !== "pawn") penalty += capturedValue * 7;
+    if (ownMaterial - capturedValue < 500 && enemyMaterial < 500) penalty += HANGING_MATING_PIECE_PENALTY;
+    score -= penalty;
+  }
+
+  return score + protectedMatingMaterialBonus(nextGame, color);
+}
+
+function getOpponentCaptureThreats(game, opponentColor, targetColor) {
+  const threats = [];
+  for (const piece of game.pieces || []) {
+    if (piece.color !== opponentColor) continue;
+    for (const move of getLegalMoves(game, piece)) {
+      const captured = getCapturedPiece(game, { pieceId: piece.id, piece, move });
+      if (captured && captured.color === targetColor) {
+        threats.push({ attacker: piece, move, captured, value: PIECE_VALUES[captured.type] || 0 });
+      }
+    }
+  }
+  return threats.sort((a, b) => b.value - a.value);
+}
+
+function protectedMatingMaterialBonus(game, color) {
+  if (!isWonMaterialEndgame(game, color)) return 0;
+  const pieces = (game.pieces || []).filter((piece) => piece.color === color && piece.type !== "king");
+  const ownKing = game.pieces.find((piece) => piece.color === color && piece.type === "king");
+  const enemyKing = game.pieces.find((piece) => piece.color === opponent(color) && piece.type === "king");
+  if (!ownKing || !enemyKing) return 0;
+
+  let score = 0;
+  for (const piece of pieces) {
+    const value = PIECE_VALUES[piece.type] || 0;
+    if (value >= 300) {
+      const ownKingDistance = manhattanDistance(ownKing, piece);
+      const enemyKingDistance = manhattanDistance(enemyKing, piece);
+      if (ownKingDistance <= 2) score += 1200;
+      if (enemyKingDistance <= 1) score -= 4000;
+      if (enemyKingDistance <= ownKingDistance && ownKingDistance > 2) score -= 2200;
+    }
+  }
+  return score;
+}
+
+function wonEndgamePlanScore(game, candidate, nextGame, color) {
+  if (!isWonMaterialEndgame(game, color)) return 0;
+
+  const enemyKingBefore = game.pieces.find((piece) => piece.color === opponent(color) && piece.type === "king");
+  const enemyKingAfter = nextGame.pieces.find((piece) => piece.color === opponent(color) && piece.type === "king");
+  const ownKingAfter = nextGame.pieces.find((piece) => piece.color === color && piece.type === "king");
+  if (!enemyKingBefore || !enemyKingAfter || !ownKingAfter) return 0;
+
+  let score = WON_ENDGAME_BONUS;
+  const beforeCornerDistance = distanceToNearestCorner(enemyKingBefore, game.variant);
+  const afterCornerDistance = distanceToNearestCorner(enemyKingAfter, nextGame.variant);
+  score += (beforeCornerDistance - afterCornerDistance) * 3200;
+  score -= afterCornerDistance * 520;
+
+  const ownKingDistance = manhattanDistance(ownKingAfter, enemyKingAfter);
+  score += Math.max(0, 7 - ownKingDistance) * 900;
+
+  const movedPieceAfter = nextGame.pieces.find((piece) => piece.id === candidate.pieceId);
+  if (movedPieceAfter && ["rook", "queen"].includes(movedPieceAfter.type)) {
+    score += majorPieceConfinementScore(movedPieceAfter, enemyKingAfter, nextGame.variant);
+  }
+
+  if (candidate.piece.type === "king") score += 1800;
+  if (candidate.piece.type === "pawn") score += pawnProgressScore(game, candidate) * 110;
+
+  return score;
+}
+
+function majorPieceConfinementScore(piece, enemyKing, variant) {
+  let score = 0;
+  if (piece.x === enemyKing.x) score += 1500;
+  if (piece.z === enemyKing.z) score += 1500;
+  if (variant === "threeD" && piece.y === enemyKing.y) score += 1500;
+
+  const distance = manhattanDistance(piece, enemyKing);
+  if (distance <= 1) score -= 6000;
+  if (distance >= 2 && distance <= 5) score += 900;
+  return score;
+}
+
+function distanceToNearestCorner(piece, variant) {
+  const yOptions = variant === "threeD" ? [0, 7] : [0];
+  let best = Infinity;
+  for (const x of [0, 7]) {
+    for (const y of yOptions) {
+      for (const z of [0, 7]) {
+        best = Math.min(best, Math.abs(piece.x - x) + Math.abs(piece.y - y) + Math.abs(piece.z - z));
+      }
+    }
+  }
+  return best;
+}
+
+function isWonMaterialEndgame(game, color) {
+  if (!isEndgame(game)) return false;
+  const ownMaterial = nonKingMaterialValue(game, color);
+  const enemyMaterial = nonKingMaterialValue(game, opponent(color));
+  if (ownMaterial < 500) return false;
+  if (enemyMaterial > 350) return false;
+  return hasLikelyMatingMaterial(game, color);
 }
 
 function wouldImmediatelyDraw(game, candidate) {

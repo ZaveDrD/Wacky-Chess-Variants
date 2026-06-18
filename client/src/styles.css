@@ -1915,3 +1915,140 @@ select {
     transform: translateX(-50%) translateY(0) scale(1);
   }
 }
+
+/* Developer console update */
+.dev-console {
+  max-height: 62vh;
+  min-height: 320px;
+}
+.dev-console-output {
+  max-height: 50vh;
+}
+.dev-console-input-row input[type="password"] {
+  letter-spacing: 0.2em;
+}
+.square.dev-highlight::after,
+.square.ghost-from::after,
+.square.ghost-to::after {
+  content: "";
+  position: absolute;
+  inset: 18%;
+  border: 2px solid rgba(250, 204, 21, 0.9);
+  border-radius: 8px;
+  pointer-events: none;
+  box-shadow: 0 0 14px rgba(250, 204, 21, 0.55);
+}
+.square.ghost-from::after { border-color: rgba(103, 232, 249, 0.95); }
+.square.ghost-to::after { border-color: rgba(251, 113, 133, 0.95); }
+.coord-label.show {
+  opacity: 0.9;
+  display: inline;
+}
+.dev-marker {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 900;
+  color: #06101a;
+  z-index: 7;
+}
+.dev-marker.from { background: #67e8f9; }
+.dev-marker.to { background: #fb7185; }
+.variant-info-button {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  margin-left: 8px;
+  padding: 0;
+  border: 1px solid rgba(255,255,255,0.38);
+  background: rgba(255,255,255,0.12);
+  color: #f7f7f2;
+  font-style: italic;
+  font-weight: 800;
+  cursor: pointer;
+}
+.tutorial-backdrop {
+  animation: modalFadeIn 160ms ease-out both;
+}
+.tutorial-card {
+  max-width: 520px;
+  text-align: center;
+  animation: modalPop 180ms ease-out both;
+}
+.tutorial-art {
+  position: relative;
+  height: 190px;
+  margin: 4px auto 16px;
+  border-radius: 22px;
+  overflow: hidden;
+  background: radial-gradient(circle at 30% 15%, rgba(118,150,86,0.34), transparent 28%), linear-gradient(135deg, rgba(255,255,255,0.12), rgba(0,0,0,0.28));
+  border: 1px solid rgba(255,255,255,0.16);
+}
+.tutorial-cube {
+  position: absolute;
+  width: 68px;
+  height: 68px;
+  transform: rotateX(58deg) rotateZ(45deg);
+  border-radius: 10px;
+  background: linear-gradient(135deg, rgba(238,238,210,0.95), rgba(118,150,86,0.88));
+  box-shadow: 0 12px 26px rgba(0,0,0,0.26);
+  animation: floatTile 2.6s ease-in-out infinite;
+}
+.tutorial-cube.a { left: 120px; top: 72px; }
+.tutorial-cube.b { left: 188px; top: 50px; animation-delay: 0.18s; opacity: 0.75; }
+.tutorial-cube.c { left: 256px; top: 28px; animation-delay: 0.32s; opacity: 0.55; }
+.tutorial-arrow {
+  position: absolute;
+  width: 92px;
+  height: 8px;
+  border-radius: 999px;
+  left: 214px;
+  top: 108px;
+  background: #facc15;
+  transform: rotate(-18deg);
+  box-shadow: 0 0 18px rgba(250,204,21,0.6);
+  animation: pulseArrow 1.3s ease-in-out infinite;
+}
+.tutorial-arrow::after {
+  content: "";
+  position: absolute;
+  right: -2px;
+  top: -7px;
+  border-left: 18px solid #facc15;
+  border-top: 11px solid transparent;
+  border-bottom: 11px solid transparent;
+}
+.tutorial-art[data-art="iso"] .tutorial-cube { transform: rotateX(60deg) rotateZ(45deg) scale(1.12); }
+.tutorial-art[data-art="move"] .tutorial-arrow { left: 150px; top: 92px; width: 170px; transform: rotate(0deg); }
+.tutorial-dots {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin: 14px 0 18px;
+}
+.tutorial-dots button {
+  width: 10px;
+  height: 10px;
+  padding: 0;
+  border-radius: 999px;
+  border: 0;
+  background: rgba(255,255,255,0.25);
+}
+.tutorial-dots button.active { background: #facc15; }
+@keyframes floatTile {
+  0%, 100% { translate: 0 0; }
+  50% { translate: 0 -8px; }
+}
+@keyframes pulseArrow {
+  0%, 100% { opacity: 0.72; scale: 0.98; }
+  50% { opacity: 1; scale: 1.04; }
+}

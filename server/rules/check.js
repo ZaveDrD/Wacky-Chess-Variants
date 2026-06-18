@@ -274,10 +274,13 @@ export function attemptLegalMove(game, playerId, pieceId, to, options = {}) {
 
   const piece = getPieceById(game, pieceId);
   if (!piece) return { ok: false, reason: "Piece not found." };
-  if (piece.color !== game.turn) return { ok: false, reason: "It is not that piece's turn." };
+
+  const devOverride = Boolean(options.devOverride);
+  const movingColor = piece.color;
+  if (piece.color !== game.turn && !devOverride) return { ok: false, reason: "It is not that piece's turn." };
 
   const player = game.players[piece.color];
-  if (!player || player.id !== playerId) return { ok: false, reason: "You do not control that piece." };
+  if ((!player || player.id !== playerId) && !devOverride) return { ok: false, reason: "You do not control that piece." };
 
   const legalMoves = getLegalMoves(game, piece);
   const chosen = legalMoves.find((move) => move.x === to.x && move.y === to.y && move.z === to.z);
@@ -286,7 +289,7 @@ export function attemptLegalMove(game, playerId, pieceId, to, options = {}) {
   const result = applyMoveUnchecked(game, pieceId, chosen, options);
   if (!result.ok) return result;
 
-  game.turn = opponent(game.turn);
+  game.turn = opponent(movingColor);
   Object.assign(game, getGameEndState(game, game.turn));
   applyAutomaticDrawRules(game);
   if (game.status === "playing") {

@@ -3,13 +3,27 @@ import http from "http";
 import path from "path";
 import { fileURLToPath } from "url";
 import { Server } from "socket.io";
-import { appendChatMessage, createDevMatch, createRoom, forfeitGame, getLegalMovesForSocket, getOpenMatches, getRoomSnapshot, joinRoom, leaveCurrentRooms, removeSocketFromRooms, rooms, spectateRoom, tickAllRoomClocks, tickGameClock } from "./rooms.js";
+import { addPieceToRoom, appendChatMessage, createDevMatch, createRoom, endMatchByDev, findPlayersByName, forfeitGame, getDetailedRoomLines, getLegalMovesForSocket, getOpenMatches, getPlayerCountSnapshot, getRoomSnapshot, hasDeveloperMoveOverride, joinRoom, leaveCurrentRooms, listPiecesInRoom, removePieceFromRoom, removeSocketFromRooms, replacePlayerWithBotInRoom, replacePlayerWithRequesterInRoom, rooms, runDevUtilityCommand, setPlayerColourInRoom, setSpectatorOverride, setTimerForRoom, setTurnInRoom, spectateRoom, tickAllRoomClocks, tickGameClock } from "./rooms.js";
 import { attemptLegalMove } from "./rules/check.js";
-import { isAITurn, runAIMove } from "./rules/ai.js";
+import { chooseAIMove, evaluateAIPosition, isAITurn, runAIMove, scoreAICandidates } from "./rules/ai.js";
+import { createHash, pbkdf2Sync, timingSafeEqual } from "crypto";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PORT = process.env.PORT || 3001;
+
+const DEV_PASSWORD_SALT = "wcv-dev-console-v1-salt";
+const DEV_PASSWORD_HASH = "716b38d8fc25690f55750b70a610c967e1ed93c67095dab364958ef51bd8858f";
+const devAuthenticatedSockets = new Set();
+
+function verifyDevPassword(password) {
+  const digest = pbkdf2Sync(String(password || ""), DEV_PASSWORD_SALT, 120000, 32, "sha256").toString("hex");
+  try {
+    return timingSafeEqual(Buffer.from(digest, "hex"), Buffer.from(DEV_PASSWORD_HASH, "hex"));
+  } catch {
+    return false;
+  }
+}
 
 const app = express();
 const server = http.createServer(app);
@@ -69,7 +83,10 @@ io.on("connection", (socket) => {
     }
 
     tickGameClock(game);
-    const result = attemptLegalMove(game, socket.id, pieceId, to, { promotion });
+    const result = attemptLegalMove(game, socket.id, pieceId, to, {
+      promotion,
+      devOverride: hasDeveloperMoveOverride(socket.id, game.roomCode)
+    });
     if (!result.ok) {
       socket.emit("invalidMove", result.reason);
       return;
@@ -123,6 +140,7 @@ io.on("connection", (socket) => {
   });
 
   socket.on("disconnect", () => {
+    devAuthenticatedSockets.delete(socket.id);
     const affectedGames = removeSocketFromRooms(socket.id);
     for (const game of affectedGames) {
       io.to(game.roomCode).emit("gameState", game);
@@ -133,6 +151,18 @@ io.on("connection", (socket) => {
 
 function handleDevCommand(socket, payload = {}) {
   const action = String(payload.action || "").trim();
+
+  if (action === "devUnlock") {
+    if (verifyDevPassword(payload.password)) {
+      devAuthenticatedSockets.add(socket.id);
+      return { response: { ok: true, unlocked: true, lines: ["developer console unlocked."] } };
+    }
+    return { response: { ok: false, lines: [] } };
+  }
+
+  if (!devAuthenticatedSockets.has(socket.id)) {
+    return { response: { ok: false, lines: [] } };
+  }
   const args = Array.isArray(payload.args) ? payload.args : [];
   const name = String(payload.name || "").trim() || "Developer";
   const currentRoomCode = String(payload.currentRoomCode || "").trim().toUpperCase();
@@ -226,6 +256,209 @@ function handleDevCommand(socket, payload = {}) {
     };
   }
 
+
+
+  if (action === "addPiece") {
+    if (!currentRoomCode) return { response: { ok: false, lines: ["No current room. Use joincode/spectatematch/startmatch first."] } };
+    const parsed = consumeLocationArgs(args);
+    if (!parsed) return { response: { ok: false, lines: ["Usage: addpiece [x,y,z | e4 | x y z] [piecetype] [colour=turn]"] } };
+    const pieceType = args[parsed.nextIndex];
+    const color = args[parsed.nextIndex + 1];
+    const result = addPieceToRoom(currentRoomCode, parsed.location, pieceType, color);
+    if (!result.ok) return { response: { ok: false, lines: [result.reason] } };
+    return {
+      response: { ok: true, lines: result.lines || ["Piece added."] },
+      gameStateRoom: currentRoomCode,
+      scheduleRoomCode: currentRoomCode
+    };
+  }
+
+  if (action === "removePiece") {
+    if (!currentRoomCode) return { response: { ok: false, lines: ["No current room. Use joincode/spectatematch/startmatch first."] } };
+    const parsed = consumeLocationArgs(args);
+    if (!parsed) return { response: { ok: false, lines: ["Usage: removepiece [x,y,z | e4 | x y z]"] } };
+    const result = removePieceFromRoom(currentRoomCode, parsed.location);
+    if (!result.ok) return { response: { ok: false, lines: [result.reason] } };
+    return {
+      response: { ok: true, lines: result.lines || ["Piece removed."] },
+      gameStateRoom: currentRoomCode,
+      scheduleRoomCode: currentRoomCode
+    };
+  }
+
+  if (action === "replaceWithBot") {
+    if (!currentRoomCode) return { response: { ok: false, lines: ["No current room. Use joincode/spectatematch/startmatch first."] } };
+    if (args.length < 1) return { response: { ok: false, lines: ["Usage: replacewithbot [name] [difficulty=medium]"] } };
+    const maybeDifficulty = normaliseDevDifficulty(args[args.length - 1]);
+    const lastArgLooksDifficulty = ["easy", "medium", "hard"].includes(String(args[args.length - 1] || "").trim().toLowerCase());
+    const targetName = (lastArgLooksDifficulty ? args.slice(0, -1) : args).join(" ").trim();
+    const difficulty = lastArgLooksDifficulty ? maybeDifficulty : "medium";
+    const result = replacePlayerWithBotInRoom(currentRoomCode, targetName, difficulty);
+    if (!result.ok) return { response: { ok: false, lines: [result.reason] } };
+    return {
+      response: { ok: true, lines: result.lines || ["Player replaced with bot."] },
+      gameStateRoom: currentRoomCode,
+      scheduleRoomCode: currentRoomCode
+    };
+  }
+
+  if (action === "replacePlayer") {
+    if (!currentRoomCode) return { response: { ok: false, lines: ["No current room. Use joincode/spectatematch/startmatch first."] } };
+    const targetName = args.join(" ").trim();
+    if (!targetName) return { response: { ok: false, lines: ["Usage: replaceplayer [name]"] } };
+    const result = replacePlayerWithRequesterInRoom(currentRoomCode, targetName, socket.id, name);
+    if (!result.ok) return { response: { ok: false, lines: [result.reason] } };
+    return {
+      response: { ok: true, lines: result.lines || ["Player replaced."] },
+      roomEvent: "roomJoined",
+      roomPayload: { roomCode: result.game.roomCode, color: result.color, role: "player", game: result.game },
+      gameStateRoom: currentRoomCode,
+      scheduleRoomCode: currentRoomCode
+    };
+  }
+
+
+  if (action === "endMatch") {
+    if (!currentRoomCode) return { response: { ok: false, lines: ["No current room. Use joincode/spectatematch/startmatch first."] } };
+    const result = endMatchByDev(currentRoomCode, args[0] || "none");
+    if (!result.ok) return { response: { ok: false, lines: [result.reason] } };
+    return {
+      response: { ok: true, lines: result.lines || ["Match ended."] },
+      gameStateRoom: currentRoomCode
+    };
+  }
+
+  if (action === "findPlayer") {
+    const query = args.join(" ").trim();
+    if (!query) return { response: { ok: false, lines: ["Usage: findplayer [name]"] } };
+    const matches = findPlayersByName(query);
+    return {
+      response: {
+        ok: true,
+        lines: matches.length
+          ? matches.map((player) => `${player.name} | ${player.color} ${player.role} | ${player.roomCode} | ${player.variantName} | ${player.status}`)
+          : [`No players found matching: ${query}`]
+      }
+    };
+  }
+
+  if (action === "playerCount") {
+    const counts = getPlayerCountSnapshot();
+    return {
+      response: {
+        ok: true,
+        lines: [
+          `Rooms: ${counts.rooms} (${counts.activeRooms} playing)`,
+          `Human players: ${counts.humanPlayers}`,
+          `Spectators: ${counts.spectators}`,
+          `Bots: ${counts.bots}`,
+          `Unique connected humans in rooms: ${counts.uniqueHumans}`
+        ]
+      }
+    };
+  }
+
+  if (action === "spectatorOverride") {
+    if (!currentRoomCode) return { response: { ok: false, lines: ["No current room. Use joincode/spectatematch/startmatch first."] } };
+    const target = args.join(" ").trim() || "self";
+    const result = setSpectatorOverride(currentRoomCode, target, socket.id, true);
+    if (!result.ok) return { response: { ok: false, lines: [result.reason] } };
+    return {
+      response: { ok: true, lines: result.lines || ["Override enabled."] },
+      gameStateRoom: currentRoomCode
+    };
+  }
+
+  if (action === "clearOverride") {
+    if (!currentRoomCode) return { response: { ok: false, lines: ["No current room. Use joincode/spectatematch/startmatch first."] } };
+    const target = args.join(" ").trim() || "self";
+    const result = setSpectatorOverride(currentRoomCode, target, socket.id, false);
+    if (!result.ok) return { response: { ok: false, lines: [result.reason] } };
+    return {
+      response: { ok: true, lines: result.lines || ["Override disabled."] },
+      gameStateRoom: currentRoomCode
+    };
+  }
+
+  if (action === "setTimer") {
+    if (!currentRoomCode) return { response: { ok: false, lines: ["No current room. Use joincode/spectatematch/startmatch first."] } };
+    const result = setTimerForRoom(currentRoomCode, args[0], args[1]);
+    if (!result.ok) return { response: { ok: false, lines: [result.reason] } };
+    return {
+      response: { ok: true, lines: result.lines || ["Timer set."] },
+      gameStateRoom: currentRoomCode,
+      scheduleRoomCode: currentRoomCode
+    };
+  }
+
+  if (action === "setPlayerColour") {
+    if (!currentRoomCode) return { response: { ok: false, lines: ["No current room. Use joincode/spectatematch/startmatch first."] } };
+    if (args.length < 2) return { response: { ok: false, lines: ["Usage: setplayercolour [name] [white|black|spectator]"] } };
+    const targetColor = args[args.length - 1];
+    const targetName = args.slice(0, -1).join(" ");
+    const result = setPlayerColourInRoom(currentRoomCode, targetName, targetColor);
+    if (!result.ok) return { response: { ok: false, lines: [result.reason] } };
+    return {
+      response: { ok: true, lines: result.lines || ["Player colour changed."] },
+      gameStateRoom: currentRoomCode,
+      scheduleRoomCode: currentRoomCode
+    };
+  }
+
+  if (action === "listPieces") {
+    if (!currentRoomCode) return { response: { ok: false, lines: ["No current room. Use joincode/spectatematch/startmatch first."] } };
+    const result = listPiecesInRoom(currentRoomCode, args[0]);
+    if (!result.ok) return { response: { ok: false, lines: [result.reason] } };
+    return {
+      response: { ok: true, lines: result.lines.length ? result.lines : ["No matching pieces."] }
+    };
+  }
+
+  if (action === "setTurn") {
+    if (!currentRoomCode) return { response: { ok: false, lines: ["No current room. Use joincode/spectatematch/startmatch first."] } };
+    const result = setTurnInRoom(currentRoomCode, args[0]);
+    if (!result.ok) return { response: { ok: false, lines: [result.reason] } };
+    return {
+      response: { ok: true, lines: result.lines || ["Turn set."] },
+      gameStateRoom: currentRoomCode,
+      scheduleRoomCode: currentRoomCode
+    };
+  }
+
+  if (action === "listRoomsDetailed") {
+    return { response: { ok: true, lines: getDetailedRoomLines() } };
+  }
+
+  if (action === "aiThink" || action === "topMoves" || action === "evalPosition" || action === "forceAIMove") {
+    const game = rooms.get(currentRoomCode);
+    if (!game) return { response: { ok: false, lines: ["No current room. Use joincode/spectatematch/startmatch first."] } };
+    const color = normaliseDevColour(args[0]) || game.turn;
+    if (action === "evalPosition") {
+      return { response: { ok: true, lines: [`AI evaluation for ${color}: ${Math.round(evaluateAIPosition(game, color))}`] } };
+    }
+    const topN = Math.min(20, Math.max(1, Number.parseInt(args[1] || args[0], 10) || 5));
+    const scored = scoreAICandidates(game, color).slice(0, topN);
+    if (action === "topMoves" || action === "aiThink") {
+      return { response: { ok: true, lines: scored.length ? scored.map((m, i) => `${i + 1}. ${m.pieceType} ${fmtDevLoc(m.from)} → ${fmtDevLoc(m.to)} score=${Math.round(m.score)}`) : ["No AI candidates."] } };
+    }
+    if (action === "forceAIMove") {
+      const previousTurn = game.turn;
+      game.turn = color;
+      if (!game.ai) game.ai = {};
+      game.ai.enabled = true;
+      game.ai.colors = Array.from(new Set([...(game.ai.colors || []), color]));
+      const result = runAIMove(game);
+      if (!result.ok) game.turn = previousTurn;
+      return { response: { ok: result.ok, lines: [result.ok ? `Forced ${color} AI move.` : result.reason] }, gameStateRoom: currentRoomCode, scheduleRoomCode: currentRoomCode };
+    }
+  }
+
+  const utility = runDevUtilityCommand(currentRoomCode, action, args, socket.id, name);
+  if (utility) {
+    if (!utility.ok) return { response: { ok: false, lines: [utility.reason || "Command failed."] } };
+    return { response: { ok: true, lines: utility.lines || ["OK"] }, gameStateRoom: currentRoomCode, scheduleRoomCode: currentRoomCode };
+  }
+
   if (action === "exitMatch") {
     const affected = leaveCurrentRooms(socket, socket.id);
     return {
@@ -235,6 +468,40 @@ function handleDevCommand(socket, payload = {}) {
   }
 
   return { response: { ok: false, lines: [`Unknown developer command: ${action}`] } };
+}
+
+
+function consumeLocationArgs(args) {
+  if (!Array.isArray(args) || args.length < 1) return null;
+
+  const first = String(args[0] || "").trim();
+  const chess = parseChessSquare(first);
+  if (chess) return { location: chess, nextIndex: 1 };
+
+  const packed = parseXYZ(first);
+  if (packed) return { location: packed, nextIndex: 1 };
+
+  if (args.length >= 3) {
+    const x = Number.parseInt(args[0], 10);
+    const y = Number.parseInt(args[1], 10);
+    const z = Number.parseInt(args[2], 10);
+    if ([x, y, z].every((value) => Number.isInteger(value))) return { location: { x, y, z }, nextIndex: 3 };
+  }
+
+  return null;
+}
+
+function parseXYZ(value) {
+  const clean = String(value || "").trim().replace(/[()\[\]{}]/g, "");
+  const parts = clean.split(/[,:/]/).map((part) => Number.parseInt(part.trim(), 10));
+  if (parts.length !== 3 || parts.some((part) => !Number.isInteger(part))) return null;
+  return { x: parts[0], y: parts[1], z: parts[2] };
+}
+
+function parseChessSquare(value) {
+  const match = /^([a-h])([1-8])$/i.exec(String(value || "").trim());
+  if (!match) return null;
+  return { x: match[1].toLowerCase().charCodeAt(0) - 97, y: 0, z: Number(match[2]) - 1 };
 }
 
 function normaliseDevVariant(value) {
@@ -247,6 +514,17 @@ function normaliseDevVariant(value) {
 function normaliseDevTimeControl(value) {
   const text = String(value || "").trim().toLowerCase();
   return ["classical", "rapid", "blitz", "bullet"].includes(text) ? text : "rapid";
+}
+
+function normaliseDevColour(value) {
+  const text = String(value || "").trim().toLowerCase();
+  if (["white", "w"].includes(text)) return "white";
+  if (["black", "b"].includes(text)) return "black";
+  return null;
+}
+
+function fmtDevLoc(pos) {
+  return `(${pos.x},${pos.y},${pos.z})`;
 }
 
 function normaliseDevDifficulty(value) {

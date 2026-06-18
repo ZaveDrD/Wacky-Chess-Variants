@@ -12,7 +12,8 @@ export default function Board2D({
   onSquareClick,
   onLayerChange,
   stacked = true,
-  title
+  title,
+  devVisuals = {}
 }) {
   const [flipDirection, setFlipDirection] = useState("idle");
   const wheelDeltaRef = useRef(0);
@@ -68,6 +69,7 @@ export default function Board2D({
             legalMoveKeys={legalMoveKeys}
             ghostIndex={index + 1}
             isGhost
+            devVisuals={devVisuals}
           />
         ))}
 
@@ -80,6 +82,7 @@ export default function Board2D({
           legalMoveKeys={legalMoveKeys}
           onSquareClick={onSquareClick}
           isActive
+          devVisuals={devVisuals}
         />
 
         {stacked && <div className="layer-badge">Layer {layer}</div>}
@@ -97,7 +100,8 @@ function LayerCard({
   onSquareClick,
   isActive = false,
   isGhost = false,
-  ghostIndex = 0
+  ghostIndex = 0,
+  devVisuals = {}
 }) {
   const squares = [];
 
@@ -107,12 +111,15 @@ function LayerCard({
       const piece = game.pieces.find((candidate) => sameCoord(candidate, coord));
       const legalMove = !isGhost ? legalMoveKeys.get(key(coord)) : null;
       const selected = !isGhost && piece?.id === selectedPieceId;
+      const highlighted = !isGhost && (devVisuals.highlights || []).some((item) => sameCoord(item, coord));
+      const ghostFrom = !isGhost && devVisuals.ghostMove?.from && sameCoord(devVisuals.ghostMove.from, coord);
+      const ghostTo = !isGhost && devVisuals.ghostMove?.to && sameCoord(devVisuals.ghostMove.to, coord);
       const light = (row + col) % 2 === 0;
 
       squares.push(
         <button
           key={`${coord.x}-${coord.y}-${coord.z}`}
-          className={`square ${light ? "light" : "dark"} ${selected ? "selected" : ""} ${legalMove ? "legal" : ""} ${legalMove?.capture ? "capture" : ""}`}
+          className={`square ${light ? "light" : "dark"} ${selected ? "selected" : ""} ${legalMove ? "legal" : ""} ${legalMove?.capture ? "capture" : ""} ${highlighted ? "dev-highlight" : ""} ${ghostFrom ? "ghost-from" : ""} ${ghostTo ? "ghost-to" : ""}`}
           style={{
             background: selected
               ? COLORS.selected
@@ -129,7 +136,9 @@ function LayerCard({
           tabIndex={isActive ? 0 : -1}
           aria-hidden={isGhost ? "true" : undefined}
         >
-          <span className="coord-label">{coord.x},{coord.y},{coord.z}</span>
+          {devVisuals.showCoords && <span className="coord-label show">{coord.x},{coord.y},{coord.z}</span>}
+          {ghostFrom && <span className="dev-marker from">A</span>}
+          {ghostTo && <span className="dev-marker to">B</span>}
           {piece && (
             <span
               className={`piece ${piece.color}`}
