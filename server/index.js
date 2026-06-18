@@ -3,7 +3,7 @@ import http from "http";
 import path from "path";
 import { fileURLToPath } from "url";
 import { Server } from "socket.io";
-import { addPieceToRoom, appendChatMessage, cancelQuickMatch, createDevMatch, createRoom, endMatchByDev, findPlayersByName, forfeitGame, getDetailedRoomLines, getLegalMovesForSocket, getOpenMatches, getPlayerCountSnapshot, getRoomSnapshot, hasDeveloperMoveOverride, joinRoom, leaveCurrentRooms, listPiecesInRoom, removePieceFromRoom, removeSocketFromRooms, replacePlayerWithBotInRoom, quickMatch, replacePlayerWithRequesterInRoom, rooms, runDevUtilityCommand, setPlayerColourInRoom, setSpectatorOverride, setTimerForRoom, setTurnInRoom, spectateRoom, tickAllRoomClocks, tickGameClock } from "./rooms.js";
+import { addPieceToRoom, appendChatMessage, cancelQuickMatch, cleanupExpiredRooms, createDevMatch, createRoom, endMatchByDev, findPlayersByName, forfeitGame, getDetailedRoomLines, getLegalMovesForSocket, getOpenMatches, getPlayerCountSnapshot, getRoomSnapshot, hasDeveloperMoveOverride, joinRoom, leaveCurrentRooms, listPiecesInRoom, removePieceFromRoom, removeSocketFromRooms, replacePlayerWithBotInRoom, quickMatch, replacePlayerWithRequesterInRoom, ROOM_CLEANUP_INTERVAL_MS, rooms, runDevUtilityCommand, setPlayerColourInRoom, setSpectatorOverride, setTimerForRoom, setTurnInRoom, spectateRoom, tickAllRoomClocks, tickGameClock } from "./rooms.js";
 import { attemptLegalMove } from "./rules/check.js";
 import { chooseAIMove, evaluateAIPosition, isAITurn, runAIMove, scoreAICandidates } from "./rules/ai.js";
 import { createHash, pbkdf2Sync, timingSafeEqual } from "crypto";
@@ -590,6 +590,14 @@ function scheduleAIMoveIfNeeded(game) {
 
   pendingAITimers.set(game.roomCode, timerId);
 }
+
+
+setInterval(() => {
+  const removed = cleanupExpiredRooms();
+  if (removed.length) {
+    console.log(`[cleanup] removed ${removed.length} closed room(s): ${removed.join(", ")}`);
+  }
+}, ROOM_CLEANUP_INTERVAL_MS);
 
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`Wacky Chess Variants server running on port ${PORT}`);

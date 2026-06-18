@@ -167,9 +167,26 @@ function LayerCard({
       data-layer={layer}
     >
       <div className="board-2d">{squares}</div>
+      {!isGhost && <PlaneAxisLabels plane={plane} />}
       {isGhost && <div className="ghost-layer-label">{axisLayerText(plane, layer)}</div>}
     </div>
   );
+}
+
+function PlaneAxisLabels({ plane }) {
+  const labels = getPlaneAxisLabels(plane);
+  return (
+    <div className={`plane-axis-labels plane-axis-${plane.toLowerCase()}`} aria-hidden="true">
+      <span className="plane-axis-label plane-axis-primary">{labels.primary}</span>
+      <span className="plane-axis-label plane-axis-secondary">{labels.secondary}</span>
+    </div>
+  );
+}
+
+function getPlaneAxisLabels(plane) {
+  if (plane === "XZ") return { primary: "+X", secondary: "+Z" };
+  if (plane === "XY") return { primary: "+X", secondary: "+Y" };
+  return { primary: "+Z", secondary: "+Y" };
 }
 
 function getGhostLayers(layer) {

@@ -6,6 +6,10 @@ import { cloneGame, getPieceAt, getPieceById, inBounds, opponent, recordCurrentP
 const nanoid = customAlphabet("ABCDEFGHJKLMNPQRSTUVWXYZ23456789", 6);
 export const rooms = new Map();
 
+export const ROOM_CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
+export const CLOSED_ROOM_REPLAY_GRACE_MS = 60 * 60 * 1000;
+
+
 export function createRoom(hostSocket, hostName, options = {}) {
   let roomCode = nanoid();
   while (rooms.has(roomCode)) roomCode = nanoid();
@@ -242,6 +246,7 @@ export function leaveCurrentRooms(socket, socketId) {
       } else if (game.status === "playing") {
         tickGameClock(game);
         game.status = "abandoned";
+        markRoomClosed(game);
         game.winner = color === "white" ? "black" : "white";
         game.message = `${game.winner} wins because ${color} exited the match.`;
         game.lastTurnStartedAt = null;
@@ -304,6 +309,36 @@ export function getRoomForSocket(socketId) {
   return null;
 }
 
+
+export function cleanupExpiredRooms(now = Date.now()) {
+  const removed = [];
+
+  for (const [roomCode, game] of rooms.entries()) {
+    const isClosed = game.status === "finished" || game.status === "abandoned";
+    if (!isClosed) continue;
+
+    const closedAt = game.closedAt || game.finishedAt || game.abandonedAt || game.updatedAt || game.createdAt || now;
+    const hasHumanPlayer = Boolean(
+      game.players.white && !String(game.players.white.id || "").startsWith("AI:") ||
+      game.players.black && !String(game.players.black.id || "").startsWith("AI:")
+    );
+    const spectatorCount = game.spectators?.length || 0;
+    const replayGraceExpired = now - closedAt >= CLOSED_ROOM_REPLAY_GRACE_MS;
+
+    if (!hasHumanPlayer && spectatorCount === 0 && replayGraceExpired) {
+      rooms.delete(roomCode);
+      removed.push(roomCode);
+    }
+  }
+
+  return removed;
+}
+
+function markRoomClosed(game) {
+  if (!game.closedAt) game.closedAt = Date.now();
+  game.updatedAt = Date.now();
+}
+
 export function removeSocketFromRooms(socketId) {
   const affected = [];
 
@@ -326,6 +361,7 @@ export function removeSocketFromRooms(socketId) {
     if (game.status === "finished" || game.status === "abandoned") continue;
 
     game.status = "abandoned";
+    markRoomClosed(game);
     game.winner = color === "white" ? "black" : "white";
     game.message = `${game.winner} wins because ${color} disconnected.`;
     game.lastTurnStartedAt = null;
@@ -367,6 +403,7 @@ export function forfeitGame(socketId, roomCodeRaw) {
 
   const winner = color === "white" ? "black" : "white";
   game.status = "finished";
+  markRoomClosed(game);
   game.winner = winner;
   game.forfeit = true;
   game.forfeitedBy = color;
@@ -529,6 +566,7 @@ export function endMatchByDev(roomCodeRaw, winnerRaw = "none") {
   if (winnerRaw && !winner && !isNoWinnerToken(winnerRaw)) return { ok: false, reason: "Winner must be white, black, none, draw, or nowinner." };
 
   game.status = "finished";
+  markRoomClosed(game);
   game.winner = winner;
   game.check = null;
   game.checkmate = false;
@@ -630,6 +668,7 @@ export function setTimerForRoom(roomCodeRaw, timeRaw, playerRaw = null) {
   if (game.status === "playing" && game.turn === color) game.lastTurnStartedAt = Date.now();
   if (milliseconds <= 0 && game.status === "playing") {
     game.status = "finished";
+  markRoomClosed(game);
     game.timeout = true;
     game.winner = opponent(color);
     game.message = `${game.winner} wins on time.`;
@@ -750,6 +789,7 @@ export function tickGameClock(game) {
 
   if (game.clocks[game.turn] <= 0) {
     game.status = "finished";
+  markRoomClosed(game);
     game.timeout = true;
     game.winner = opponent(game.turn);
     game.message = `${game.winner} wins on time.`;

@@ -3122,3 +3122,64 @@ select {
     max-height: 320px;
   }
 }
+
+
+/* Plane axis labels replace the full CAD gizmo outside ISO view. */
+.layer-card.active-layer {
+  position: relative;
+}
+
+.plane-axis-labels {
+  position: absolute;
+  inset: 0;
+  z-index: 14;
+  pointer-events: none;
+  font-size: clamp(0.72rem, 1.1vw, 0.9rem);
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  color: rgba(247, 247, 242, 0.62);
+  text-shadow: 0 2px 8px rgba(0,0,0,0.52);
+}
+
+.plane-axis-label {
+  position: absolute;
+  padding: 0.24rem 0.42rem;
+  border-radius: 999px;
+  background: rgba(17, 16, 14, 0.32);
+  border: 1px solid rgba(238, 238, 210, 0.13);
+  backdrop-filter: blur(3px);
+}
+
+.plane-axis-primary {
+  right: 0.45rem;
+  bottom: 0.45rem;
+}
+
+.plane-axis-secondary {
+  left: 0.45rem;
+  top: 0.45rem;
+}
+
+.plane-axis-xz .plane-axis-primary::after,
+.plane-axis-xy .plane-axis-primary::after,
+.plane-axis-yz .plane-axis-primary::after {
+  content: " →";
+  opacity: 0.75;
+}
+
+.plane-axis-xz .plane-axis-secondary::before,
+.plane-axis-xy .plane-axis-secondary::before,
+.plane-axis-yz .plane-axis-secondary::before {
+  content: "↑ ";
+  opacity: 0.75;
+}
+
+@media (max-width: 700px) {
+  .plane-axis-labels {
+    font-size: 0.7rem;
+  }
+
+  .plane-axis-label {
+    padding: 0.18rem 0.34rem;
+  }
+}

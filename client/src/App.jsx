@@ -802,7 +802,7 @@ export default function App() {
                 devVisuals={devVisuals}
               />
             )}
-            {is3DVariant && <OrientationGizmo view={activeView} layer={activeLayer} isoAxes={isoGizmoAxes} />}
+            {is3DVariant && activeView === "ISO" && <OrientationGizmo view={activeView} layer={activeLayer} isoAxes={isoGizmoAxes} />}
           </div>
         </section>
 
