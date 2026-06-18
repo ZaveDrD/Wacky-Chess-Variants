@@ -16,6 +16,11 @@ export function createRoom(hostSocket, hostName, options = {}) {
     name: cleanName(hostName) || "White"
   };
 
+  if (options.publicMatch) {
+    game.publicMatch = true;
+    game.message = "Waiting for quick match opponent.";
+  }
+
   if (game.ai?.enabled) {
     game.ai.colors = ["black"];
     game.players.black = {
@@ -23,6 +28,7 @@ export function createRoom(hostSocket, hostName, options = {}) {
       name: `AI ${capitalise(game.ai.difficulty)}`
     };
     game.status = "playing";
+    game.publicMatch = false;
     game.message = "white to move.";
     game.lastTurnStartedAt = Date.now();
     ensureInitialPositionRecorded(game);
@@ -31,6 +37,69 @@ export function createRoom(hostSocket, hostName, options = {}) {
   rooms.set(roomCode, game);
   hostSocket.join(roomCode);
   return game;
+}
+
+export function findPublicMatch(options = {}) {
+  const scope = options.scope === "any" ? "any" : "selected";
+  const variant = options.variant;
+  const timeControl = options.timeControl;
+
+  return Array.from(rooms.values()).find((game) => {
+    if (!game.publicMatch) return false;
+    if (game.status !== "waiting") return false;
+    if (!game.players.white || game.players.black) return false;
+    if (game.ai?.enabled || game.gameMode === "ai") return false;
+    if (scope !== "any") {
+      if (variant && game.variant !== variant) return false;
+      if (timeControl && game.timeControl !== timeControl) return false;
+    }
+    return true;
+  }) || null;
+}
+
+export function quickMatch(socket, playerName, options = {}) {
+  const existing = findPublicMatch(options);
+  if (existing) {
+    const result = joinRoom(socket, existing.roomCode, playerName);
+    if (!result.ok) return result;
+    existing.publicMatch = false;
+    existing.matchmakingScope = options.scope === "any" ? "any" : "selected";
+    return {
+      ...result,
+      matched: true,
+      created: false,
+      roomCode: existing.roomCode,
+      scope: existing.matchmakingScope
+    };
+  }
+
+  const game = createRoom(socket, playerName, {
+    variant: options.variant,
+    timeControl: options.timeControl,
+    gameMode: "online",
+    publicMatch: true
+  });
+  game.matchmakingScope = options.scope === "any" ? "any" : "selected";
+  return {
+    ok: true,
+    game,
+    roomCode: game.roomCode,
+    color: "white",
+    role: "player",
+    matched: false,
+    created: true,
+    scope: game.matchmakingScope
+  };
+}
+
+export function cancelQuickMatch(socketId) {
+  for (const [roomCode, game] of rooms.entries()) {
+    if (!game.publicMatch || game.status !== "waiting") continue;
+    if (game.players.white?.id !== socketId) continue;
+    rooms.delete(roomCode);
+    return { ok: true, roomCode };
+  }
+  return { ok: false, reason: "No active quick match search." };
 }
 
 
@@ -209,6 +278,7 @@ export function joinRoom(socket, roomCodeRaw, playerName) {
       name: cleanName(playerName) || "Black"
     };
     game.status = "playing";
+    game.publicMatch = false;
     game.message = "white to move.";
     game.lastTurnStartedAt = Date.now();
     ensureInitialPositionRecorded(game);

@@ -11,6 +11,9 @@ export const UI_TEXT = {
     namePlaceholder: "Enter Name",
     hostButton: "Host Game",
     hostAIButton: "Start Vs AI",
+    findMatchButton: "Find Match",
+    cancelSearchButton: "Cancel Search",
+    hostPrivateButton: "Host Private",
     joinButton: "Join",
     roomPlaceholder: "Room Code"
   },

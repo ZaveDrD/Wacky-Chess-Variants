@@ -2981,3 +2981,144 @@ select {
     height: 340px;
   }
 }
+
+
+/* Matchmaking + compact lobby refactor */
+.gallery-lobby {
+  overflow-y: auto;
+  align-content: start;
+  padding-top: clamp(0.75rem, 2vh, 1.4rem);
+  padding-bottom: clamp(0.75rem, 2vh, 1.4rem);
+  gap: clamp(0.55rem, 1.4vh, 1rem);
+}
+
+.compact-gallery-title .gallery-title,
+.gallery-title {
+  font-size: clamp(1.55rem, 4.2vw, 3.8rem);
+}
+
+.compact-lobby-card {
+  width: min(720px, 96vw);
+  display: grid;
+  gap: 0.75rem;
+  padding: clamp(0.85rem, 1.7vw, 1.35rem);
+}
+
+.lobby-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.7rem;
+}
+
+.compact-subtitle {
+  margin: -0.1rem 0 0;
+  font-size: 0.86rem;
+  line-height: 1.25;
+}
+
+.compact-selection {
+  margin: 0;
+}
+
+.compact-toggle-group {
+  gap: 0.35rem;
+}
+
+.compact-toggle-group button {
+  min-height: 36px;
+  padding: 0.35rem 0.32rem;
+  font-size: 0.78rem;
+}
+
+.queue-scope-select {
+  display: block;
+}
+
+.queue-scope-select select {
+  width: 100%;
+  min-height: 36px;
+  font-size: 0.78rem;
+  padding: 0.45rem 0.55rem;
+  border-radius: 9px;
+}
+
+.online-action-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.55rem;
+}
+
+.main-action-button,
+.secondary-action-button {
+  min-height: 42px;
+}
+
+.secondary-action-button {
+  border: 1px solid #4b4843;
+  background: rgba(23, 22, 20, 0.72);
+  color: #f5f5f5;
+}
+
+.compact-join-row {
+  margin-top: 0;
+}
+
+@media (max-height: 760px) {
+  .compact-lobby-card {
+    gap: 0.52rem;
+    padding: 0.75rem;
+  }
+
+  .compact-gallery-title .gallery-title,
+  .gallery-title {
+    font-size: clamp(1.35rem, 3.4vw, 2.4rem);
+  }
+
+  .compact-toggle-group button,
+  .queue-scope-select select {
+    min-height: 32px;
+    font-size: 0.72rem;
+  }
+
+  .compact-subtitle {
+    display: none;
+  }
+}
+
+@media (max-width: 680px) {
+  .lobby-grid,
+  .online-action-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .compact-lobby-card {
+    width: min(94vw, 520px);
+  }
+}
+
+/* Larger chat + snap to newest message */
+.game-chat-panel {
+  min-height: 300px;
+  grid-template-rows: auto minmax(210px, 1fr) auto;
+}
+
+.chat-messages {
+  max-height: clamp(240px, 34vh, 430px);
+  scroll-behavior: smooth;
+}
+
+@media (max-height: 760px) {
+  .chat-messages {
+    max-height: clamp(190px, 30vh, 300px);
+  }
+
+  .game-chat-panel {
+    min-height: 245px;
+  }
+}
+
+@media (max-width: 900px) {
+  .chat-messages {
+    max-height: 320px;
+  }
+}

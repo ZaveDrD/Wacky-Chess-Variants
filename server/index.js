@@ -3,7 +3,7 @@ import http from "http";
 import path from "path";
 import { fileURLToPath } from "url";
 import { Server } from "socket.io";
-import { addPieceToRoom, appendChatMessage, createDevMatch, createRoom, endMatchByDev, findPlayersByName, forfeitGame, getDetailedRoomLines, getLegalMovesForSocket, getOpenMatches, getPlayerCountSnapshot, getRoomSnapshot, hasDeveloperMoveOverride, joinRoom, leaveCurrentRooms, listPiecesInRoom, removePieceFromRoom, removeSocketFromRooms, replacePlayerWithBotInRoom, replacePlayerWithRequesterInRoom, rooms, runDevUtilityCommand, setPlayerColourInRoom, setSpectatorOverride, setTimerForRoom, setTurnInRoom, spectateRoom, tickAllRoomClocks, tickGameClock } from "./rooms.js";
+import { addPieceToRoom, appendChatMessage, cancelQuickMatch, createDevMatch, createRoom, endMatchByDev, findPlayersByName, forfeitGame, getDetailedRoomLines, getLegalMovesForSocket, getOpenMatches, getPlayerCountSnapshot, getRoomSnapshot, hasDeveloperMoveOverride, joinRoom, leaveCurrentRooms, listPiecesInRoom, removePieceFromRoom, removeSocketFromRooms, replacePlayerWithBotInRoom, quickMatch, replacePlayerWithRequesterInRoom, rooms, runDevUtilityCommand, setPlayerColourInRoom, setSpectatorOverride, setTimerForRoom, setTurnInRoom, spectateRoom, tickAllRoomClocks, tickGameClock } from "./rooms.js";
 import { attemptLegalMove } from "./rules/check.js";
 import { chooseAIMove, evaluateAIPosition, isAITurn, runAIMove, scoreAICandidates } from "./rules/ai.js";
 import { createHash, pbkdf2Sync, timingSafeEqual } from "crypto";
@@ -63,6 +63,35 @@ io.on("connection", (socket) => {
     socket.emit("roomJoined", { roomCode: result.game.roomCode, color: result.color, role: result.role, game: result.game });
     io.to(result.game.roomCode).emit("gameState", result.game);
     scheduleAIMoveIfNeeded(result.game);
+  });
+
+
+  socket.on("quickMatch", ({ name, variant, timeControl, scope } = {}) => {
+    const result = quickMatch(socket, name, { variant, timeControl, scope });
+    if (!result.ok) {
+      socket.emit("matchmakingError", result.reason || "Quick match failed.");
+      return;
+    }
+
+    socket.emit("roomJoined", {
+      roomCode: result.roomCode || result.game.roomCode,
+      color: result.color,
+      role: result.role,
+      game: result.game
+    });
+    socket.emit("matchmakingStatus", {
+      searching: result.created && !result.matched,
+      matched: result.matched,
+      roomCode: result.roomCode || result.game.roomCode,
+      scope: result.scope
+    });
+    io.to(result.game.roomCode).emit("gameState", result.game);
+    scheduleAIMoveIfNeeded(result.game);
+  });
+
+  socket.on("cancelQuickMatch", () => {
+    const result = cancelQuickMatch(socket.id);
+    socket.emit("matchmakingStatus", { searching: false, cancelled: result.ok });
   });
 
   socket.on("selectPiece", ({ roomCode, pieceId } = {}) => {

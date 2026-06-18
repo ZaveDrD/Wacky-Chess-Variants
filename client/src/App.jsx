@@ -30,6 +30,8 @@ export default function App() {
   const [selectedTimeControl, setSelectedTimeControl] = useState(localStorage.getItem("selectedTimeControl") || "rapid");
   const [selectedGameMode, setSelectedGameMode] = useState(localStorage.getItem("selectedGameMode") || "online");
   const [selectedAIDifficulty, setSelectedAIDifficulty] = useState(localStorage.getItem("selectedAIDifficulty") || "medium");
+  const [matchmakingScope, setMatchmakingScope] = useState(localStorage.getItem("matchmakingScope") || "selected");
+  const [matchmakingSearching, setMatchmakingSearching] = useState(false);
   const [game, setGame] = useState(null);
   const [view, setView] = useState("XZ");
   const [layer, setLayer] = useState(0);
@@ -71,6 +73,7 @@ export default function App() {
       setReviewIndex(0);
       setDismissedGameOver(false);
       setShowForfeitConfirm(false);
+      setMatchmakingSearching(false);
       setNotice(`Room created: ${newRoomCode}`);
       if (newGame.variant !== "normal") { setShowVariantGuide(true); setGuideStep(0); }
     });
@@ -87,6 +90,7 @@ export default function App() {
       setReviewIndex(0);
       setDismissedGameOver(false);
       setShowForfeitConfirm(false);
+      setMatchmakingSearching(false);
       setNotice(playerColor === "spectator" ? `Spectating room: ${newRoomCode}` : `Joined room: ${newRoomCode}`);
       if (newGame.variant !== "normal") { setShowVariantGuide(true); setGuideStep(0); }
     });
@@ -114,6 +118,17 @@ export default function App() {
     });
 
     socket.on("joinError", (message) => setNotice(message));
+    socket.on("matchmakingError", (message) => { setMatchmakingSearching(false); setNotice(message); });
+    socket.on("matchmakingStatus", (status = {}) => {
+      setMatchmakingSearching(Boolean(status.searching));
+      if (status.searching) {
+        setNotice(status.scope === "any" ? "Searching any public match..." : "Searching selected match...");
+      } else if (status.matched) {
+        setNotice(`Matched in room ${status.roomCode}.`);
+      } else if (status.cancelled) {
+        setNotice("Quick match search cancelled.");
+      }
+    });
     socket.on("invalidMove", (message) => setNotice(message));
     socket.on("chatError", (message) => setNotice(message || UI_TEXT.notices.chatFailed));
     socket.on("devCommandResult", (result = {}) => {
@@ -135,6 +150,8 @@ export default function App() {
       socket.off("roomJoined");
       socket.off("gameState");
       socket.off("joinError");
+      socket.off("matchmakingError");
+      socket.off("matchmakingStatus");
       socket.off("invalidMove");
       socket.off("chatError");
       socket.off("devCommandResult");
@@ -390,6 +407,7 @@ export default function App() {
     localStorage.setItem("selectedTimeControl", selectedTimeControl);
     localStorage.setItem("selectedGameMode", selectedGameMode);
     localStorage.setItem("selectedAIDifficulty", selectedAIDifficulty);
+    localStorage.setItem("matchmakingScope", matchmakingScope);
     return clean;
   }
 
@@ -407,6 +425,24 @@ export default function App() {
     socket.emit("joinRoom", { roomCode: roomInput.trim().toUpperCase(), name: saveName() });
   }
 
+  function quickMatch() {
+    const cleanName = saveName();
+    setMatchmakingSearching(true);
+    setNotice(matchmakingScope === "any" ? "Searching any public match..." : "Searching selected match...");
+    socket.emit("quickMatch", {
+      name: cleanName,
+      variant: selectedVariant,
+      timeControl: selectedTimeControl,
+      scope: matchmakingScope
+    });
+  }
+
+  function cancelQuickMatch() {
+    socket.emit("cancelQuickMatch");
+    setMatchmakingSearching(false);
+    setNotice("Cancelling quick match search...");
+  }
+
   function returnHome() {
     setGame(null);
     setRoomCode("");
@@ -420,6 +456,7 @@ export default function App() {
     setReviewIndex(0);
     setDismissedGameOver(false);
     setShowForfeitConfirm(false);
+    setMatchmakingSearching(false);
   }
 
   function startNewRoom() {
@@ -529,58 +566,77 @@ export default function App() {
     return (
       <main className="app lobby gallery-lobby">
         <div className="lobby-chess-bg" aria-hidden="true" />
-        <section className="gallery-title-wrap">
+        <section className="gallery-title-wrap compact-gallery-title">
           <h1 className="gallery-title">{UI_TEXT.siteTitle}</h1>
         </section>
-        <section className="lobby-card gallery-card">
-          <label>
-            {UI_TEXT.lobby.variantLabel}
-            <select value={selectedVariant} onChange={(event) => setSelectedVariant(event.target.value)}>
-              {VARIANT_OPTIONS.map((variant) => (
-                <option key={variant.id} value={variant.id}>{variant.label}</option>
-              ))}
-            </select>
-          </label>
+        <section className="lobby-card gallery-card compact-lobby-card">
+          <div className="lobby-grid">
+            <label>
+              {UI_TEXT.lobby.variantLabel}
+              <select value={selectedVariant} onChange={(event) => setSelectedVariant(event.target.value)}>
+                {VARIANT_OPTIONS.map((variant) => (
+                  <option key={variant.id} value={variant.id}>{variant.label}</option>
+                ))}
+              </select>
+            </label>
 
-          <p className="subtle variant-subtitle">{UI_TEXT.variants[selectedVariant]?.subtitle}</p>
-
-          <div className="selection-block">
-            <span className="selection-label">{UI_TEXT.lobby.gameModeLabel}</span>
-            <div className="time-control-group mode-control-group" aria-label={UI_TEXT.lobby.gameModeLabel}>
-              {GAME_MODE_OPTIONS.map((mode) => (
-                <button
-                  key={mode.id}
-                  className={selectedGameMode === mode.id ? "active" : ""}
-                  type="button"
-                  onClick={() => setSelectedGameMode(mode.id)}
-                >
-                  {mode.label}
-                </button>
-              ))}
-            </div>
+            <label>
+              {UI_TEXT.lobby.nameLabel}
+              <input value={name} onChange={(event) => setName(event.target.value)} placeholder={UI_TEXT.lobby.namePlaceholder} />
+            </label>
           </div>
 
-          {selectedGameMode === "ai" && (
-            <div className="selection-block">
-              <span className="selection-label">{UI_TEXT.lobby.aiDifficultyLabel}</span>
-              <div className="time-control-group ai-difficulty-group" aria-label={UI_TEXT.lobby.aiDifficultyLabel}>
-                {AI_DIFFICULTY_OPTIONS.map((difficulty) => (
+          <p className="subtle variant-subtitle compact-subtitle">{UI_TEXT.variants[selectedVariant]?.subtitle}</p>
+
+          <div className="lobby-grid">
+            <div className="selection-block compact-selection">
+              <span className="selection-label">{UI_TEXT.lobby.gameModeLabel}</span>
+              <div className="time-control-group mode-control-group compact-toggle-group" aria-label={UI_TEXT.lobby.gameModeLabel}>
+                {GAME_MODE_OPTIONS.map((mode) => (
                   <button
-                    key={difficulty.id}
-                    className={selectedAIDifficulty === difficulty.id ? "active" : ""}
+                    key={mode.id}
+                    className={selectedGameMode === mode.id ? "active" : ""}
                     type="button"
-                    onClick={() => setSelectedAIDifficulty(difficulty.id)}
+                    onClick={() => setSelectedGameMode(mode.id)}
                   >
-                    {difficulty.label}
+                    {mode.label}
                   </button>
                 ))}
               </div>
             </div>
-          )}
 
-          <div className="selection-block">
+            {selectedGameMode === "ai" ? (
+              <div className="selection-block compact-selection">
+                <span className="selection-label">{UI_TEXT.lobby.aiDifficultyLabel}</span>
+                <div className="time-control-group ai-difficulty-group compact-toggle-group" aria-label={UI_TEXT.lobby.aiDifficultyLabel}>
+                  {AI_DIFFICULTY_OPTIONS.map((difficulty) => (
+                    <button
+                      key={difficulty.id}
+                      className={selectedAIDifficulty === difficulty.id ? "active" : ""}
+                      type="button"
+                      onClick={() => setSelectedAIDifficulty(difficulty.id)}
+                    >
+                      {difficulty.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="selection-block compact-selection matchmaking-scope-block">
+                <span className="selection-label">Queue Scope</span>
+                <label className="queue-scope-select">
+                  <select value={matchmakingScope} onChange={(event) => setMatchmakingScope(event.target.value)}>
+                    <option value="selected">Selected variant + time</option>
+                    <option value="any">Any public match</option>
+                  </select>
+                </label>
+              </div>
+            )}
+          </div>
+
+          <div className="selection-block compact-selection">
             <span className="selection-label">{UI_TEXT.lobby.timeControlLabel}</span>
-            <div className="time-control-group" aria-label={UI_TEXT.lobby.timeControlLabel}>
+            <div className="time-control-group compact-toggle-group" aria-label={UI_TEXT.lobby.timeControlLabel}>
               {TIME_CONTROL_OPTIONS.map((control) => (
                 <button
                   key={control.id}
@@ -594,14 +650,21 @@ export default function App() {
             </div>
           </div>
 
-          <label>
-            {UI_TEXT.lobby.nameLabel}
-            <input value={name} onChange={(event) => setName(event.target.value)} placeholder={UI_TEXT.lobby.namePlaceholder} />
-          </label>
+          {selectedGameMode === "ai" ? (
+            <button className="primary main-action-button" onClick={() => createRoom()}>{UI_TEXT.lobby.hostAIButton}</button>
+          ) : (
+            <div className="online-action-grid">
+              <button
+                className="primary main-action-button"
+                onClick={matchmakingSearching ? cancelQuickMatch : quickMatch}
+              >
+                {matchmakingSearching ? UI_TEXT.lobby.cancelSearchButton : UI_TEXT.lobby.findMatchButton}
+              </button>
+              <button className="secondary-action-button" onClick={() => createRoom({ gameMode: "online" })}>{UI_TEXT.lobby.hostPrivateButton}</button>
+            </div>
+          )}
 
-          <button className="primary" onClick={() => createRoom()}>{selectedGameMode === "ai" ? UI_TEXT.lobby.hostAIButton : UI_TEXT.lobby.hostButton}</button>
-
-          <div className="join-row">
+          <div className="join-row compact-join-row">
             <input
               value={roomInput}
               onChange={(event) => setRoomInput(event.target.value.toUpperCase())}
@@ -1081,17 +1144,25 @@ function formatClock(ms) {
 }
 
 function GameChat({ chat, draft, onDraftChange, onSend, onForfeit, canForfeit }) {
+  const chatMessagesRef = useRef(null);
+
+  useEffect(() => {
+    const node = chatMessagesRef.current;
+    if (!node) return;
+    node.scrollTop = node.scrollHeight;
+  }, [chat.length]);
+
   return (
     <section className="game-chat-panel" aria-label={UI_TEXT.headings.chat}>
       <div className="game-chat-header">
         <h2>{UI_TEXT.headings.chat}</h2>
         {canForfeit && <button className="danger-button forfeit-button" type="button" onClick={onForfeit}>{UI_TEXT.buttons.forfeit}</button>}
       </div>
-      <div className="chat-messages" aria-live="polite">
+      <div className="chat-messages" ref={chatMessagesRef} aria-live="polite">
         {chat.length === 0 ? (
           <p className="chat-empty">{UI_TEXT.notices.noChatYet}</p>
         ) : (
-          chat.slice(-40).map((message, index) => (
+          chat.slice(-80).map((message, index) => (
             <div key={message.id} className={`chat-line ${message.color} ${index % 2 === 0 ? "even" : "odd"}`}>
               <span className="chat-prefix">[{formatChatTime(message.time)}] [{message.name}]:</span>
               <span className="chat-body">{message.body}</span>
