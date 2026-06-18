@@ -3,7 +3,7 @@ services:
     name: wacky-chess-variants
     runtime: node
     plan: free
-    buildCommand: npm install && npm run build
+    buildCommand: npm install --workspaces=false && npm --prefix client install && npm --prefix client run build
     startCommand: npm start
     healthCheckPath: /health
     envVars:

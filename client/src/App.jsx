@@ -68,13 +68,17 @@ export default function App() {
     });
 
     socket.on("gameState", (newGame) => {
-      setGame(newGame);
+      setGame((previousGame) => {
+        if (shouldClearLocalSelection(previousGame, newGame)) {
+          setSelectedPieceId(null);
+          setLegalMoves([]);
+        }
+        return newGame;
+      });
       if (newGame.variant === "normal") {
         setView("XZ");
         setLayer(0);
       }
-      setSelectedPieceId(null);
-      setLegalMoves([]);
       setDismissedGameOver(false);
       if (newGame.status === "finished" || newGame.status === "abandoned" || newGame.check) {
         setNotice(newGame.message || UI_TEXT.notices.gameUpdated);
@@ -903,6 +907,24 @@ function key(coord) {
 
 function capitalise(value) {
   return String(value || "").slice(0, 1).toUpperCase() + String(value || "").slice(1);
+}
+
+function shouldClearLocalSelection(previousGame, nextGame) {
+  if (!previousGame || !nextGame) return true;
+  if (previousGame.roomCode !== nextGame.roomCode) return true;
+  if (previousGame.variant !== nextGame.variant) return true;
+  if (previousGame.status !== nextGame.status) return true;
+  if (previousGame.turn !== nextGame.turn) return true;
+
+  const previousMoves = previousGame.moveHistory?.length || 0;
+  const nextMoves = nextGame.moveHistory?.length || 0;
+  if (previousMoves !== nextMoves) return true;
+
+  const previousPieces = previousGame.pieces?.length || 0;
+  const nextPieces = nextGame.pieces?.length || 0;
+  if (previousPieces !== nextPieces) return true;
+
+  return false;
 }
 
 function isTurnOnlyMessage(message) {
