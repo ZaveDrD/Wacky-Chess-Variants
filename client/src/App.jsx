@@ -898,21 +898,16 @@ function DevConsole({ open, input, lines, unlocked, history, historyIndex, onHis
 
 function VariantGuideModal({ step, onStep, onClose }) {
   const steps = [
-    { title: "1. Choose a slice", body: "Pick XZ, XY, or YZ to look at one chess-board plane.", art: "planes" },
-    { title: "2. Scroll layers", body: "Wheel over the board to flick through stacked layers.", art: "layers" },
-    { title: "3. Check ISO", body: "Use ISO view when you need to understand where pieces sit in 3D.", art: "iso" },
-    { title: "4. Move in one plane", body: "Pieces move like normal chess, but each move stays inside one plane.", art: "move" }
+    { title: "1. Choose a slice", body: "Pick XZ, XY, or YZ to rotate the board into the slice you want.", art: "planes" },
+    { title: "2. Scroll layers", body: "Scroll to flick through the stacked layers until the slice you want comes to the front.", art: "layers" },
+    { title: "3. Check ISO", body: "Open ISO to see the full 3D position and check which axis the pieces line up on.", art: "iso" },
+    { title: "4. Move in one plane", body: "Every move stays inside one plane. A bishop can move diagonally across a board, but not between boards.", art: "move" }
   ];
   const current = steps[Math.min(step, steps.length - 1)];
   return (
     <div className="modal-backdrop tutorial-backdrop">
       <section className="modal-card tutorial-card">
-        <div className="tutorial-art" data-art={current.art}>
-          <span className="tutorial-cube a" />
-          <span className="tutorial-cube b" />
-          <span className="tutorial-cube c" />
-          <span className="tutorial-arrow" />
-        </div>
+        <TutorialArt art={current.art} />
         <h2>{current.title}</h2>
         <p>{current.body}</p>
         <div className="tutorial-dots">
@@ -928,6 +923,87 @@ function VariantGuideModal({ step, onStep, onClose }) {
           <button type="button" onClick={onClose}>Close</button>
         </div>
       </section>
+    </div>
+  );
+}
+
+function TutorialArt({ art }) {
+  if (art === "planes") {
+    return (
+      <div className="tutorial-art tutorial-planes" data-art={art}>
+        {[
+          { label: "XZ", className: "xz" },
+          { label: "XY", className: "xy" },
+          { label: "YZ", className: "yz" }
+        ].map((plane) => (
+          <div key={plane.label} className={`tutorial-plane-card ${plane.className}`}>
+            <div className="tutorial-plane-label">{plane.label}</div>
+            <div className="tutorial-mini-board">
+              {Array.from({ length: 16 }).map((_, index) => (
+                <span key={index} className={`cell ${index % 2 === Math.floor(index / 4) % 2 ? "light" : "dark"}`} />
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  if (art === "layers") {
+    return (
+      <div className="tutorial-art tutorial-layers" data-art={art}>
+        <div className="tutorial-layer-stack">
+          <span className="layer-card card-1" />
+          <span className="layer-card card-2" />
+          <span className="layer-card card-3" />
+          <span className="layer-card card-4" />
+        </div>
+        <div className="tutorial-wheel-block">
+          <div className="tutorial-wheel">
+            <span className="wheel-notch" />
+          </div>
+          <div className="tutorial-scroll-arrows">
+            <span>↑</span>
+            <span>↓</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (art === "iso") {
+    return (
+      <div className="tutorial-art tutorial-iso" data-art={art}>
+        <div className="tutorial-iso-grid">
+          {Array.from({ length: 9 }).map((_, index) => <span key={index} className="iso-tile" />)}
+        </div>
+        <span className="tutorial-iso-piece piece-a" />
+        <span className="tutorial-iso-piece piece-b" />
+        <span className="tutorial-orbit orbit-a" />
+        <span className="tutorial-orbit orbit-b" />
+        <span className="tutorial-axis axis-x">X</span>
+        <span className="tutorial-axis axis-y">Y</span>
+        <span className="tutorial-axis axis-z">Z</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="tutorial-art tutorial-move" data-art={art}>
+      <div className="tutorial-bishop-board">
+        {Array.from({ length: 25 }).map((_, index) => (
+          <span key={index} className={`cell ${index % 2 === Math.floor(index / 5) % 2 ? "light" : "dark"}`} />
+        ))}
+        <span className="tutorial-bishop-piece">♗</span>
+        <span className="tutorial-bishop-trail trail-1" />
+        <span className="tutorial-bishop-trail trail-2" />
+        <span className="tutorial-bishop-trail trail-3" />
+      </div>
+      <div className="tutorial-no-plane-hop">
+        <span className="no-hop-board" />
+        <span className="no-hop-board back" />
+        <span className="no-hop-cross">✕</span>
+      </div>
     </div>
   );
 }

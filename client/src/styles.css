@@ -1972,15 +1972,18 @@ select {
 .variant-info-button {
   display: inline-grid;
   place-items: center;
-  width: 22px;
-  height: 22px;
+  width: 18px;
+  height: 18px;
   border-radius: 999px;
   margin-left: 8px;
+  transform: translateY(2px);
   padding: 0;
   border: 1px solid rgba(255,255,255,0.38);
   background: rgba(255,255,255,0.12);
   color: #f7f7f2;
-  font-style: italic;
+  font-size: 11px;
+  line-height: 1;
+  font-style: normal;
   font-weight: 800;
   cursor: pointer;
 }
@@ -1988,55 +1991,262 @@ select {
   animation: modalFadeIn 160ms ease-out both;
 }
 .tutorial-card {
-  max-width: 520px;
+  max-width: 560px;
   text-align: center;
   animation: modalPop 180ms ease-out both;
 }
 .tutorial-art {
   position: relative;
-  height: 190px;
+  height: 220px;
   margin: 4px auto 16px;
   border-radius: 22px;
   overflow: hidden;
-  background: radial-gradient(circle at 30% 15%, rgba(118,150,86,0.34), transparent 28%), linear-gradient(135deg, rgba(255,255,255,0.12), rgba(0,0,0,0.28));
+  background: radial-gradient(circle at 25% 10%, rgba(118,150,86,0.32), transparent 24%), linear-gradient(140deg, rgba(255,255,255,0.12), rgba(0,0,0,0.28));
   border: 1px solid rgba(255,255,255,0.16);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.08);
 }
-.tutorial-cube {
+.tutorial-planes {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  padding: 18px;
+}
+.tutorial-plane-card {
+  width: 140px;
+  height: 168px;
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(8,16,24,0.55), rgba(16,25,35,0.9));
+  border: 1px solid rgba(255,255,255,0.12);
+  box-shadow: 0 18px 26px rgba(0,0,0,0.18);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+.tutorial-plane-card.xz { transform: rotate(-7deg); }
+.tutorial-plane-card.xy { transform: translateY(-8px); }
+.tutorial-plane-card.yz { transform: rotate(7deg); }
+.tutorial-plane-label {
+  font-size: 0.74rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.85);
+  margin-bottom: 10px;
+}
+.tutorial-mini-board,
+.tutorial-bishop-board {
+  display: grid;
+  gap: 2px;
+  position: relative;
+}
+.tutorial-mini-board {
+  grid-template-columns: repeat(4, 1fr);
+  width: 84px;
+  height: 84px;
+}
+.tutorial-mini-board .cell,
+.tutorial-bishop-board .cell {
+  border-radius: 3px;
+}
+.tutorial-mini-board .cell.light,
+.tutorial-bishop-board .cell.light,
+.iso-tile:nth-child(odd) {
+  background: #eeeed2;
+}
+.tutorial-mini-board .cell.dark,
+.tutorial-bishop-board .cell.dark,
+.iso-tile:nth-child(even) {
+  background: #769656;
+}
+.tutorial-layers {
+  display: flex;
+  align-items: center;
+  justify-content: space-evenly;
+  padding: 18px 28px;
+}
+.tutorial-layer-stack {
+  position: relative;
+  width: 255px;
+  height: 150px;
+}
+.layer-card {
   position: absolute;
-  width: 68px;
-  height: 68px;
-  transform: rotateX(58deg) rotateZ(45deg);
-  border-radius: 10px;
-  background: linear-gradient(135deg, rgba(238,238,210,0.95), rgba(118,150,86,0.88));
-  box-shadow: 0 12px 26px rgba(0,0,0,0.26);
-  animation: floatTile 2.6s ease-in-out infinite;
+  left: 18px;
+  width: 190px;
+  height: 110px;
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,0.14);
+  background: linear-gradient(135deg, rgba(238,238,210,0.92), rgba(118,150,86,0.88));
+  box-shadow: 0 14px 24px rgba(0,0,0,0.24);
 }
-.tutorial-cube.a { left: 120px; top: 72px; }
-.tutorial-cube.b { left: 188px; top: 50px; animation-delay: 0.18s; opacity: 0.75; }
-.tutorial-cube.c { left: 256px; top: 28px; animation-delay: 0.32s; opacity: 0.55; }
-.tutorial-arrow {
-  position: absolute;
-  width: 92px;
-  height: 8px;
-  border-radius: 999px;
-  left: 214px;
-  top: 108px;
-  background: #facc15;
-  transform: rotate(-18deg);
-  box-shadow: 0 0 18px rgba(250,204,21,0.6);
-  animation: pulseArrow 1.3s ease-in-out infinite;
-}
-.tutorial-arrow::after {
+.layer-card::before {
   content: "";
   position: absolute;
-  right: -2px;
-  top: -7px;
-  border-left: 18px solid #facc15;
-  border-top: 11px solid transparent;
-  border-bottom: 11px solid transparent;
+  inset: 12px;
+  border-radius: 10px;
+  background-image: linear-gradient(90deg, rgba(255,255,255,0.2) 8%, transparent 8%), linear-gradient(rgba(255,255,255,0.2) 8%, transparent 8%);
+  background-size: 25% 25%;
 }
-.tutorial-art[data-art="iso"] .tutorial-cube { transform: rotateX(60deg) rotateZ(45deg) scale(1.12); }
-.tutorial-art[data-art="move"] .tutorial-arrow { left: 150px; top: 92px; width: 170px; transform: rotate(0deg); }
+.card-1 { top: 28px; opacity: 0.28; transform: translate(42px, 20px) scale(0.9); }
+.card-2 { top: 18px; opacity: 0.45; transform: translate(28px, 14px) scale(0.94); }
+.card-3 { top: 8px; opacity: 0.65; transform: translate(14px, 8px) scale(0.97); }
+.card-4 { top: 0; animation: flickLayer 1.8s ease-in-out infinite; }
+.tutorial-wheel-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+.tutorial-wheel {
+  width: 58px;
+  height: 88px;
+  border-radius: 26px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.18), rgba(0,0,0,0.22));
+  border: 1px solid rgba(255,255,255,0.18);
+  position: relative;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.05);
+}
+.wheel-notch {
+  position: absolute;
+  left: 50%;
+  top: 18px;
+  width: 12px;
+  height: 28px;
+  border-radius: 999px;
+  transform: translateX(-50%);
+  background: rgba(255,255,255,0.75);
+  animation: wheelSpin 1.8s ease-in-out infinite;
+}
+.tutorial-scroll-arrows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 22px;
+  color: #facc15;
+}
+.tutorial-iso {
+  display: grid;
+  place-items: center;
+}
+.tutorial-iso-grid {
+  width: 140px;
+  height: 140px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  transform: rotate(45deg) skew(-10deg, -10deg);
+}
+.iso-tile {
+  border-radius: 4px;
+  box-shadow: 0 6px 12px rgba(0,0,0,0.15);
+}
+.tutorial-iso-piece {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  border-radius: 7px;
+  box-shadow: 0 8px 12px rgba(0,0,0,0.18);
+}
+.piece-a { background: #fb7185; left: 230px; top: 98px; }
+.piece-b { background: #67e8f9; left: 305px; top: 68px; }
+.tutorial-orbit {
+  position: absolute;
+  border: 2px dashed rgba(250,204,21,0.72);
+  border-radius: 999px;
+}
+.orbit-a { width: 200px; height: 120px; }
+.orbit-b { width: 160px; height: 90px; transform: rotate(-24deg); }
+.tutorial-axis {
+  position: absolute;
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: #f7f7f2;
+  background: rgba(8,16,24,0.54);
+  border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 999px;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+}
+.axis-x { left: 174px; top: 150px; }
+.axis-y { left: 275px; top: 32px; }
+.axis-z { left: 360px; top: 116px; }
+.tutorial-move {
+  display: flex;
+  align-items: center;
+  justify-content: space-evenly;
+  padding: 14px 20px;
+}
+.tutorial-bishop-board {
+  grid-template-columns: repeat(5, 1fr);
+  width: 150px;
+  height: 150px;
+  padding: 10px;
+  border-radius: 18px;
+  background: rgba(8,16,24,0.48);
+  border: 1px solid rgba(255,255,255,0.12);
+}
+.tutorial-bishop-piece {
+  position: absolute;
+  left: 20px;
+  bottom: 22px;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  font-size: 28px;
+  color: #f7f7f2;
+  animation: bishopMove 2s ease-in-out infinite;
+}
+.tutorial-bishop-trail {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: rgba(250,204,21,0.88);
+  box-shadow: 0 0 12px rgba(250,204,21,0.45);
+}
+.trail-1 { left: 48px; bottom: 48px; animation: trailPulse 2s 0.15s ease-in-out infinite; }
+.trail-2 { left: 74px; bottom: 74px; animation: trailPulse 2s 0.3s ease-in-out infinite; }
+.trail-3 { left: 102px; bottom: 102px; animation: trailPulse 2s 0.45s ease-in-out infinite; }
+.tutorial-no-plane-hop {
+  position: relative;
+  width: 170px;
+  height: 150px;
+}
+.no-hop-board {
+  position: absolute;
+  width: 110px;
+  height: 82px;
+  left: 18px;
+  top: 40px;
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,0.14);
+  background: linear-gradient(135deg, rgba(238,238,210,0.85), rgba(118,150,86,0.8));
+  box-shadow: 0 14px 20px rgba(0,0,0,0.2);
+}
+.no-hop-board.back {
+  left: 44px;
+  top: 18px;
+  opacity: 0.45;
+}
+.no-hop-cross {
+  position: absolute;
+  right: 14px;
+  top: 44px;
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: rgba(239,68,68,0.92);
+  color: #fff;
+  font-size: 24px;
+  font-weight: 900;
+  box-shadow: 0 10px 22px rgba(239,68,68,0.3);
+}
 .tutorial-dots {
   display: flex;
   justify-content: center;
@@ -2052,13 +2262,58 @@ select {
   background: rgba(255,255,255,0.25);
 }
 .tutorial-dots button.active { background: #facc15; }
-@keyframes floatTile {
-  0%, 100% { translate: 0 0; }
-  50% { translate: 0 -8px; }
+@keyframes flickLayer {
+  0%, 20% { transform: translate(0, 0) scale(1); opacity: 1; }
+  45% { transform: translate(14px, -10px) scale(1.02); opacity: 1; }
+  60% { transform: translate(38px, 30px) scale(0.9); opacity: 0.3; }
+  100% { transform: translate(0, 0) scale(1); opacity: 1; }
 }
-@keyframes pulseArrow {
-  0%, 100% { opacity: 0.72; scale: 0.98; }
-  50% { opacity: 1; scale: 1.04; }
+@keyframes wheelSpin {
+  0%, 100% { transform: translateX(-50%) translateY(0); }
+  50% { transform: translateX(-50%) translateY(32px); }
+}
+@keyframes bishopMove {
+  0%, 100% { transform: translate(0, 0); }
+  55% { transform: translate(82px, -82px); }
+}
+@keyframes trailPulse {
+  0%, 100% { opacity: 0.25; scale: 0.8; }
+  45% { opacity: 1; scale: 1; }
+}
+
+
+@media (max-width: 640px) {
+  .tutorial-card {
+    max-width: min(100%, 94vw);
+  }
+
+  .tutorial-art {
+    height: 250px;
+  }
+
+  .tutorial-planes,
+  .tutorial-move,
+  .tutorial-layers {
+    flex-direction: column;
+    gap: 12px;
+    padding: 14px;
+  }
+
+  .tutorial-plane-card {
+    width: min(100%, 130px);
+    height: 126px;
+  }
+
+  .tutorial-layer-stack {
+    width: 210px;
+    height: 128px;
+  }
+
+  .piece-a { left: 164px; top: 118px; }
+  .piece-b { left: 220px; top: 94px; }
+  .axis-x { left: 90px; top: 178px; }
+  .axis-y { left: 168px; top: 42px; }
+  .axis-z { left: 250px; top: 132px; }
 }
 
 /* Responsive fit patch: prevent cropped controls on tablets, phones, and short laptop screens. */
