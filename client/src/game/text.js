@@ -17,9 +17,8 @@ export const UI_TEXT = {
       subtitle: "8×8×8 multiplayer chess with plane-based movement.",
       rules: [
         "Pieces move within one plane per move.",
-        "Checkmate and stalemate are enforced.",
         "Castling is only on the original board.",
-        "En passant is only for standard z-axis double pawn moves."
+        "Checkmate opponent to win."
       ]
     },
     normal: {
@@ -27,9 +26,7 @@ export const UI_TEXT = {
       subtitle: "Standard chess on one 8×8 board.",
       rules: [
         "Pieces use standard chess movement.",
-        "Checkmate and stalemate are enforced.",
-        "Castling, en passant, and promotion are enabled.",
-        "No 3D plane or layer movement is used."
+        "Checkmate opponent to win."
       ]
     }
   },
@@ -51,7 +48,7 @@ export const UI_TEXT = {
   emptyStates: {
     noPieceSelected: "No Piece Selected.",
     noMovesYet: "No Moves Yet.",
-    noSpectators: "No spectators."
+    noSpectators: "No Spectators."
   },
   buttons: {
     returnHome: "Home",
