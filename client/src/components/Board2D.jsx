@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { COLORS, PIECE_SYMBOLS } from "../game/config.js";
+import { COLORS, PIECE_ICONS } from "../game/config.js";
 
 const WHEEL_THRESHOLD = 32;
 
@@ -144,7 +144,7 @@ function LayerCard({
               className={`piece ${piece.color}`}
               style={{ color: piece.color === "white" ? COLORS.whitePiece : COLORS.blackPiece }}
             >
-              {PIECE_SYMBOLS[piece.color][piece.type]}
+              <img src={PIECE_ICONS[piece.color][piece.type]} alt={`${piece.color} ${piece.type}`} className="piece-icon" draggable="false" />
             </span>
           )}
         </button>

@@ -3403,3 +3403,153 @@ select {
     max-height: none;
   }
 }
+
+
+.piece {
+  display: inline-grid;
+  place-items: center;
+}
+
+.piece-icon,
+.piece-preview-icon {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  user-select: none;
+  pointer-events: none;
+}
+
+.piece-icon {
+  width: clamp(1.75rem, 6.3vw, 4.2rem);
+  height: clamp(1.75rem, 6.3vw, 4.2rem);
+  filter: drop-shadow(0 3px 3px rgba(0, 0, 0, 0.45));
+}
+
+.piece.white .piece-icon,
+.piece-preview.white .piece-preview-icon {
+  filter: drop-shadow(0 0 1px #111) drop-shadow(0 3px 3px rgba(0, 0, 0, 0.45));
+}
+
+.piece.black .piece-icon,
+.piece-preview.black .piece-preview-icon {
+  filter: drop-shadow(0 0 1px rgba(255,255,255,0.8)) drop-shadow(0 3px 3px rgba(0, 0, 0, 0.45));
+}
+
+.piece-preview {
+  display: inline-grid;
+  place-items: center;
+}
+
+.piece-preview-icon {
+  width: 2.3rem;
+  height: 2.3rem;
+}
+
+
+/* Final chat sizing fix: message list fills the whole chat panel instead of staying a small box. */
+.side-panel {
+  min-height: 0;
+}
+
+.game-chat-panel {
+  height: clamp(390px, 52vh, 690px) !important;
+  min-height: clamp(390px, 52vh, 690px) !important;
+  grid-template-rows: auto minmax(0, 1fr) auto !important;
+  align-self: stretch;
+}
+
+.game-chat-panel .chat-messages {
+  height: 100% !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  align-content: initial;
+  gap: 0.45rem;
+}
+
+.game-chat-panel .chat-empty {
+  margin: auto;
+}
+
+@media (max-height: 820px) {
+  .game-chat-panel {
+    height: clamp(300px, 44vh, 470px) !important;
+    min-height: clamp(300px, 44vh, 470px) !important;
+  }
+}
+
+@media (max-width: 900px) {
+  .game-chat-panel {
+    height: 360px !important;
+    min-height: 360px !important;
+  }
+}
+
+/* Final axis label placement: avoid plane-title text and keep labels outside board on desktop. */
+.board-wrap-stacked {
+  padding-left: clamp(1.8rem, 3vw, 2.8rem);
+  padding-right: clamp(1.6rem, 2.4vw, 2.2rem);
+}
+
+.layer-card.active-layer {
+  overflow: visible;
+}
+
+.plane-axis-labels {
+  inset: 0 !important;
+  z-index: 16;
+}
+
+.plane-axis-label {
+  color: rgba(247, 247, 242, 0.58);
+  background: rgba(17, 16, 14, 0.42);
+  border: 1px solid rgba(238, 238, 210, 0.14);
+}
+
+.plane-axis-secondary {
+  left: 0 !important;
+  top: 50% !important;
+  transform: translate(calc(-100% - 0.42rem), -50%) !important;
+}
+
+.plane-axis-primary {
+  right: 0 !important;
+  bottom: 0 !important;
+  transform: translate(38%, 38%) !important;
+}
+
+@media (max-width: 900px) {
+  .board-wrap-stacked {
+    padding-left: clamp(1.05rem, 4vw, 1.45rem);
+    padding-right: clamp(1.05rem, 4vw, 1.45rem);
+  }
+
+  .plane-axis-secondary {
+    left: 0.3rem !important;
+    top: 50% !important;
+    transform: translateY(-50%) !important;
+    background: rgba(17, 16, 14, 0.5);
+  }
+
+  .plane-axis-primary {
+    right: 0.3rem !important;
+    bottom: 0.3rem !important;
+    transform: translate(0, 0) !important;
+    background: rgba(17, 16, 14, 0.5);
+  }
+}
+
+@media (max-width: 520px) {
+  .plane-axis-label {
+    font-size: 0.64rem;
+    padding: 0.15rem 0.28rem;
+  }
+
+  .board-wrap-stacked {
+    padding-left: 0.85rem;
+    padding-right: 0.85rem;
+  }
+}
