@@ -898,10 +898,10 @@ function DevConsole({ open, input, lines, unlocked, history, historyIndex, onHis
 
 function VariantGuideModal({ step, onStep, onClose }) {
   const steps = [
-    { title: "1. Choose a slice", body: "Pick XZ, XY, or YZ to rotate the board into the slice you want.", art: "planes" },
-    { title: "2. Scroll layers", body: "Scroll to flick through the stacked layers until the slice you want comes to the front.", art: "layers" },
-    { title: "3. Check ISO", body: "Open ISO to see the full 3D position and check which axis the pieces line up on.", art: "iso" },
-    { title: "4. Move in one plane", body: "Every move stays inside one plane. A bishop can move diagonally across a board, but not between boards.", art: "move" }
+    { title: "1. Choose a slice", body: "Pick XZ, XY, or YZ. Each button shows a different 2D board slice through the 3D cube.", art: "planes" },
+    { title: "2. Scroll layers", body: "Use the scroll wheel to flick through the stacked layers like sheets of paper.", art: "layers" },
+    { title: "3. Check ISO", body: "Use ISO when you need to see the whole cube and understand where pieces sit in 3D.", art: "iso" },
+    { title: "4. Move in one plane", body: "Pieces move on one board plane at a time. A bishop can move diagonally across a slice, not through the cube.", art: "move" }
   ];
   const current = steps[Math.min(step, steps.length - 1)];
   return (
@@ -930,42 +930,41 @@ function VariantGuideModal({ step, onStep, onClose }) {
 function TutorialArt({ art }) {
   if (art === "planes") {
     return (
-      <div className="tutorial-art tutorial-planes" data-art={art}>
-        {[
-          { label: "XZ", className: "xz" },
-          { label: "XY", className: "xy" },
-          { label: "YZ", className: "yz" }
-        ].map((plane) => (
-          <div key={plane.label} className={`tutorial-plane-card ${plane.className}`}>
-            <div className="tutorial-plane-label">{plane.label}</div>
-            <div className="tutorial-mini-board">
-              {Array.from({ length: 16 }).map((_, index) => (
-                <span key={index} className={`cell ${index % 2 === Math.floor(index / 4) % 2 ? "light" : "dark"}`} />
-              ))}
-            </div>
-          </div>
-        ))}
+      <div className="tutorial-art tutorial-art--planes" data-art={art}>
+        <div className="slice-graphic slice-xz">
+          <span className="slice-label">XZ</span>
+          <span className="slice-plane-board" />
+        </div>
+        <div className="slice-graphic slice-xy">
+          <span className="slice-label">XY</span>
+          <span className="slice-plane-board" />
+        </div>
+        <div className="slice-graphic slice-yz">
+          <span className="slice-label">YZ</span>
+          <span className="slice-plane-board" />
+        </div>
+        <div className="slice-axis-mini">
+          <span className="axis-line axis-x">X</span>
+          <span className="axis-line axis-y">Y</span>
+          <span className="axis-line axis-z">Z</span>
+        </div>
       </div>
     );
   }
 
   if (art === "layers") {
     return (
-      <div className="tutorial-art tutorial-layers" data-art={art}>
-        <div className="tutorial-layer-stack">
-          <span className="layer-card card-1" />
-          <span className="layer-card card-2" />
-          <span className="layer-card card-3" />
-          <span className="layer-card card-4" />
+      <div className="tutorial-art tutorial-art--layers" data-art={art}>
+        <div className="layer-flick-stack">
+          <span className="flick-sheet sheet-1" />
+          <span className="flick-sheet sheet-2" />
+          <span className="flick-sheet sheet-3" />
+          <span className="flick-sheet sheet-top" />
         </div>
-        <div className="tutorial-wheel-block">
-          <div className="tutorial-wheel">
-            <span className="wheel-notch" />
-          </div>
-          <div className="tutorial-scroll-arrows">
-            <span>↑</span>
-            <span>↓</span>
-          </div>
+        <div className="scroll-wheel-graphic">
+          <span className="wheel-slot" />
+          <span className="scroll-arrow up">↑</span>
+          <span className="scroll-arrow down">↓</span>
         </div>
       </div>
     );
@@ -973,36 +972,34 @@ function TutorialArt({ art }) {
 
   if (art === "iso") {
     return (
-      <div className="tutorial-art tutorial-iso" data-art={art}>
-        <div className="tutorial-iso-grid">
-          {Array.from({ length: 9 }).map((_, index) => <span key={index} className="iso-tile" />)}
+      <div className="tutorial-art tutorial-art--iso" data-art={art}>
+        <div className="iso-cube-guide">
+          <span className="cube-floor" />
+          <span className="cube-side cube-side-x" />
+          <span className="cube-side cube-side-y" />
+          <span className="cube-piece cube-piece-a" />
+          <span className="cube-piece cube-piece-b" />
+          <span className="cube-axis cube-axis-x">X</span>
+          <span className="cube-axis cube-axis-y">Y</span>
+          <span className="cube-axis cube-axis-z">Z</span>
         </div>
-        <span className="tutorial-iso-piece piece-a" />
-        <span className="tutorial-iso-piece piece-b" />
-        <span className="tutorial-orbit orbit-a" />
-        <span className="tutorial-orbit orbit-b" />
-        <span className="tutorial-axis axis-x">X</span>
-        <span className="tutorial-axis axis-y">Y</span>
-        <span className="tutorial-axis axis-z">Z</span>
       </div>
     );
   }
 
   return (
-    <div className="tutorial-art tutorial-move" data-art={art}>
-      <div className="tutorial-bishop-board">
-        {Array.from({ length: 25 }).map((_, index) => (
-          <span key={index} className={`cell ${index % 2 === Math.floor(index / 5) % 2 ? "light" : "dark"}`} />
-        ))}
-        <span className="tutorial-bishop-piece">♗</span>
-        <span className="tutorial-bishop-trail trail-1" />
-        <span className="tutorial-bishop-trail trail-2" />
-        <span className="tutorial-bishop-trail trail-3" />
+    <div className="tutorial-art tutorial-art--move" data-art={art}>
+      <div className="bishop-slice-board">
+        {Array.from({ length: 25 }).map((_, index) => <span key={index} className="bishop-cell" />)}
+        <span className="bishop-piece-guide">♗</span>
+        <span className="bishop-path path-a" />
+        <span className="bishop-path path-b" />
+        <span className="bishop-path path-c" />
       </div>
-      <div className="tutorial-no-plane-hop">
-        <span className="no-hop-board" />
-        <span className="no-hop-board back" />
-        <span className="no-hop-cross">✕</span>
+      <div className="no-plane-jump">
+        <span className="jump-board front" />
+        <span className="jump-board back" />
+        <span className="jump-x">×</span>
       </div>
     </div>
   );
