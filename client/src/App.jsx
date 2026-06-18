@@ -16,6 +16,7 @@ import {
 } from "./game/variants.js";
 import { buildReviewTimeline } from "./game/replay.js";
 import { DEV_COMMANDS, DEV_CONSOLE_UNLOCK_SEQUENCE, findDevCommand, getDevCommandHelp, getDevCommandListLines } from "./game/devCommands.js";
+import { playSoundEffect, unlockAudio } from "./game/sound.js";
 
 const VIEWS = ["XZ", "XY", "YZ", "ISO"];
 const REVIEW_PLAY_DELAY_MS = 650;
@@ -55,7 +56,13 @@ export default function App() {
   const [devVisuals, setDevVisuals] = useState({ showCoords: false, highlights: [], ghostMove: null });
   const [showVariantGuide, setShowVariantGuide] = useState(false);
   const [guideStep, setGuideStep] = useState(0);
+  const [soundEnabled, setSoundEnabled] = useState(localStorage.getItem("soundEnabled") !== "false");
+  const [soundVolume, setSoundVolume] = useState(Number(localStorage.getItem("soundVolume") || "0.45"));
+  const [shoutOverlay, setShoutOverlay] = useState(null);
   const devSequenceIndexRef = useRef(0);
+  const previousGameRef = useRef(null);
+  const previousChatLengthRef = useRef(0);
+  const previousClockWarningRef = useRef(null);
 
   useEffect(() => {
     socket.on("connect", () => setNotice(UI_TEXT.notices.connected));
@@ -118,27 +125,39 @@ export default function App() {
     });
 
     socket.on("joinError", (message) => setNotice(message));
-    socket.on("matchmakingError", (message) => { setMatchmakingSearching(false); setNotice(message); });
+    socket.on("matchmakingError", (message) => { setMatchmakingSearching(false); setNotice(message); playSoundEffect("illegal", { enabled: soundEnabled, volume: soundVolume }); });
     socket.on("matchmakingStatus", (status = {}) => {
       setMatchmakingSearching(Boolean(status.searching));
       if (status.searching) {
         setNotice(status.scope === "any" ? "Searching any public match..." : "Searching selected match...");
       } else if (status.matched) {
+        playSoundEffect("matchFound", { enabled: soundEnabled, volume: soundVolume });
         setNotice(`Matched in room ${status.roomCode}.`);
       } else if (status.cancelled) {
         setNotice("Quick match search cancelled.");
       }
     });
-    socket.on("invalidMove", (message) => setNotice(message));
-    socket.on("chatError", (message) => setNotice(message || UI_TEXT.notices.chatFailed));
+    socket.on("invalidMove", (message) => { setNotice(message); playSoundEffect("illegal", { enabled: soundEnabled, volume: soundVolume }); });
+    socket.on("chatError", (message) => { setNotice(message || UI_TEXT.notices.chatFailed); playSoundEffect("illegal", { enabled: soundEnabled, volume: soundVolume }); });
     socket.on("devCommandResult", (result = {}) => {
       if (result.unlocked) setDevConsoleUnlocked(true);
       const lines = result.lines || [result.ok ? "OK" : "Command failed."];
       if (lines.length) appendDevLines(lines.map((line) => result.ok === false ? `! ${line}` : String(line)));
     });
 
+    socket.on("shoutMessage", ({ message, from } = {}) => {
+      const body = String(message || "").trim();
+      if (!body) return;
+      setShoutOverlay({ message: body, from: from || "Developer", id: Date.now() });
+      playSoundEffect("shout", { enabled: soundEnabled, volume: soundVolume });
+      window.setTimeout(() => setShoutOverlay((current) => current?.message === body ? null : current), 4200);
+    });
+
     socket.on("legalMoves", ({ pieceId, legalMoves: moves, reason }) => {
-      if (reason) setNotice(reason);
+      if (reason) {
+        setNotice(reason);
+        playSoundEffect("illegal", { enabled: soundEnabled, volume: soundVolume });
+      }
       setSelectedPieceId(pieceId);
       setLegalMoves(moves || []);
     });
@@ -155,9 +174,10 @@ export default function App() {
       socket.off("invalidMove");
       socket.off("chatError");
       socket.off("devCommandResult");
+      socket.off("shoutMessage");
       socket.off("legalMoves");
     };
-  }, []);
+  }, [soundEnabled, soundVolume]);
 
   useEffect(() => {
     const id = window.setInterval(() => setClockTick(Date.now()), 250);
@@ -206,6 +226,61 @@ export default function App() {
   const activeView = is3DVariant ? view : "XZ";
   const activeLayer = is3DVariant ? layer : 0;
   const hasDevMoveOverride = Boolean(game?.devOverrides?.moveAllPieceSocketIds?.includes(socket.id));
+
+  function playUiSound(type) {
+    playSoundEffect(type, { enabled: soundEnabled, volume: soundVolume });
+  }
+
+  useEffect(() => {
+    localStorage.setItem("soundEnabled", String(soundEnabled));
+  }, [soundEnabled]);
+
+  useEffect(() => {
+    const clamped = Math.min(1, Math.max(0, Number(soundVolume) || 0));
+    localStorage.setItem("soundVolume", String(clamped));
+  }, [soundVolume]);
+
+  useEffect(() => {
+    if (!game) {
+      previousGameRef.current = null;
+      previousChatLengthRef.current = 0;
+      previousClockWarningRef.current = null;
+      return;
+    }
+
+    const previousGame = previousGameRef.current;
+    if (previousGame && previousGame.roomCode === game.roomCode) {
+      const previousMoveCount = previousGame.moveHistory?.length || 0;
+      const nextMoveCount = game.moveHistory?.length || 0;
+      if (nextMoveCount > previousMoveCount) {
+        const lastMove = game.moveHistory?.[nextMoveCount - 1];
+        playUiSound(lastMove?.captured ? "capture" : "move");
+      }
+
+      if (!previousGame.check && game.check) playUiSound("check");
+      if (previousGame.status !== game.status && (game.status === "finished" || game.status === "abandoned")) {
+        playUiSound(game.checkmate ? "checkmate" : "gameOver");
+      }
+
+      const previousChatLength = previousChatLengthRef.current;
+      const nextChatLength = game.chat?.length || 0;
+      if (nextChatLength > previousChatLength) playUiSound("chat");
+
+      if (game.status === "playing" && game.clocks?.[game.turn] != null) {
+        const remaining = getDisplayedClocks(game, Date.now())[game.turn];
+        const warningKey = `${game.roomCode}:${game.turn}:${Math.floor(remaining / 10000)}`;
+        if (remaining > 0 && remaining <= 10000 && warningKey !== previousClockWarningRef.current) {
+          previousClockWarningRef.current = warningKey;
+          playUiSound("timer");
+        }
+      }
+    } else {
+      playUiSound("start");
+    }
+
+    previousGameRef.current = game;
+    previousChatLengthRef.current = game.chat?.length || 0;
+  }, [game, soundEnabled, soundVolume]);
 
   useEffect(() => {
     if (!game || !socket.id) return;
@@ -412,6 +487,7 @@ export default function App() {
   }
 
   function createRoom(override = {}) {
+    unlockAudio();
     socket.emit("createRoom", {
       name: saveName(),
       variant: override.variant || selectedVariant,
@@ -422,10 +498,12 @@ export default function App() {
   }
 
   function joinRoom() {
+    unlockAudio();
     socket.emit("joinRoom", { roomCode: roomInput.trim().toUpperCase(), name: saveName() });
   }
 
   function quickMatch() {
+    unlockAudio();
     const cleanName = saveName();
     setMatchmakingSearching(true);
     setNotice(matchmakingScope === "any" ? "Searching any public match..." : "Searching selected match...");
@@ -491,6 +569,7 @@ export default function App() {
   }
 
   function sendChatMessage(event) {
+    unlockAudio();
     event.preventDefault();
     const body = chatDraft.trim();
     if (!body || !roomCode || reviewMode || gameIsOver) return;
@@ -538,6 +617,7 @@ export default function App() {
   }
 
   function handleSquareClick(coord) {
+    unlockAudio();
     if (reviewMode || !game) return;
     if ((role === "spectator" || color === "spectator") && !hasDevMoveOverride) {
       setNotice(UI_TEXT.notices.spectatorNoMove);
@@ -674,8 +754,18 @@ export default function App() {
             <button onClick={joinRoom}>{UI_TEXT.lobby.joinButton}</button>
           </div>
 
-          <p className="notice">{notice}</p>
+          <div className="lobby-footer-row">
+            <p className="notice">{notice}</p>
+            <SoundControls
+              enabled={soundEnabled}
+              volume={soundVolume}
+              compact
+              onToggle={() => { unlockAudio(); setSoundEnabled((value) => !value); }}
+              onVolume={(value) => { unlockAudio(); setSoundVolume(value); }}
+            />
+          </div>
         </section>
+        {shoutOverlay && <ShoutOverlay message={shoutOverlay.message} from={shoutOverlay.from} />}
         <DevConsole
           open={devConsoleOpen}
           input={devConsoleInput}
@@ -714,6 +804,12 @@ export default function App() {
             <span>{UI_TEXT.labels.turn}: <strong>{game.turn}</strong></span>
           )}
           {game.check && <span className="danger">{game.check} is in check</span>}
+          <SoundControls
+            enabled={soundEnabled}
+            volume={soundVolume}
+            onToggle={() => { unlockAudio(); setSoundEnabled((value) => !value); }}
+            onVolume={(value) => { unlockAudio(); setSoundVolume(value); }}
+          />
         </div>
       </section>
 
@@ -888,6 +984,8 @@ export default function App() {
         />
       )}
 
+      {shoutOverlay && <ShoutOverlay message={shoutOverlay.message} from={shoutOverlay.from} />}
+
       <DevConsole
         open={devConsoleOpen}
         input={devConsoleInput}
@@ -904,6 +1002,38 @@ export default function App() {
   );
 }
 
+
+function SoundControls({ enabled, volume, onToggle, onVolume, compact = false }) {
+  return (
+    <div className={`sound-controls ${compact ? "compact" : ""}`}>
+      <button type="button" onClick={onToggle} title={enabled ? "Sound on" : "Sound off"}>
+        {enabled ? "Sound On" : "Sound Off"}
+      </button>
+      {enabled && (
+        <input
+          type="range"
+          min="0"
+          max="1"
+          step="0.05"
+          value={volume}
+          onChange={(event) => onVolume(Number(event.target.value))}
+          aria-label="Sound volume"
+        />
+      )}
+    </div>
+  );
+}
+
+function ShoutOverlay({ message, from }) {
+  return (
+    <div className="shout-overlay" aria-live="assertive">
+      <div className="shout-card">
+        <span>{from}</span>
+        <strong>{message}</strong>
+      </div>
+    </div>
+  );
+}
 
 function DevConsole({ open, input, lines, unlocked, history, historyIndex, onHistoryIndexChange, onInputChange, onSubmit, onClose }) {
   const inputRef = useRef(null);

@@ -3,7 +3,7 @@ import http from "http";
 import path from "path";
 import { fileURLToPath } from "url";
 import { Server } from "socket.io";
-import { addPieceToRoom, appendChatMessage, cancelQuickMatch, cleanupExpiredRooms, createDevMatch, createRoom, endMatchByDev, findPlayersByName, forfeitGame, getDetailedRoomLines, getLegalMovesForSocket, getOpenMatches, getPlayerCountSnapshot, getRoomSnapshot, hasDeveloperMoveOverride, joinRoom, leaveCurrentRooms, listPiecesInRoom, removePieceFromRoom, removeSocketFromRooms, replacePlayerWithBotInRoom, quickMatch, replacePlayerWithRequesterInRoom, ROOM_CLEANUP_INTERVAL_MS, rooms, runDevUtilityCommand, setPlayerColourInRoom, setSpectatorOverride, setTimerForRoom, setTurnInRoom, spectateRoom, tickAllRoomClocks, tickGameClock } from "./rooms.js";
+import { addPieceToRoom, appendChatMessage, cancelQuickMatch, cleanupExpiredRooms, createDevMatch, createRoom, createRoomShout, endMatchByDev, findPlayersByName, forfeitGame, getDetailedRoomLines, getLegalMovesForSocket, getOpenMatches, getPlayerCountSnapshot, getRoomSnapshot, hasDeveloperMoveOverride, joinRoom, leaveCurrentRooms, listPiecesInRoom, removePieceFromRoom, removeSocketFromRooms, replacePlayerWithBotInRoom, quickMatch, replacePlayerWithRequesterInRoom, ROOM_CLEANUP_INTERVAL_MS, rooms, runDevUtilityCommand, setPlayerColourInRoom, setSpectatorOverride, setTimerForRoom, setTurnInRoom, spectateRoom, tickAllRoomClocks, tickGameClock } from "./rooms.js";
 import { attemptLegalMove } from "./rules/check.js";
 import { chooseAIMove, evaluateAIPosition, isAITurn, runAIMove, scoreAICandidates } from "./rules/ai.js";
 import { createHash, pbkdf2Sync, timingSafeEqual } from "crypto";
@@ -159,6 +159,9 @@ io.on("connection", (socket) => {
     socket.emit("devCommandResult", result?.response || { ok: false, lines: ["Command failed."] });
     if (result?.roomEvent === "roomCreated") socket.emit("roomCreated", result.roomPayload);
     if (result?.roomEvent === "roomJoined") socket.emit("roomJoined", result.roomPayload);
+    if (result?.shoutRoomCode && result?.shoutPayload) {
+      io.to(result.shoutRoomCode).emit("shoutMessage", result.shoutPayload);
+    }
     if (result?.scheduleRoomCode) {
       const game = rooms.get(result.scheduleRoomCode);
       if (game) {
@@ -451,6 +454,17 @@ function handleDevCommand(socket, payload = {}) {
       response: { ok: true, lines: result.lines || ["Turn set."] },
       gameStateRoom: currentRoomCode,
       scheduleRoomCode: currentRoomCode
+    };
+  }
+
+  if (action === "shout") {
+    if (!currentRoomCode) return { response: { ok: false, lines: ["No current room. Use joincode/spectatematch/startmatch first."] } };
+    const result = createRoomShout(currentRoomCode, args.join(" "), name);
+    if (!result.ok) return { response: { ok: false, lines: [result.reason] } };
+    return {
+      response: { ok: true, lines: result.lines || ["Shout sent."] },
+      shoutRoomCode: result.roomCode,
+      shoutPayload: { message: result.message, from: result.from }
     };
   }
 

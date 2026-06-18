@@ -956,6 +956,22 @@ function cleanName(name) {
   return String(name ?? "").trim().slice(0, 24);
 }
 
+
+export function createRoomShout(roomCodeRaw, message, from = "Developer") {
+  const roomCode = String(roomCodeRaw ?? "").trim().toUpperCase();
+  const game = rooms.get(roomCode);
+  if (!game) return { ok: false, reason: "Room not found." };
+  const body = String(message ?? "").trim().slice(0, 160);
+  if (!body) return { ok: false, reason: "Usage: shout [message]" };
+  return {
+    ok: true,
+    roomCode: game.roomCode,
+    message: body,
+    from: cleanName(from) || "Developer",
+    lines: [`Shout sent: ${body}`]
+  };
+}
+
 export function runDevUtilityCommand(roomCodeRaw, action, args = [], requesterSocketId = null, requesterName = "Developer") {
   const roomCode = String(roomCodeRaw ?? "").trim().toUpperCase();
   const game = roomCode ? rooms.get(roomCode) : null;
@@ -1160,6 +1176,29 @@ export function runDevUtilityCommand(roomCodeRaw, action, args = [], requesterSo
   if (action === "mirrorBoard") {
     for (const p of game.pieces) { p.x = 7 - p.x; p.z = 7 - p.z; if (game.variant === "threeD") p.y = 7 - p.y; }
     return { ok: true, game, lines: ["Board mirrored."] };
+  }
+  if (action === "scramble") {
+    const occupied = new Set();
+    for (const piece of game.pieces) {
+      let placed = false;
+      for (let tries = 0; tries < 1000 && !placed; tries += 1) {
+        const loc = {
+          x: Math.floor(Math.random() * 8),
+          y: game.variant === "threeD" ? Math.floor(Math.random() * 8) : 0,
+          z: Math.floor(Math.random() * 8)
+        };
+        const key = `${loc.x},${loc.y},${loc.z}`;
+        if (occupied.has(key)) continue;
+        Object.assign(piece, loc, { hasMoved: true });
+        occupied.add(key);
+        placed = true;
+      }
+    }
+    game.lastMove = null;
+    game.halfmoveClock = 0;
+    if (Array.isArray(game.positionHistory)) game.positionHistory = [];
+    if (game.positionCounts) game.positionCounts = {};
+    return { ok: true, game, lines: [`Scrambled ${game.pieces.length} piece(s).`] };
   }
   if (action === "shuffleBackRank") {
     const pieces = ["rook", "knight", "bishop", "queen", "bishop", "knight", "rook"];

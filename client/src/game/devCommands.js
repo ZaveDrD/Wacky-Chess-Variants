@@ -564,6 +564,7 @@ export const DEV_COMMAND_PARAMETER_DOCS = {
   unlockRoom: [],
   renameRoom: [{ name: "name", required: true, description: "New display name for the current room." }],
   broadcast: [{ name: "message", required: true, description: "System message text to add to the current room chat." }],
+  shout: [{ name: "message", required: true, description: "Large overlay message to display on every screen in the current room." }],
   systemChat: [{ name: "message", required: true, description: "System chat text to add to the current room chat." }],
   listRoomsDetailed: [{ name: "detailed", required: false, description: "Use detailed to request expanded room metadata." }],
   pauseTimer: [],
@@ -594,6 +595,7 @@ export const DEV_COMMAND_PARAMETER_DOCS = {
     { name: "piece", required: true, description: "Piece type to use for all non-king pieces." }
   ],
   mirrorBoard: [],
+  scramble: [],
   shuffleBackRank: [],
   spawnArmy: [
     { name: "colour", required: true, description: "white or black side to spawn pieces for." },
