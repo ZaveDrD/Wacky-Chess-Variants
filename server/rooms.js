@@ -16,9 +16,181 @@ export function createRoom(hostSocket, hostName, options = {}) {
     name: cleanName(hostName) || "White"
   };
 
+  if (game.ai?.enabled) {
+    game.ai.colors = ["black"];
+    game.players.black = {
+      id: `AI:${roomCode}:black`,
+      name: `AI ${capitalise(game.ai.difficulty)}`
+    };
+    game.status = "playing";
+    game.message = "white to move.";
+    game.lastTurnStartedAt = Date.now();
+  }
+
   rooms.set(roomCode, game);
   hostSocket.join(roomCode);
   return game;
+}
+
+
+export function createDevMatch(socket, playerName, options = {}) {
+  let roomCode = nanoid();
+  while (rooms.has(roomCode)) roomCode = nanoid();
+
+  const botCount = Math.min(2, Math.max(0, Number.parseInt(options.botCount, 10) || 0));
+  const game = createGame(roomCode, {
+    variant: options.variant,
+    timeControl: options.timeControl,
+    gameMode: botCount > 0 ? "ai" : "online",
+    aiDifficulty: options.aiDifficulty
+  });
+
+  if (botCount === 2) {
+    game.ai.enabled = true;
+    game.ai.colors = ["white", "black"];
+    game.ai.color = "white";
+    game.players.white = {
+      id: `AI:${roomCode}:white`,
+      name: `AI ${capitalise(game.ai.difficulty)} White`
+    };
+    game.players.black = {
+      id: `AI:${roomCode}:black`,
+      name: `AI ${capitalise(game.ai.difficulty)} Black`
+    };
+    game.spectators.push({
+      id: socket.id,
+      name: cleanName(playerName) || "Developer"
+    });
+    game.status = "playing";
+    game.message = "white to move.";
+    game.lastTurnStartedAt = Date.now();
+    rooms.set(roomCode, game);
+    socket.join(roomCode);
+    return { ok: true, game, roomCode, color: "spectator", role: "spectator" };
+  }
+
+  game.players.white = {
+    id: socket.id,
+    name: cleanName(playerName) || "White"
+  };
+
+  if (botCount === 1) {
+    game.ai.enabled = true;
+    game.ai.colors = ["black"];
+    game.ai.color = "black";
+    game.players.black = {
+      id: `AI:${roomCode}:black`,
+      name: `AI ${capitalise(game.ai.difficulty)}`
+    };
+    game.status = "playing";
+    game.message = "white to move.";
+    game.lastTurnStartedAt = Date.now();
+  }
+
+  rooms.set(roomCode, game);
+  socket.join(roomCode);
+  return { ok: true, game, roomCode, color: "white", role: "player" };
+}
+
+export function spectateRoom(socket, roomCodeRaw, playerName) {
+  const roomCode = String(roomCodeRaw ?? "").trim().toUpperCase();
+  const game = rooms.get(roomCode);
+  if (!game) return { ok: false, reason: "Room not found." };
+
+  socket.join(roomCode);
+
+  if (game.players.white?.id === socket.id) return { ok: true, game, roomCode, color: "white", role: "player" };
+  if (game.players.black?.id === socket.id) return { ok: true, game, roomCode, color: "black", role: "player" };
+
+  const existingSpectator = game.spectators.find((spectator) => spectator.id === socket.id);
+  if (!existingSpectator) {
+    game.spectators.push({
+      id: socket.id,
+      name: cleanName(playerName) || `Spectator ${game.spectators.length + 1}`
+    });
+  }
+
+  return { ok: true, game, roomCode, color: "spectator", role: "spectator" };
+}
+
+export function getOpenMatches() {
+  return Array.from(rooms.values())
+    .filter((game) => game.status !== "finished" && game.status !== "abandoned")
+    .map((game) => ({
+      roomCode: game.roomCode,
+      variant: game.variant,
+      variantName: game.variantName,
+      timeControl: game.timeControl,
+      gameMode: game.gameMode,
+      status: game.status,
+      turn: game.turn,
+      white: game.players.white?.name || null,
+      black: game.players.black?.name || null,
+      spectators: game.spectators?.length || 0,
+      moveCount: game.moveHistory?.length || 0,
+      hasAI: Boolean(game.ai?.enabled)
+    }));
+}
+
+export function getRoomSnapshot(roomCodeRaw) {
+  const roomCode = String(roomCodeRaw ?? "").trim().toUpperCase();
+  const game = rooms.get(roomCode);
+  if (!game) return null;
+  return {
+    roomCode: game.roomCode,
+    variant: game.variant,
+    variantName: game.variantName,
+    timeControl: game.timeControl,
+    gameMode: game.gameMode,
+    status: game.status,
+    turn: game.turn,
+    white: game.players.white?.name || null,
+    black: game.players.black?.name || null,
+    spectators: game.spectators?.length || 0,
+    moveCount: game.moveHistory?.length || 0,
+    hasAI: Boolean(game.ai?.enabled),
+    aiColors: game.ai?.colors || [],
+    winner: game.winner || null,
+    message: game.message || ""
+  };
+}
+
+export function leaveCurrentRooms(socket, socketId) {
+  const affected = [];
+
+  for (const [roomCode, game] of rooms.entries()) {
+    let changed = false;
+    const color = game.players.white?.id === socketId ? "white" : game.players.black?.id === socketId ? "black" : null;
+
+    if (color) {
+      if (game.status === "waiting") {
+        rooms.delete(roomCode);
+        socket.leave(roomCode);
+        changed = true;
+      } else if (game.status === "playing") {
+        tickGameClock(game);
+        game.status = "abandoned";
+        game.winner = color === "white" ? "black" : "white";
+        game.message = `${game.winner} wins because ${color} exited the match.`;
+        game.lastTurnStartedAt = null;
+        socket.leave(roomCode);
+        changed = true;
+      } else {
+        socket.leave(roomCode);
+      }
+    } else {
+      const before = game.spectators?.length || 0;
+      game.spectators = (game.spectators || []).filter((spectator) => spectator.id !== socketId);
+      if (game.spectators.length !== before) {
+        socket.leave(roomCode);
+        changed = true;
+      }
+    }
+
+    if (changed && rooms.has(roomCode)) affected.push(game);
+  }
+
+  return affected;
 }
 
 export function joinRoom(socket, roomCodeRaw, playerName) {
@@ -196,6 +368,10 @@ function getParticipant(game, socketId) {
   const spectator = game.spectators?.find((candidate) => candidate.id === socketId);
   if (spectator) return { role: "spectator", color: "spectator", name: spectator.name || "Spectator" };
   return null;
+}
+
+function capitalise(value) {
+  return String(value || "").slice(0, 1).toUpperCase() + String(value || "").slice(1);
 }
 
 function cleanName(name) {

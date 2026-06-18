@@ -1,11 +1,21 @@
-import React, { Suspense, lazy, useEffect, useMemo, useState } from "react";
+import React, { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
 import { socket } from "./socket.js";
 import Board2D from "./components/Board2D.jsx";
 const Board3D = lazy(() => import("./components/Board3D.jsx"));
 import { PIECE_SYMBOLS } from "./game/config.js";
 import { UI_TEXT } from "./game/text.js";
-import { VARIANT_OPTIONS, TIME_CONTROL_OPTIONS, getVariantLabel, getTimeControlLabel } from "./game/variants.js";
+import {
+  VARIANT_OPTIONS,
+  TIME_CONTROL_OPTIONS,
+  GAME_MODE_OPTIONS,
+  AI_DIFFICULTY_OPTIONS,
+  getVariantLabel,
+  getTimeControlLabel,
+  getGameModeLabel,
+  getAIDifficultyLabel
+} from "./game/variants.js";
 import { buildReviewTimeline } from "./game/replay.js";
+import { DEV_COMMANDS, DEV_CONSOLE_UNLOCK_SEQUENCE, findDevCommand } from "./game/devCommands.js";
 
 const VIEWS = ["XZ", "XY", "YZ", "ISO"];
 const REVIEW_PLAY_DELAY_MS = 650;
@@ -18,6 +28,8 @@ export default function App() {
   const [role, setRole] = useState(null);
   const [selectedVariant, setSelectedVariant] = useState(localStorage.getItem("selectedVariant") || "threeD");
   const [selectedTimeControl, setSelectedTimeControl] = useState(localStorage.getItem("selectedTimeControl") || "rapid");
+  const [selectedGameMode, setSelectedGameMode] = useState(localStorage.getItem("selectedGameMode") || "online");
+  const [selectedAIDifficulty, setSelectedAIDifficulty] = useState(localStorage.getItem("selectedAIDifficulty") || "medium");
   const [game, setGame] = useState(null);
   const [view, setView] = useState("XZ");
   const [layer, setLayer] = useState(0);
@@ -32,6 +44,10 @@ export default function App() {
   const [chatDraft, setChatDraft] = useState("");
   const [showForfeitConfirm, setShowForfeitConfirm] = useState(false);
   const [clockTick, setClockTick] = useState(Date.now());
+  const [devConsoleOpen, setDevConsoleOpen] = useState(false);
+  const [devConsoleInput, setDevConsoleInput] = useState("");
+  const [devConsoleLines, setDevConsoleLines] = useState(["> developer console armed. type help."]);
+  const devSequenceIndexRef = useRef(0);
 
   useEffect(() => {
     socket.on("connect", () => setNotice(UI_TEXT.notices.connected));
@@ -92,6 +108,9 @@ export default function App() {
     socket.on("joinError", (message) => setNotice(message));
     socket.on("invalidMove", (message) => setNotice(message));
     socket.on("chatError", (message) => setNotice(message || UI_TEXT.notices.chatFailed));
+    socket.on("devCommandResult", (result = {}) => {
+      appendDevLines((result.lines || [result.ok ? "OK" : "Command failed."]).map((line) => result.ok === false ? `! ${line}` : String(line)));
+    });
 
     socket.on("legalMoves", ({ pieceId, legalMoves: moves, reason }) => {
       if (reason) setNotice(reason);
@@ -108,6 +127,7 @@ export default function App() {
       socket.off("joinError");
       socket.off("invalidMove");
       socket.off("chatError");
+      socket.off("devCommandResult");
       socket.off("legalMoves");
     };
   }, []);
@@ -116,6 +136,37 @@ export default function App() {
     const id = window.setInterval(() => setClockTick(Date.now()), 250);
     return () => window.clearInterval(id);
   }, []);
+
+  useEffect(() => {
+    function handleGlobalKeyDown(event) {
+      if (devConsoleOpen) {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          setDevConsoleOpen(false);
+        }
+        return;
+      }
+
+      const sequence = DEV_CONSOLE_UNLOCK_SEQUENCE;
+      const expected = sequence[devSequenceIndexRef.current];
+      if (event.key === expected) {
+        const nextIndex = devSequenceIndexRef.current + 1;
+        if (nextIndex >= sequence.length) {
+          devSequenceIndexRef.current = 0;
+          setDevConsoleOpen(true);
+          event.preventDefault();
+        } else {
+          devSequenceIndexRef.current = nextIndex;
+        }
+        return;
+      }
+
+      devSequenceIndexRef.current = event.key === sequence[0] ? 1 : 0;
+    }
+
+    window.addEventListener("keydown", handleGlobalKeyDown);
+    return () => window.removeEventListener("keydown", handleGlobalKeyDown);
+  }, [devConsoleOpen]);
 
   const is3DVariant = (game?.variant || selectedVariant) === "threeD";
   const currentVariantText = UI_TEXT.variants[game?.variant || selectedVariant] || UI_TEXT.variants.threeD;
@@ -156,11 +207,96 @@ export default function App() {
     [displayGame, selectedPieceId]
   );
 
+  function appendDevLines(lines) {
+    const nextLines = Array.isArray(lines) ? lines : [String(lines ?? "")];
+    setDevConsoleLines((current) => [...current, ...nextLines].slice(-80));
+  }
+
+  function runDevCommand(event) {
+    event.preventDefault();
+    const raw = devConsoleInput.trim();
+    if (!raw) return;
+    setDevConsoleInput("");
+    appendDevLines(`> ${raw}`);
+
+    const [rawCommandName, ...args] = parseCommandLine(raw);
+    const commandName = String(rawCommandName || "").replace(/^\/+/, "");
+    const command = findDevCommand(commandName);
+    if (!command) {
+      appendDevLines(`! unknown command: ${commandName || "<empty>"}`);
+      return;
+    }
+
+    if (command.action === "help") {
+      appendDevLines(DEV_COMMANDS.map((entry) => entry.usage));
+      return;
+    }
+
+    if (command.action === "clear") {
+      setDevConsoleLines([]);
+      return;
+    }
+
+    if (command.action === "copyRoom") {
+      copyRoomCode();
+      appendDevLines(roomCode ? `copied ${roomCode}` : "! no active room code");
+      return;
+    }
+
+    if (command.action === "setView") {
+      const nextView = String(args[0] || "").trim().toUpperCase();
+      if (!["XZ", "XY", "YZ", "ISO"].includes(nextView)) {
+        appendDevLines("! usage: setview [xz | xy | yz | iso]");
+        return;
+      }
+      setView(nextView);
+      appendDevLines(`view=${nextView}`);
+      return;
+    }
+
+    if (command.action === "setLayer") {
+      const nextLayer = Number.parseInt(args[0], 10);
+      if (!Number.isInteger(nextLayer) || nextLayer < 0 || nextLayer > 7) {
+        appendDevLines("! usage: setlayer [0-7]");
+        return;
+      }
+      setLayer(nextLayer);
+      appendDevLines(`layer=${nextLayer}`);
+      return;
+    }
+
+    if (command.action === "exitMatch") {
+      socket.emit("devCommand", {
+        action: command.action,
+        args,
+        name: name.trim() || "Developer",
+        currentRoomCode: roomCode,
+        selectedVariant,
+        selectedTimeControl,
+        selectedAIDifficulty
+      });
+      returnHome();
+      return;
+    }
+
+    socket.emit("devCommand", {
+      action: command.action,
+      args,
+      name: name.trim() || "Developer",
+      currentRoomCode: roomCode,
+      selectedVariant,
+      selectedTimeControl,
+      selectedAIDifficulty
+    });
+  }
+
   function saveName() {
     const clean = name.trim() || "Player";
     localStorage.setItem("playerName", clean);
     localStorage.setItem("selectedVariant", selectedVariant);
     localStorage.setItem("selectedTimeControl", selectedTimeControl);
+    localStorage.setItem("selectedGameMode", selectedGameMode);
+    localStorage.setItem("selectedAIDifficulty", selectedAIDifficulty);
     return clean;
   }
 
@@ -168,7 +304,9 @@ export default function App() {
     socket.emit("createRoom", {
       name: saveName(),
       variant: override.variant || selectedVariant,
-      timeControl: override.timeControl || selectedTimeControl
+      timeControl: override.timeControl || selectedTimeControl,
+      gameMode: override.gameMode || selectedGameMode,
+      aiDifficulty: override.aiDifficulty || selectedAIDifficulty
     });
   }
 
@@ -194,12 +332,14 @@ export default function App() {
   function startNewRoom() {
     const nextVariant = game?.variant || selectedVariant;
     const nextTimeControl = game?.timeControl || selectedTimeControl;
+    const nextGameMode = game?.gameMode || selectedGameMode;
+    const nextAIDifficulty = game?.ai?.difficulty || selectedAIDifficulty;
     setReviewMode(false);
     setReviewPlaying(false);
     setReviewIndex(0);
     setDismissedGameOver(false);
     setShowForfeitConfirm(false);
-    createRoom({ variant: nextVariant, timeControl: nextTimeControl });
+    createRoom({ variant: nextVariant, timeControl: nextTimeControl, gameMode: nextGameMode, aiDifficulty: nextAIDifficulty });
   }
 
   function startReview() {
@@ -311,17 +451,54 @@ export default function App() {
 
           <p className="subtle variant-subtitle">{UI_TEXT.variants[selectedVariant]?.subtitle}</p>
 
-          <div className="time-control-group" aria-label={UI_TEXT.lobby.timeControlLabel}>
-            {TIME_CONTROL_OPTIONS.map((control) => (
-              <button
-                key={control.id}
-                className={selectedTimeControl === control.id ? "active" : ""}
-                type="button"
-                onClick={() => setSelectedTimeControl(control.id)}
-              >
-                {control.label}
-              </button>
-            ))}
+          <div className="selection-block">
+            <span className="selection-label">{UI_TEXT.lobby.gameModeLabel}</span>
+            <div className="time-control-group mode-control-group" aria-label={UI_TEXT.lobby.gameModeLabel}>
+              {GAME_MODE_OPTIONS.map((mode) => (
+                <button
+                  key={mode.id}
+                  className={selectedGameMode === mode.id ? "active" : ""}
+                  type="button"
+                  onClick={() => setSelectedGameMode(mode.id)}
+                >
+                  {mode.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {selectedGameMode === "ai" && (
+            <div className="selection-block">
+              <span className="selection-label">{UI_TEXT.lobby.aiDifficultyLabel}</span>
+              <div className="time-control-group ai-difficulty-group" aria-label={UI_TEXT.lobby.aiDifficultyLabel}>
+                {AI_DIFFICULTY_OPTIONS.map((difficulty) => (
+                  <button
+                    key={difficulty.id}
+                    className={selectedAIDifficulty === difficulty.id ? "active" : ""}
+                    type="button"
+                    onClick={() => setSelectedAIDifficulty(difficulty.id)}
+                  >
+                    {difficulty.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="selection-block">
+            <span className="selection-label">{UI_TEXT.lobby.timeControlLabel}</span>
+            <div className="time-control-group" aria-label={UI_TEXT.lobby.timeControlLabel}>
+              {TIME_CONTROL_OPTIONS.map((control) => (
+                <button
+                  key={control.id}
+                  className={selectedTimeControl === control.id ? "active" : ""}
+                  type="button"
+                  onClick={() => setSelectedTimeControl(control.id)}
+                >
+                  {control.label}
+                </button>
+              ))}
+            </div>
           </div>
 
           <label>
@@ -329,7 +506,7 @@ export default function App() {
             <input value={name} onChange={(event) => setName(event.target.value)} placeholder={UI_TEXT.lobby.namePlaceholder} />
           </label>
 
-          <button className="primary" onClick={() => createRoom()}>{UI_TEXT.lobby.hostButton}</button>
+          <button className="primary" onClick={() => createRoom()}>{selectedGameMode === "ai" ? UI_TEXT.lobby.hostAIButton : UI_TEXT.lobby.hostButton}</button>
 
           <div className="join-row">
             <input
@@ -343,6 +520,14 @@ export default function App() {
 
           <p className="notice">{notice}</p>
         </section>
+        <DevConsole
+          open={devConsoleOpen}
+          input={devConsoleInput}
+          lines={devConsoleLines}
+          onInputChange={setDevConsoleInput}
+          onSubmit={runDevCommand}
+          onClose={() => setDevConsoleOpen(false)}
+        />
       </main>
     );
   }
@@ -356,6 +541,8 @@ export default function App() {
             {UI_TEXT.labels.room}{" "}
             <strong className="room-code-copy" onClick={copyRoomCode} title="Click to copy room code">{roomCode}</strong>
             {" · "}{getTimeControlLabel(game.timeControl)}
+            {" · "}{getGameModeLabel(game.gameMode)}
+            {game.ai?.enabled ? ` (${getAIDifficultyLabel(game.ai.difficulty)})` : ""}
             {" · "}{UI_TEXT.labels.youAre} <strong>{color === "spectator" ? UI_TEXT.labels.roleSpectator : color}</strong>
           </p>
         </div>
@@ -530,7 +717,55 @@ export default function App() {
           onCancel={() => setShowForfeitConfirm(false)}
         />
       )}
+
+      <DevConsole
+        open={devConsoleOpen}
+        input={devConsoleInput}
+        lines={devConsoleLines}
+        onInputChange={setDevConsoleInput}
+        onSubmit={runDevCommand}
+        onClose={() => setDevConsoleOpen(false)}
+      />
     </main>
+  );
+}
+
+
+function DevConsole({ open, input, lines, onInputChange, onSubmit, onClose }) {
+  const inputRef = useRef(null);
+  const outputRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    window.setTimeout(() => inputRef.current?.focus(), 0);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open || !outputRef.current) return;
+    outputRef.current.scrollTop = outputRef.current.scrollHeight;
+  }, [open, lines]);
+
+  if (!open) return null;
+
+  return (
+    <div className="dev-console" role="dialog" aria-label="Developer command console">
+      <div className="dev-console-output" ref={outputRef}>
+        {lines.length === 0 ? <div className="dev-console-line muted">type help</div> : lines.map((line, index) => (
+          <div key={`${line}-${index}`} className={`dev-console-line ${String(line).startsWith("!") ? "error" : ""}`}>{line}</div>
+        ))}
+      </div>
+      <form className="dev-console-input-row" onSubmit={onSubmit}>
+        <span>/</span>
+        <input
+          ref={inputRef}
+          value={input}
+          onChange={(event) => onInputChange(event.target.value)}
+          placeholder="developer command"
+          spellCheck="false"
+        />
+        <button type="button" onClick={onClose} aria-label="Close developer console">Esc</button>
+      </form>
+    </div>
   );
 }
 
@@ -907,6 +1142,17 @@ function key(coord) {
 
 function capitalise(value) {
   return String(value || "").slice(0, 1).toUpperCase() + String(value || "").slice(1);
+}
+
+
+function parseCommandLine(raw) {
+  const tokens = [];
+  const pattern = /"([^"]*)"|'([^']*)'|\S+/g;
+  let match;
+  while ((match = pattern.exec(String(raw || ""))) !== null) {
+    tokens.push(match[1] ?? match[2] ?? match[0]);
+  }
+  return tokens;
 }
 
 function shouldClearLocalSelection(previousGame, nextGame) {

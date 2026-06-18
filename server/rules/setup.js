@@ -30,6 +30,14 @@ export function normaliseTimeControl(timeControlId) {
   return TIME_CONTROLS[timeControlId] ? timeControlId : "rapid";
 }
 
+export function normaliseGameMode(gameMode) {
+  return gameMode === "ai" ? "ai" : "online";
+}
+
+export function normaliseAIDifficulty(aiDifficulty) {
+  return ["easy", "medium", "hard"].includes(aiDifficulty) ? aiDifficulty : "medium";
+}
+
 export function createInitialPieces() {
   const pieces = [];
 
@@ -79,6 +87,7 @@ export function createInitialPieces() {
 export function createGame(roomCode, options = {}) {
   const variant = normaliseVariant(options.variant);
   const timeControl = normaliseTimeControl(options.timeControl);
+  const gameMode = normaliseGameMode(options.gameMode);
   const timeMs = TIME_CONTROLS[timeControl].seconds * 1000;
 
   return {
@@ -87,6 +96,15 @@ export function createGame(roomCode, options = {}) {
     variantName: VARIANTS[variant].label,
     timeControl,
     timeControlName: TIME_CONTROLS[timeControl].label,
+    gameMode,
+    ai: {
+      enabled: gameMode === "ai",
+      color: "black",
+      colors: gameMode === "ai" ? ["black"] : [],
+      difficulty: normaliseAIDifficulty(options.aiDifficulty),
+      delayMs: 650,
+      thinking: false
+    },
     players: {
       white: null,
       black: null

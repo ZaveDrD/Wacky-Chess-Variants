@@ -5,9 +5,12 @@ export const UI_TEXT = {
   lobby: {
     variantLabel: "Variant",
     timeControlLabel: "Time Control",
+    gameModeLabel: "Game Mode",
+    aiDifficultyLabel: "AI Difficulty",
     nameLabel: "Player Name",
     namePlaceholder: "Enter Name",
     hostButton: "Host Game",
+    hostAIButton: "Start Vs AI",
     joinButton: "Join",
     roomPlaceholder: "Room Code"
   },
@@ -18,7 +21,7 @@ export const UI_TEXT = {
       rules: [
         "Pieces move within one plane per move.",
         "Castling is only on the original board.",
-        "Checkmate opponent to win."
+        "Checkmate your opponent to win."
       ]
     },
     normal: {
@@ -26,7 +29,8 @@ export const UI_TEXT = {
       subtitle: "Standard chess on one 8×8 board.",
       rules: [
         "Pieces use standard chess movement.",
-        "Checkmate opponent to win."
+        "Checkmate your opponent to win."
+
       ]
     }
   },
@@ -35,6 +39,15 @@ export const UI_TEXT = {
     rapid: "Rapid",
     blitz: "Blitz",
     bullet: "Bullet"
+  },
+  gameModes: {
+    online: "Online Multiplayer",
+    ai: "Vs AI"
+  },
+  aiDifficulty: {
+    easy: "Easy",
+    medium: "Medium",
+    hard: "Hard"
   },
   headings: {
     players: "Players",
@@ -71,6 +84,7 @@ export const UI_TEXT = {
     room: "Room",
     copied: "Copied",
     youAre: "You are",
+    playing: "Playing",
     roleSpectator: "Spectator",
     turn: "Turn",
     review: "Review",
@@ -101,12 +115,13 @@ export const UI_TEXT = {
     opponentPiece: "That is your opponent's piece.",
     spectatorNoMove: "Spectators cannot move pieces.",
     notYourTurn: "It is not your turn.",
-    gameUpdated: "Game updated.",
+    aiThinking: "AI is thinking...",
+    gameUpdated: "Game Updated.",
     isoLoading: "Loading Isometric Board...",
     isoFailed: "3D view failed to load.",
     usePlaneView: "Use XY, XZ, or YZ view while this is fixed.",
     noChatYet: "No Messages Yet.",
     chatFailed: "Message could not be sent.",
-    roomCopied: "Room code copied."
+    roomCopied: "Room Code Copied."
   }
 };
