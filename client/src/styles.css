@@ -2060,3 +2060,523 @@ select {
   0%, 100% { opacity: 0.72; scale: 0.98; }
   50% { opacity: 1; scale: 1.04; }
 }
+
+/* Responsive fit patch: prevent cropped controls on tablets, phones, and short laptop screens. */
+:root {
+  --app-pad: clamp(0.45rem, 1.2vw, 0.85rem);
+}
+
+.app.game-app {
+  padding: var(--app-pad);
+}
+
+.game-shell {
+  grid-template-columns: minmax(220px, 270px) minmax(360px, 1fr) minmax(260px, 310px);
+  gap: clamp(0.55rem, 1vw, 1rem);
+}
+
+.board-wrap-stacked,
+.board-wrap-flat {
+  width: min(68vh, 62vw, 690px, 100%);
+}
+
+/* Short laptop / split-screen: compact all fixed-height panels instead of cropping them. */
+@media (max-height: 850px) and (min-width: 901px) {
+  .app.game-app {
+    padding: 0.45rem;
+  }
+
+  .top-bar {
+    margin-bottom: 0.42rem;
+  }
+
+  .top-bar h1 {
+    font-size: clamp(1.15rem, 2vw, 1.65rem);
+    margin-bottom: 0.05rem;
+  }
+
+  .top-bar .subtle {
+    font-size: 0.78rem;
+    margin-bottom: 0;
+  }
+
+  .status-box {
+    gap: 0.4rem;
+    font-size: 0.82rem;
+  }
+
+  .status-pill {
+    padding: 0.28rem 0.45rem;
+    font-size: 0.64rem;
+  }
+
+  .game-shell {
+    grid-template-columns: minmax(205px, 235px) minmax(340px, 1fr) minmax(230px, 270px);
+    gap: 0.5rem;
+  }
+
+  .side-panel,
+  .board-area {
+    padding: 0.62rem;
+    border-radius: 14px;
+  }
+
+  h2 {
+    font-size: 0.86rem;
+    margin-bottom: 0.42rem;
+  }
+
+  .player-line,
+  .spectator-line {
+    padding: 0.42rem 0;
+    font-size: 0.8rem;
+  }
+
+  .selected-card {
+    padding: 0.48rem;
+    gap: 0.5rem;
+  }
+
+  .piece-preview {
+    width: 38px;
+    height: 38px;
+    font-size: 1.45rem;
+  }
+
+  .rules-list {
+    line-height: 1.32;
+    font-size: 0.78rem;
+    margin-bottom: 0.15rem;
+  }
+
+  .timer-bar {
+    padding: 0.28rem 0.45rem;
+    gap: 0.35rem;
+  }
+
+  .clock-card {
+    padding: 0.22rem 0.42rem;
+  }
+
+  .clock-card strong {
+    font-size: 0.98rem;
+  }
+
+  .clock-card span {
+    font-size: 0.62rem;
+  }
+
+  .board-wrap-stacked,
+  .board-wrap-flat {
+    width: min(76vh, 58vw, 610px, 100%);
+    padding: 0.55rem 1.55rem 1.65rem 0.55rem;
+  }
+
+  .board-3d {
+    height: min(100%, 66vh);
+  }
+
+  .move-history-section {
+    flex-basis: clamp(150px, 29vh, 245px);
+  }
+
+  .move-history {
+    height: clamp(115px, 24vh, 205px);
+    font-size: 0.72rem;
+    padding: 0.5rem 0.55rem 0.5rem 1.25rem;
+  }
+
+  .game-controls-panel {
+    grid-template-columns: 74px minmax(90px, 1fr);
+    gap: 0.48rem;
+  }
+
+  .view-buttons-column button,
+  .layer-rail-buttons button {
+    min-height: 25px;
+    font-size: 0.72rem;
+  }
+
+  .layer-rail {
+    padding: 0.38rem;
+  }
+
+  .layer-rail-title {
+    font-size: 0.64rem;
+  }
+
+  .game-chat-panel {
+    min-height: 150px;
+    gap: 0.35rem;
+  }
+
+  .chat-messages {
+    max-height: 108px !important;
+    font-size: 0.7rem;
+  }
+
+  .chat-form input,
+  .chat-form button {
+    padding: 0.42rem 0.5rem;
+    font-size: 0.76rem;
+  }
+
+  .orientation-gizmo {
+    transform: scale(0.78);
+    transform-origin: right bottom;
+    right: 0.15rem !important;
+    bottom: 0.3rem !important;
+  }
+}
+
+/* Medium tablets / small laptops: stack the board above side panels and allow normal page scrolling. */
+@media (max-width: 1100px), (max-height: 680px) {
+  html,
+  body,
+  #root {
+    height: auto !important;
+    min-height: 100% !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+  }
+
+  body {
+    overscroll-behavior-y: auto;
+  }
+
+  .app.game-app {
+    height: auto !important;
+    min-height: 100svh !important;
+    overflow: visible !important;
+    display: block !important;
+  }
+
+  .top-bar {
+    position: relative;
+    max-width: 980px;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.5rem;
+    margin-bottom: 0.65rem;
+  }
+
+  .status-box {
+    justify-content: flex-start;
+  }
+
+  .game-shell {
+    max-width: 980px;
+    height: auto !important;
+    overflow: visible !important;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-areas:
+      "board board"
+      "left right";
+    align-items: start;
+  }
+
+  .board-area {
+    grid-area: board;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+  }
+
+  .game-shell > .side-panel:first-child {
+    grid-area: left;
+  }
+
+  .move-panel {
+    grid-area: right;
+  }
+
+  .side-panel,
+  .move-panel {
+    max-height: none !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  .board-frame {
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
+    padding: clamp(0.35rem, 1.5vw, 0.75rem);
+  }
+
+  .board-wrap-stacked,
+  .board-wrap-flat {
+    width: min(88vw, 650px, 100%);
+  }
+
+  .board-3d {
+    height: min(72svh, 620px);
+    min-height: 360px;
+  }
+
+  .move-history-section {
+    flex-basis: auto;
+  }
+
+  .move-history {
+    height: clamp(180px, 28svh, 300px);
+  }
+
+  .game-chat-panel {
+    min-height: 210px;
+  }
+
+  .chat-messages {
+    max-height: 170px !important;
+  }
+
+  .dev-console {
+    width: min(960px, calc(100vw - 1rem));
+    bottom: 0.5rem;
+    max-height: min(70svh, 560px);
+  }
+
+  .dev-console-output {
+    max-height: min(55svh, 420px);
+  }
+}
+
+/* Phones and narrow tablets: single-column app, compact clocks, full-width controls. */
+@media (max-width: 720px) {
+  .app,
+  .app.game-app {
+    padding: 0.45rem !important;
+  }
+
+  .top-bar h1 {
+    font-size: clamp(1.1rem, 7vw, 1.75rem);
+    line-height: 1.08;
+  }
+
+  .top-bar .subtle {
+    font-size: 0.76rem;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+  }
+
+  .status-box {
+    font-size: 0.78rem;
+  }
+
+  .game-shell {
+    grid-template-columns: 1fr !important;
+    grid-template-areas:
+      "board"
+      "right"
+      "left" !important;
+    gap: 0.55rem;
+  }
+
+  .side-panel,
+  .board-area {
+    padding: 0.55rem;
+    border-radius: 12px;
+  }
+
+  .timer-bar {
+    width: 100%;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    padding: 0.32rem 0.4rem;
+  }
+
+  .clock-card {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    text-align: center;
+    padding: 0.24rem 0.28rem;
+  }
+
+  .clock-card span {
+    font-size: 0.58rem;
+  }
+
+  .clock-card strong {
+    font-size: clamp(0.86rem, 4.8vw, 1.1rem);
+  }
+
+  .board-frame {
+    border-radius: 12px;
+    padding: 0.25rem;
+  }
+
+  .board-wrap-stacked,
+  .board-wrap-flat {
+    width: min(96vw, 100%);
+    padding: 0.45rem 1.05rem 1.3rem 0.45rem;
+  }
+
+  .board-3d {
+    height: min(62svh, 520px);
+    min-height: 320px;
+  }
+
+  .piece {
+    font-size: clamp(1.15rem, 8.4vw, 3rem);
+  }
+
+  .coord-label {
+    font-size: 0.48rem;
+  }
+
+  .orientation-gizmo {
+    transform: scale(0.64) !important;
+    transform-origin: right bottom !important;
+    right: -0.4rem !important;
+    bottom: -0.15rem !important;
+  }
+
+  .game-controls-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .view-buttons-column {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .view-buttons-column button {
+    min-height: 36px;
+    padding: 0.45rem 0.25rem;
+    font-size: 0.78rem;
+  }
+
+  .layer-rail-buttons {
+    grid-template-columns: repeat(8, minmax(0, 1fr));
+    grid-template-rows: none !important;
+  }
+
+  .layer-rail-buttons button {
+    min-height: 30px;
+  }
+
+  .move-history {
+    height: clamp(150px, 26svh, 230px);
+    font-size: 0.74rem;
+  }
+
+  .game-chat-panel {
+    min-height: 185px;
+  }
+
+  .chat-messages {
+    max-height: 125px !important;
+  }
+
+  .chat-form {
+    grid-template-columns: 1fr auto;
+  }
+
+  .chat-form button {
+    min-width: 54px;
+  }
+
+  .modal-backdrop,
+  .tutorial-backdrop {
+    align-items: start;
+    overflow-y: auto;
+    padding: 0.55rem;
+  }
+
+  .game-over-modal,
+  .confirm-modal,
+  .tutorial-card {
+    width: min(100%, 520px) !important;
+    max-height: calc(100svh - 1.1rem);
+    overflow-y: auto;
+    padding: 1rem;
+  }
+
+  .modal-actions,
+  .two-actions {
+    grid-template-columns: 1fr !important;
+  }
+
+  .tutorial-art {
+    height: 145px;
+  }
+
+  .tutorial-cube.a { left: 24%; top: 52%; }
+  .tutorial-cube.b { left: 42%; top: 38%; }
+  .tutorial-cube.c { left: 60%; top: 24%; }
+  .tutorial-arrow { left: 42%; top: 58%; width: 24%; }
+
+  .dev-console {
+    left: 0.4rem;
+    right: 0.4rem;
+    bottom: 0.4rem;
+    width: auto;
+    transform: none;
+    min-height: min(340px, 70svh);
+    max-height: 78svh;
+  }
+
+  .dev-console-output {
+    max-height: 62svh;
+    font-size: 11px;
+  }
+
+  .dev-console-input-row {
+    grid-template-columns: 18px 1fr 44px;
+    gap: 5px;
+  }
+
+  @keyframes devConsoleIn {
+    from { opacity: 0; transform: translateY(8px) scale(0.985); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+}
+
+/* Very narrow phones: make lobby and action controls fit without horizontal overflow. */
+@media (max-width: 430px) {
+  button,
+  input,
+  select {
+    padding: 0.58rem 0.62rem;
+  }
+
+  .gallery-title {
+    font-size: clamp(1.75rem, 11vw, 2.45rem);
+  }
+
+  .lobby-card {
+    padding: 0.85rem;
+    gap: 0.75rem;
+  }
+
+  .time-control-group,
+  .mode-control-group,
+  .ai-difficulty-group {
+    grid-template-columns: 1fr 1fr !important;
+  }
+
+  .join-row {
+    grid-template-columns: 1fr;
+  }
+
+  .board-wrap-stacked,
+  .board-wrap-flat {
+    width: 100%;
+    padding-right: 0.78rem;
+    padding-bottom: 1rem;
+  }
+
+  .view-buttons-column {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .review-left-actions,
+  .cassette-controls {
+    grid-template-columns: repeat(5, minmax(34px, 1fr));
+  }
+
+  .icon-button,
+  .cassette-controls button {
+    width: 100%;
+    height: 38px;
+  }
+}
