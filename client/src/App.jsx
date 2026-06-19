@@ -1273,6 +1273,7 @@ function TycoonPanel({ game, color, disabled, selectedAction, onSelect, onInstan
           <TycoonActionButton disabled={productionLevel >= 3 || !canBuy(costs.production)} onClick={() => onInstant("production")} label={`Production L${Math.min(3, productionLevel + 1)}`} cost={Number.isFinite(costs.production) ? costs.production : "Max"} />
         </div>
       </div>
+      <p className="subtle action-hint">Buying does not end your turn. Move a piece when you are done shopping.</p>
       {selectedAction && <p className="subtle action-hint">Click the board to place/use {selectedAction}.</p>}
     </section>
   );
@@ -1394,7 +1395,7 @@ function getVariantGuideSteps(variant) {
   if (variant === "tycoon") {
     return [
       { title: "Tycoon: control the silos", body: "Pieces sitting in the highlighted silo squares generate money at the start of your turn after both players have moved once.", art: "tycoonSilos" },
-      { title: "Buy upgrades", body: "Spend money on pieces, walls, shields, bombs, storage, and production. Variant controls live on the right side.", art: "tycoonShop" }
+      { title: "Buy upgrades", body: "Spend money on pieces, walls, shields, bombs, storage, and production. You can buy multiple things; only moving a piece ends your turn.", art: "tycoonShop" }
     ];
   }
   return [

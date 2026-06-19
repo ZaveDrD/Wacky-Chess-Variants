@@ -91,6 +91,7 @@ export const UI_TEXT = {
         "Pieces in silo squares generate money at the start of your turn after both players have moved once.",
         "Bought pieces must spawn within one square of your king and cannot move immediately.",
         "Walls block movement and check lines; bombs destroy walls and pieces after a warning countdown.",
+        "Buy as many upgrades as you can afford; moving a piece is what ends your turn.",
         "Storage and production upgrades scale your economy."
       ]
     }

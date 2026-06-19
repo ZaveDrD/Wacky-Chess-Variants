@@ -1,4 +1,4 @@
-import { getLegalMoves, applyMoveUnchecked, getGameEndState, applyAutomaticDrawRules, advanceTurn } from "./check.js";
+import { getLegalMoves, applyMoveUnchecked, getGameEndState, applyAutomaticDrawRules, advanceTurn, attemptLegalDrop, attemptLaunchNuke, attemptTycoonAction } from "./check.js";
 import { cloneGame, getPieceAt, getPositionRepeatCount, opponent, pawnZDir, positionSignature, samePos } from "./utils.js";
 
 const PIECE_VALUES = {
@@ -45,6 +45,45 @@ export function isAITurn(game) {
 export function runAIMove(game) {
   if (!isAITurn(game)) return { ok: false, reason: "It is not the AI turn." };
 
+  const aiPlayerId = getActiveAIPlayerId(game);
+
+  // Tycoon shop actions are intentionally prep actions now: the AI can buy several
+  // things, then still make a normal chess move to end its turn.
+  if (game.variant === "tycoon") {
+    runTycoonAIPurchases(game, aiPlayerId);
+    if (game.status !== "playing") return { ok: true, game };
+  }
+
+  // Crazyhouse drops are a move, so use them only when they look useful.
+  if (game.variant === "crazyhouse") {
+    const dropChoice = chooseCrazyhouseDrop(game, game.turn);
+    if (dropChoice) {
+      const result = attemptLegalDrop(game, aiPlayerId, dropChoice.pieceType, dropChoice.to, {});
+      if (result.ok) {
+        if (game.lastMove) {
+          game.lastMove.ai = true;
+          game.lastMove.aiDifficulty = getAIDifficultyForTurn(game);
+        }
+        return { ok: true, game, moveRecord: game.lastMove };
+      }
+    }
+  }
+
+  // Nuke launches are a move. Fire when the blast is valuable enough, or at max charge.
+  if (game.variant === "nuke") {
+    const launchChoice = chooseNukeLaunch(game, game.turn);
+    if (launchChoice) {
+      const result = attemptLaunchNuke(game, aiPlayerId, launchChoice.to, {});
+      if (result.ok) {
+        if (game.lastMove) {
+          game.lastMove.ai = true;
+          game.lastMove.aiDifficulty = getAIDifficultyForTurn(game);
+        }
+        return { ok: true, game, moveRecord: game.lastMove };
+      }
+    }
+  }
+
   const moveChoice = chooseAIMove(game);
   if (!moveChoice) {
     Object.assign(game, getGameEndState(game, game.turn));
@@ -63,6 +102,326 @@ export function runAIMove(game) {
   advanceTurn(game, moveChoice.piece.color);
 
   return { ok: true, game, moveRecord: result.moveRecord };
+}
+
+
+
+function getActiveAIPlayerId(game) {
+  const player = game.players?.[game.turn];
+  return player?.id || `AI:${game.roomCode || "room"}:${game.turn}`;
+}
+
+function chooseCrazyhouseDrop(game, color) {
+  const reserve = game.reserves?.[color] || [];
+  if (!reserve.length) return null;
+
+  const candidates = [];
+  for (const pieceType of uniqueReserveTypes(reserve)) {
+    for (const to of empty2DSquares(game)) {
+      if (pieceType === "pawn" && (to.z === 0 || to.z === 7)) continue;
+      const test = cloneGame(game);
+      const playerId = test.players?.[color]?.id || getActiveAIPlayerId(test);
+      const result = attemptLegalDrop(test, playerId, pieceType, to, {});
+      if (!result.ok) continue;
+      const score = scoreDropCandidate(test, color, pieceType, to);
+      candidates.push({ pieceType, to, score });
+    }
+  }
+
+  if (!candidates.length) return null;
+  candidates.sort((a, b) => b.score - a.score);
+
+  const best = candidates[0];
+  const shouldDrop =
+    best.score >= 520 ||
+    reserve.length >= 3 ||
+    getAllLegalMoves(game, color).length <= 3 ||
+    Math.random() < 0.18;
+
+  return shouldDrop ? best : null;
+}
+
+function scoreDropCandidate(gameAfterDrop, color, pieceType, to) {
+  const value = PIECE_VALUES[pieceType] || 0;
+  const enemy = opponent(color);
+  let score = value * 0.45;
+  score += centerScore(to) * 42;
+  if (gameAfterDrop.check === enemy) score += 900;
+  if (pieceType === "pawn") {
+    score += (color === "white" ? to.z : 7 - to.z) * 55;
+  }
+  const enemyKing = gameAfterDrop.pieces.find((piece) => piece.color === enemy && piece.type === "king");
+  if (enemyKing) {
+    const d = Math.abs(enemyKing.x - to.x) + Math.abs(enemyKing.z - to.z);
+    score += Math.max(0, 7 - d) * 70;
+  }
+  return score + Math.random() * 20;
+}
+
+function uniqueReserveTypes(reserve) {
+  return [...new Set(reserve.filter((type) => ["pawn", "knight", "bishop", "rook", "queen"].includes(type)))];
+}
+
+function chooseNukeLaunch(game, color) {
+  const state = game.nuke?.[color];
+  const charge = Math.min(3, Math.max(0, Number(state?.charge) || 0));
+  if (!charge || state?.active) return null;
+
+  const candidates = [];
+  for (const to of empty2DSquares(game)) {
+    if (!isWithinDistanceOfOwnPiece(game, color, to, 2)) continue;
+    const score = scoreNukeTarget(game, color, to, charge);
+    candidates.push({ to, score });
+  }
+
+  if (!candidates.length) return null;
+  candidates.sort((a, b) => b.score - a.score);
+  const best = candidates[0];
+
+  if (charge >= 3 && best.score > 350) return best;
+  if (charge >= 2 && best.score > 1200) return best;
+  if (charge >= 1 && best.score > 3600) return best;
+  return null;
+}
+
+function scoreNukeTarget(game, color, centre, radius) {
+  const enemy = opponent(color);
+  let score = 0;
+  let ownKingHit = false;
+  let enemyKingHit = false;
+
+  for (const piece of game.pieces || []) {
+    if (piece.type === "wall") continue;
+    if (!isCircularHit(centre, piece, radius)) continue;
+    if (isNukeBlockedByRookForAI(game, centre, piece)) continue;
+    const value = PIECE_VALUES[piece.type] || 0;
+    if (piece.color === enemy) score += value * (piece.type === "king" ? 10 : 1.25);
+    if (piece.color === color) score -= value * (piece.type === "king" ? 12 : 1);
+    if (piece.type === "king" && piece.color === color) ownKingHit = true;
+    if (piece.type === "king" && piece.color === enemy) enemyKingHit = true;
+  }
+
+  if (enemyKingHit && !ownKingHit) score += 180000;
+  if (enemyKingHit && ownKingHit) score -= 250000; // launcher loses if both kings die
+  if (ownKingHit && !enemyKingHit) score -= 180000;
+  score += centerScore(centre) * 20;
+  return score + Math.random() * 12;
+}
+
+function runTycoonAIPurchases(game, playerId) {
+  ensureTycoonShapeForAI(game);
+  const color = game.turn;
+  let actions = 0;
+
+  // Keep the AI from dumping the entire bank every turn, but let it use mechanics.
+  while (actions < 4 && game.status === "playing") {
+    const action = chooseTycoonAction(game, color);
+    if (!action) break;
+    const result = attemptTycoonAction(game, playerId, action.action, action.to, {});
+    if (!result.ok) break;
+    if (game.lastMove) {
+      game.lastMove.ai = true;
+      game.lastMove.aiDifficulty = getAIDifficultyForTurn(game);
+    }
+    actions += 1;
+  }
+}
+
+function chooseTycoonAction(game, color) {
+  const tycoon = game.tycoon;
+  const money = Number(tycoon?.money?.[color]) || 0;
+  const costs = getTycoonCostsForAI(game, color);
+  const enemy = opponent(color);
+
+  if ((tycoon.productionLevel?.[color] || 0) < 2 && money >= costs.production + 4 && countSiloPieces(game, color) >= 2) {
+    return { action: "production", to: null };
+  }
+
+  if ((tycoon.storageLevel?.[color] || 0) < 3 && money >= costs.storage + 3 && money >= (tycoon.maxMoney?.[color] || 15) - 2) {
+    return { action: "storage", to: null };
+  }
+
+  if (money >= costs.bomb && !hasPendingBomb(game, color)) {
+    const bombTarget = bestTycoonBombTarget(game, color);
+    if (bombTarget?.score >= 650) return { action: "bomb", to: bombTarget.to };
+  }
+
+  if (money >= costs.shield) {
+    const shieldTarget = bestShieldTarget(game, color);
+    if (shieldTarget) return { action: "shield", to: shieldTarget };
+  }
+
+  const pieceBuy = chooseTycoonPieceBuy(game, color, costs, money);
+  if (pieceBuy) return pieceBuy;
+
+  if (money >= costs.wall && Math.random() < 0.22) {
+    const wallSquare = chooseWallSquare(game, color, enemy);
+    if (wallSquare) return { action: "wall", to: wallSquare };
+  }
+
+  return null;
+}
+
+function chooseTycoonPieceBuy(game, color, costs, money) {
+  const options = [];
+  for (const [type, cost] of Object.entries(costs.pieces)) {
+    if (money < cost) continue;
+    for (const to of kingAdjacentEmptySquares(game, color)) {
+      let score = (PIECE_VALUES[type] || 0) / Math.max(1, cost);
+      score += centerScore(to) * 8;
+      if (isSiloSquareForAI(to)) score += 45;
+      if (type === "pawn") score += color === "white" ? to.z * 5 : (7 - to.z) * 5;
+      if (type === "queen" && money < cost + 4) score -= 30;
+      options.push({ action: type, to, score });
+    }
+  }
+  if (!options.length) return null;
+  options.sort((a, b) => b.score - a.score);
+  const best = options[0];
+  if (best.action === "queen" && countMaterialPieces(game, color) >= 10 && Math.random() < 0.45) return null;
+  return best.score > 28 || Math.random() < 0.16 ? best : null;
+}
+
+function bestTycoonBombTarget(game, color) {
+  const enemy = opponent(color);
+  let best = null;
+  for (const to of empty2DSquares(game)) {
+    let score = 0;
+    for (const piece of game.pieces || []) {
+      if (Math.max(Math.abs(piece.x - to.x), Math.abs(piece.z - to.z)) > 1 || piece.y !== 0) continue;
+      const value = piece.type === "wall" ? 230 : (PIECE_VALUES[piece.type] || 0);
+      if (piece.color === enemy || piece.owner === enemy) score += value;
+      if (piece.color === color || piece.owner === color) score -= value * 0.85;
+    }
+    if (!best || score > best.score) best = { to, score };
+  }
+  return best;
+}
+
+function bestShieldTarget(game, color) {
+  const pieces = (game.pieces || [])
+    .filter((piece) => piece.color === color && !piece.shielded && !["king", "pawn", "wall"].includes(piece.type))
+    .sort((a, b) => (PIECE_VALUES[b.type] || 0) - (PIECE_VALUES[a.type] || 0));
+  if (!pieces.length) return null;
+  const valuable = pieces[0];
+  if ((PIECE_VALUES[valuable.type] || 0) >= 500 || Math.random() < 0.2) return { x: valuable.x, y: valuable.y, z: valuable.z };
+  return null;
+}
+
+function chooseWallSquare(game, color, enemy) {
+  const enemyKing = game.pieces.find((piece) => piece.color === enemy && piece.type === "king");
+  const candidates = empty2DSquares(game).filter((sq) => !isSiloSquareForAI(sq));
+  if (!candidates.length) return null;
+  candidates.sort((a, b) => {
+    const aScore = centerScore(a) + (enemyKing ? 4 - manhattan2D(a, enemyKing) : 0);
+    const bScore = centerScore(b) + (enemyKing ? 4 - manhattan2D(b, enemyKing) : 0);
+    return bScore - aScore;
+  });
+  return candidates[0];
+}
+
+function getTycoonCostsForAI(game, color) {
+  const storageLevel = game.tycoon?.storageLevel?.[color] || 0;
+  const productionLevel = game.tycoon?.productionLevel?.[color] || 0;
+  return {
+    pieces: { pawn: 3, knight: 7, bishop: 7, rook: 10, queen: 15 },
+    wall: 3,
+    shield: 5,
+    bomb: 5,
+    storage: [5, 8, 12, 16, 22][storageLevel] || 28,
+    production: [8, 14, 22][productionLevel] || Infinity
+  };
+}
+
+function ensureTycoonShapeForAI(game) {
+  if (!game.tycoon) game.tycoon = {};
+  game.tycoon.money ||= { white: 0, black: 0 };
+  game.tycoon.maxMoney ||= { white: 15, black: 15 };
+  game.tycoon.production ||= { white: 0, black: 0 };
+  game.tycoon.storageLevel ||= { white: 0, black: 0 };
+  game.tycoon.productionLevel ||= { white: 0, black: 0 };
+  game.tycoon.bombs ||= [];
+}
+
+function countSiloPieces(game, color) {
+  return (game.pieces || []).filter((piece) => piece.color === color && isSiloSquareForAI(piece)).length;
+}
+
+function countMaterialPieces(game, color) {
+  return (game.pieces || []).filter((piece) => piece.color === color && !["king", "wall"].includes(piece.type)).length;
+}
+
+function hasPendingBomb(game, color) {
+  return (game.tycoon?.bombs || []).some((bomb) => bomb.owner === color);
+}
+
+function kingAdjacentEmptySquares(game, color) {
+  const king = game.pieces.find((piece) => piece.color === color && piece.type === "king");
+  if (!king) return [];
+  const squares = [];
+  for (let dx = -1; dx <= 1; dx += 1) {
+    for (let dz = -1; dz <= 1; dz += 1) {
+      if (dx === 0 && dz === 0) continue;
+      const to = { x: king.x + dx, y: 0, z: king.z + dz };
+      if (!inBounds2D(to)) continue;
+      if (!getPieceAt(game, to)) squares.push(to);
+    }
+  }
+  return squares;
+}
+
+function empty2DSquares(game) {
+  const squares = [];
+  for (let x = 0; x < 8; x += 1) {
+    for (let z = 0; z < 8; z += 1) {
+      const to = { x, y: 0, z };
+      if (!getPieceAt(game, to)) squares.push(to);
+    }
+  }
+  return squares;
+}
+
+function isWithinDistanceOfOwnPiece(game, color, to, distance) {
+  return (game.pieces || []).some((piece) => piece.color === color && Math.max(Math.abs(piece.x - to.x), Math.abs(piece.z - to.z)) <= distance && piece.y === 0);
+}
+
+function isCircularHit(centre, target, radius) {
+  const dx = target.x - centre.x;
+  const dz = target.z - centre.z;
+  return dx * dx + dz * dz <= radius * radius;
+}
+
+function isNukeBlockedByRookForAI(game, centre, target) {
+  const sameFile = centre.x === target.x && centre.z !== target.z;
+  const sameRank = centre.z === target.z && centre.x !== target.x;
+  if (!sameFile && !sameRank) return false;
+  const stepX = Math.sign(target.x - centre.x);
+  const stepZ = Math.sign(target.z - centre.z);
+  let x = centre.x + stepX;
+  let z = centre.z + stepZ;
+  while (x !== target.x || z !== target.z) {
+    const blocker = getPieceAt(game, { x, y: 0, z });
+    if (blocker?.type === "rook") return true;
+    x += stepX;
+    z += stepZ;
+  }
+  return false;
+}
+
+function isSiloSquareForAI(pos) {
+  return pos?.y === 0 && (([1, 2].includes(pos.x) && [3, 4].includes(pos.z)) || ([5, 6].includes(pos.x) && [3, 4].includes(pos.z)));
+}
+
+function inBounds2D(pos) {
+  return Number.isInteger(pos.x) && Number.isInteger(pos.z) && pos.x >= 0 && pos.x < 8 && pos.z >= 0 && pos.z < 8;
+}
+
+function centerScore(pos) {
+  return (3.5 - Math.abs(3.5 - pos.x)) + (3.5 - Math.abs(3.5 - pos.z));
+}
+
+function manhattan2D(a, b) {
+  return Math.abs(a.x - b.x) + Math.abs(a.z - b.z);
 }
 
 export function chooseAIMove(game) {
@@ -594,7 +953,17 @@ function passiveShufflePenalty(game, color) {
   for (let index = 1; index < recent.length; index += 1) {
     const previous = recent[index - 1];
     const current = recent[index];
-    if (previous.pieceId === current.pieceId && samePos(previous.from, current.to) && samePos(previous.to, current.from)) {
+    if (
+      previous.pieceId &&
+      current.pieceId &&
+      previous.from &&
+      previous.to &&
+      current.from &&
+      current.to &&
+      previous.pieceId === current.pieceId &&
+      samePos(previous.from, current.to) &&
+      samePos(previous.to, current.from)
+    ) {
       penalty += 900;
     }
   }

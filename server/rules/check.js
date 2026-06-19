@@ -521,7 +521,6 @@ export function attemptTycoonAction(game, playerId, actionRaw, to = null, option
     if (!to || !inBounds(to) || to.y !== 0) return { ok: false, reason: "Choose a 2D board square for the wall." };
     if (getPieceAt(game, to)) return { ok: false, reason: "Wall square is occupied." };
     if (isSiloSquare(to)) return { ok: false, reason: "Walls cannot be placed inside silos." };
-    if ((game.tycoon.walls[color] || 0) >= 3 && !devOverride) return { ok: false, reason: "You can only have 3 active walls." };
     const cost = costs.wall;
     if (!spendTycoonMoney(game, color, cost, devOverride)) return { ok: false, reason: "Not enough money for wall." };
     const wall = { id: `${color}_wall_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, type: "wall", color: "wall", owner: color, x: to.x, y: 0, z: to.z, hasMoved: true };
@@ -565,8 +564,8 @@ export function attemptTycoonAction(game, playerId, actionRaw, to = null, option
 
   game.lastMove = record;
   game.moveHistory.push(record);
-  game.message = `${color} bought ${record.tycoonAction}.`;
-  advanceTurn(game, color);
+  game.message = `${color} used ${record.tycoonAction}.`;
+  game.lastTurnStartedAt = Date.now();
   return { ok: true, game };
 }
 
