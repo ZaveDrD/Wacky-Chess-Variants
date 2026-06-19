@@ -1,647 +1,447 @@
 // Developer console command registry.
-// Edit `name` / `aliases` here to change what you type in the hidden console.
-// `summary` is documentation-only and is intentionally not rendered in-game.
+// The visible console is intentionally organised as broad command groups.
+// Old one-word commands remain as aliases so existing habits still work.
 export const DEV_CONSOLE_UNLOCK_SEQUENCE = ["Shift", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Shift"];
 
 export const DEV_COMMANDS = [
-  {
-    action: "help",
-    name: "help",
-    aliases: ["commands", "?"],
-    usage: "help",
-    summary: "Shows developer console command usages in the console output. Does not send a server request."
-  },
-  {
-    action: "clear",
-    name: "clear",
-    aliases: ["cls"],
-    usage: "clear",
-    summary: "Clears the developer console output. Does not affect the match."
-  },
-  {
-    action: "findOpenMatches",
-    name: "findopenmatches",
-    aliases: ["rooms", "listrooms", "openmatches"],
-    usage: "findopenmatches",
-    summary: "Queries the server for active room codes and compact match information."
-  },
-  {
-    action: "spectateMatch",
-    name: "spectatematch",
-    aliases: ["spectate", "watch"],
-    usage: "spectatematch [room code | random]",
-    summary: "Joins an existing room as a spectator. Use random to spectate a random active room."
-  },
-  {
-    action: "joinCode",
-    name: "joincode",
-    aliases: ["join", "joinroom"],
-    usage: "joincode [room code]",
-    summary: "Joins a room using normal join behaviour. If the player seats are full, you become a spectator."
-  },
-  {
-    action: "startMatch",
-    name: "startmatch",
-    aliases: ["newmatch", "spawnmatch"],
-    usage: "startmatch [variant_name] [num_bots] [bot_difficulty=medium]",
-    summary: "Creates a new match. num_bots can be 0, 1, or 2. With 2 bots, the developer joins as spectator."
-  },
-  {
-    action: "exitMatch",
-    name: "exitmatch",
-    aliases: ["exit", "leave", "home"],
-    usage: "exitmatch",
-    summary: "Exits the current match and returns the client to the lobby. If you are an active player, the match is abandoned."
-  },
-  {
-    action: "roomInfo",
-    name: "roominfo",
-    aliases: ["inspectroom", "matchinfo"],
-    usage: "roominfo [room code]",
-    summary: "Shows compact server-side metadata for a room. Defaults to the current room if no code is provided."
-  },
-  {
-    action: "copyRoom",
-    name: "copyroom",
-    aliases: ["copycode", "copy"],
-    usage: "copyroom",
-    summary: "Copies the current room code to the clipboard. Client-side only."
-  },
-  {
-    action: "setView",
-    name: "setview",
-    aliases: ["view"],
-    usage: "setview [xz | xy | yz | iso]",
-    summary: "Changes the local board view. Client-side only and only useful in 3D Chess."
-  },
-  {
-    action: "setLayer",
-    name: "setlayer",
-    aliases: ["layer"],
-    usage: "setlayer [0-7]",
-    summary: "Changes the local layer in plane views. Client-side only and only useful in 3D Chess."
-  },
-  {
-    action: "addPiece",
-    name: "addpiece",
-    aliases: ["spawnpiece", "placepiece"],
-    usage: "addpiece [x,y,z | e4 | x y z] [piecetype] [colour=turn]",
-    summary: "Adds a piece to the current room. Supports piece types pawn, knight, bishop, rook, queen, king. Normal Chess requires y=0."
-  },
-  {
-    action: "removePiece",
-    name: "removepiece",
-    aliases: ["deletepiece", "delpiece"],
-    usage: "removepiece [x,y,z | e4 | x y z]",
-    summary: "Removes the piece at a board location in the current room."
-  },
-
-  {
-    action: "replaceWithBot",
-    name: "replacewithbot",
-    aliases: ["botreplace", "swapwithbot"],
-    usage: "replacewithbot [name] [difficulty=medium]",
-    summary: "Replaces an active player with an AI bot. The replaced human becomes a spectator. If the target is already a bot, this updates that bot slot/difficulty."
-  },
-  {
-    action: "replacePlayer",
-    name: "replaceplayer",
-    aliases: ["takeover", "swapin"],
-    usage: "replaceplayer [name]",
-    summary: "You take over the named active player's colour. The replaced human becomes a spectator; replacing a bot removes that bot from the colour slot."
-  },
-  {
-    action: "endMatch",
-    name: "endmatch",
-    aliases: ["finishmatch", "endgame"],
-    usage: "endmatch [white | black | none]",
-    summary: "Ends the current match. With no parameter or none/draw/nowinner, the match ends without a winner."
-  },
-  {
-    action: "findPlayer",
-    name: "findplayer",
-    aliases: ["finduser", "whereis"],
-    usage: "findplayer [name]",
-    summary: "Searches all active rooms for a player or spectator name."
-  },
-  {
-    action: "playerCount",
-    name: "playercount",
-    aliases: ["countplayers", "servercount"],
-    usage: "playercount",
-    summary: "Shows active room, human player, spectator, bot, and unique human counts."
-  },
-  {
-    action: "spectatorOverride",
-    name: "spectatoroverride",
-    aliases: ["override", "moveall", "godmode"],
-    usage: "spectatoroverride [player=self]",
-    summary: "Allows a named participant, or yourself by default, to select and move any piece in the current room regardless of spectator status, colour, or turn."
-  },
-  {
-    action: "clearOverride",
-    name: "clearoverride",
-    aliases: ["disableoverride", "ungodmode"],
-    usage: "clearoverride [player=self]",
-    summary: "Disables spectatoroverride for a named participant, or yourself by default."
-  },
-  {
-    action: "setTimer",
-    name: "settimer",
-    aliases: ["clock", "setclock"],
-    usage: "settimer [seconds | mm:ss | hh:mm:ss] [white|black=turn]",
-    summary: "Sets a player clock in the current match. If no colour is supplied, it applies to the current turn."
-  },
-  {
-    action: "setPlayerColour",
-    name: "setplayercolour",
-    aliases: ["setplayercolor", "setcolour", "setcolor"],
-    usage: "setplayercolour [name] [white|black|spectator]",
-    summary: "Moves a player/spectator into white, black, or spectator. Quote names with spaces. Existing colour holders are swapped or moved to spectator as needed."
-  },
-  {
-    action: "listPieces",
-    name: "listpieces",
-    aliases: ["pieces"],
-    usage: "listpieces [white|black]",
-    summary: "Lists current pieces and locations in the active room. Optional colour filter."
-  },
-  {
-    action: "setTurn",
-    name: "setturn",
-    aliases: ["turn"],
-    usage: "setturn [white|black]",
-    summary: "Sets whose turn it is in the current room and restarts that side's active clock reference time."
-  }
-,
-
-  {
-    action: "teleportPiece",
-    name: "teleportpiece",
-    aliases: ["teleport", "tp"],
-    usage: "teleportpiece [from] [to]",
-    summary: "Moves a piece directly without recording a normal move. Captures anything at the destination."
-  },
-  {
-    action: "moveForce",
-    name: "moveforce",
-    aliases: ["forcemove"],
-    usage: "moveforce [from] [to]",
-    summary: "Moves a piece without legality validation and records it in move history."
-  },
-  {
-    action: "legalMovesAt",
-    name: "legalmoves",
-    aliases: ["movesfrom"],
-    usage: "legalmoves [location]",
-    summary: "Lists legal moves for the piece at a location."
-  },
-  {
-    action: "checkStatus",
-    name: "checkstatus",
-    aliases: ["statuscheck"],
-    usage: "checkstatus",
-    summary: "Shows check, legal move, and game status information."
-  },
-  {
-    action: "validateBoard",
-    name: "validateboard",
-    aliases: ["boardcheck"],
-    usage: "validateboard",
-    summary: "Reports invalid board state such as missing kings, overlaps, duplicate IDs, or out-of-bounds pieces."
-  },
-  {
-    action: "resetMatch",
-    name: "resetmatch",
-    aliases: ["resetgame"],
-    usage: "resetmatch",
-    summary: "Resets the current match to the starting position while keeping room membership."
-  },
-  {
-    action: "clonePosition",
-    name: "cloneposition",
-    aliases: ["saveposition"],
-    usage: "cloneposition",
-    summary: "Prints a compact encoded position string that can be loaded later."
-  },
-  {
-    action: "loadPosition",
-    name: "loadposition",
-    aliases: ["loadpos"],
-    usage: "loadposition [code]",
-    summary: "Loads a position string created by cloneposition."
-  },
-  {
-    action: "aiThink",
-    name: "aithink",
-    aliases: ["think"],
-    usage: "aithink [white|black] [difficulty]",
-    summary: "Shows the top AI move candidates without moving."
-  },
-  {
-    action: "forceAIMove",
-    name: "forceaimove",
-    aliases: ["aimove"],
-    usage: "forceaimove [white|black] [difficulty]",
-    summary: "Forces the selected side to make an AI move immediately."
-  },
-  {
-    action: "setAIDifficulty",
-    name: "setaidifficulty",
-    aliases: ["botdifficulty"],
-    usage: "setaidifficulty [white|black] [easy|medium|hard]",
-    summary: "Changes or creates the AI controller for a side."
-  },
-  {
-    action: "pauseBots",
-    name: "pausebots",
-    aliases: ["stopbots"],
-    usage: "pausebots",
-    summary: "Pauses AI turns in the current room."
-  },
-  {
-    action: "resumeBots",
-    name: "resumebots",
-    aliases: ["startbots"],
-    usage: "resumebots",
-    summary: "Resumes AI turns in the current room."
-  },
-  {
-    action: "botBattle",
-    name: "botbattle",
-    aliases: ["bots"],
-    usage: "botbattle [variant] [difficulty1] [difficulty2]",
-    summary: "Starts a bot-vs-bot match. Client maps this to startmatch with two bots."
-  },
-  {
-    action: "evalPosition",
-    name: "evalposition",
-    aliases: ["eval"],
-    usage: "evalposition [white|black]",
-    summary: "Prints the AI static evaluation for a side."
-  },
-  {
-    action: "topMoves",
-    name: "topmoves",
-    aliases: ["bestmoves"],
-    usage: "topmoves [white|black] [n=5]",
-    summary: "Lists the top AI candidate moves and approximate scores."
-  },
-  {
-    action: "kickPlayer",
-    name: "kickplayer",
-    aliases: ["kick"],
-    usage: "kickplayer [name]",
-    summary: "Removes a player/spectator from the current room."
-  },
-  {
-    action: "lockRoom",
-    name: "lockroom",
-    aliases: ["lock"],
-    usage: "lockroom",
-    summary: "Prevents extra spectators from joining the current room."
-  },
-  {
-    action: "unlockRoom",
-    name: "unlockroom",
-    aliases: ["unlock"],
-    usage: "unlockroom",
-    summary: "Allows spectators to join the current room again."
-  },
-  {
-    action: "renameRoom",
-    name: "renameroom",
-    aliases: ["roomname"],
-    usage: "renameroom [name]",
-    summary: "Sets a display name on the current room."
-  },
-  {
-    action: "broadcast",
-    name: "broadcast",
-    aliases: ["say"],
-    usage: "broadcast [message]",
-    summary: "Adds a system message to the current room chat."
-  },
-  {
-    action: "systemChat",
-    name: "systemchat",
-    aliases: ["syschat"],
-    usage: "systemchat [message]",
-    summary: "Adds a system chat line to the current room."
-  },
-  {
-    action: "listRoomsDetailed",
-    name: "listrooms",
-    aliases: ["roomsdetailed", "roomsd"],
-    usage: "listrooms detailed",
-    summary: "Shows all active rooms with detailed server metadata."
-  },
-  {
-    action: "pauseTimer",
-    name: "pausetimer",
-    aliases: ["freezetimer"],
-    usage: "pausetimer",
-    summary: "Pauses both clocks in the current room."
-  },
-  {
-    action: "resumeTimer",
-    name: "resumetimer",
-    aliases: ["unfreezetimer"],
-    usage: "resumetimer",
-    summary: "Resumes clocks in the current room."
-  },
-  {
-    action: "addTime",
-    name: "addtime",
-    aliases: ["incrementtime"],
-    usage: "addtime [white|black] [time]",
-    summary: "Adds time to a player's clock."
-  },
-  {
-    action: "setTimeControl",
-    name: "settimecontrol",
-    aliases: ["changetimecontrol"],
-    usage: "settimecontrol [classical|rapid|blitz|bullet]",
-    summary: "Changes the time control and resets both clocks."
-  },
-  {
-    action: "flagPlayer",
-    name: "flag",
-    aliases: ["timeout"],
-    usage: "flag [white|black]",
-    summary: "Forces a player to lose on time."
-  },
-  {
-    action: "showCoords",
-    name: "showcoords",
-    aliases: ["coords"],
-    usage: "showcoords",
-    summary: "Toggles coordinate labels on the board. Client-side visual command."
-  },
-  {
-    action: "showAttacks",
-    name: "showattacks",
-    aliases: ["attacks"],
-    usage: "showattacks [white|black]",
-    summary: "Highlights attacked squares. Client-side visual command using current board movement."
-  },
-  {
-    action: "showChecks",
-    name: "showchecks",
-    aliases: ["checks"],
-    usage: "showchecks",
-    summary: "Highlights kings and checking pieces."
-  },
-  {
-    action: "highlightSquare",
-    name: "highlight",
-    aliases: ["mark"],
-    usage: "highlight [location]",
-    summary: "Temporarily highlights a square."
-  },
-  {
-    action: "clearHighlights",
-    name: "clearhighlights",
-    aliases: ["clearhl"],
-    usage: "clearhighlights",
-    summary: "Clears local developer highlights."
-  },
-  {
-    action: "ghostMove",
-    name: "ghostmove",
-    aliases: ["previewmove"],
-    usage: "ghostmove [from] [to]",
-    summary: "Shows a projected move marker without moving the piece."
-  },
-  {
-    action: "chaosMove",
-    name: "chaosmove",
-    aliases: ["randommove"],
-    usage: "chaosmove",
-    summary: "Makes a random legal move for the current player."
-  },
-  {
-    action: "swapKings",
-    name: "swapkings",
-    aliases: ["kingswap"],
-    usage: "swapkings",
-    summary: "Swaps the kings' positions."
-  },
-  {
-    action: "promoteAll",
-    name: "promoteall",
-    aliases: ["promoteallpawns"],
-    usage: "promoteall [white|black] [piece]",
-    summary: "Promotes all pawns for a side into the selected piece type."
-  },
-  {
-    action: "army",
-    name: "army",
-    aliases: ["setarmy"],
-    usage: "army [white|black] [piece]",
-    summary: "Replaces all non-king pieces of a side with one piece type."
-  },
-  {
-    action: "mirrorBoard",
-    name: "mirrorboard",
-    aliases: ["mirror"],
-    usage: "mirrorboard",
-    summary: "Mirrors all pieces across the board."
-  },
-  {
-    action: "shuffleBackRank",
-    name: "shufflebackrank",
-    aliases: ["chess960"],
-    usage: "shufflebackrank",
-    summary: "Randomises back-rank non-king pieces."
-  },
-  {
-    action: "spawnArmy",
-    name: "spawnarmy",
-    aliases: ["spawnpieces"],
-    usage: "spawnarmy [white|black] [piece] [count]",
-    summary: "Adds random pieces for a side."
-  },
-  {
-    action: "nuke",
-    name: "nuke",
-    aliases: ["blast"],
-    usage: "nuke [location] [radius]",
-    summary: "Removes non-king pieces around a location."
-  },
-  {
-    action: "kingOfTheHill",
-    name: "kingofthehill",
-    aliases: ["hill"],
-    usage: "kingofthehill",
-    summary: "Moves kings to central test positions."
-  },
+  { name: "help", action: "help", usage: "help [page|category|command]", summary: "Shows paged command help." },
+  { name: "clear", action: "clear", aliases: ["cls"], usage: "clear", summary: "Clears the developer console output." },
+  { name: "room", action: "room", usage: "room [list|join|start|spectate|kick|lock|unlock|rename|exit|info] ...", summary: "Room and matchmaking commands." },
+  { name: "player", action: "player", usage: "player [bot|takeover|find|count|override|colour|rename] ...", summary: "Player slot and identity commands." },
+  { name: "match", action: "match", usage: "match [end|turn|reset|validate|forfeit]", summary: "Match state commands." },
+  { name: "chat", action: "chat", usage: "chat [shout|announce|system|sudo|whisper|quote] ...", summary: "Chat, announcements, and fake-message commands." },
+  { name: "board", action: "board", usage: "board [clear|copy|load|mirror|shuffle] ...", summary: "Whole-board editing commands." },
+  { name: "piece", action: "piece", usage: "piece [add|remove|teleport|force|replace|list|find|legal|attacks|promote|god] ...", summary: "Piece inspection/editing commands." },
+  { name: "view", action: "view", usage: "view [mode|layer|coords] ...", summary: "Local view controls." },
+  { name: "mark", action: "mark", usage: "mark [square|clear|ghost|checks|attacks|spotlight|ping] ...", summary: "Local square markers and debug highlights." },
+  { name: "ai", action: "ai", usage: "ai [think|move|difficulty|pause|resume|eval|top] ...", summary: "AI testing commands." },
+  { name: "clock", action: "clock", usage: "clock [set|pause|resume|add|preset|flag] ...", summary: "Timer commands." },
+  { name: "fx", action: "fx", usage: "fx [effect] ...", summary: "Visual-only troll effects and board chaos." },
+  { name: "cosmetic", action: "cosmetic", usage: "cosmetic [piece|player|icon|curse|clear] ...", summary: "Visual-only piece/player cosmetics." },
+  { name: "chaos", action: "chaos", usage: "chaos [move|swap|shuffle|yeet|clone|mutate|promote|downgrade|king|pawnstorm|civilwar|tax|blessing] ...", summary: "Dangerous state-changing chaos commands." },
+  { name: "predict", action: "predict", usage: "predict [state|reveal|clear|lock|resolve|round|ghost|peek|test|fake|panic] ...", summary: "Predict variant commands." },
+  { name: "scooby", action: "scooby", usage: "scooby [state|reveal|visible|trap|smoke|control|test] ...", summary: "Scooby trap/smoke/control commands." },
+  { name: "tycoon", action: "tycoon", usage: "tycoon [state|money|upgrade|income|wall|bomb|shield|silo|buyout] ...", summary: "Tycoon economy/building commands." },
+  { name: "nuke", action: "nuke", usage: "nuke [state|charge|launch|explode|clear|mark|timer|oops|blast] ...", summary: "Nuke variant commands." },
+  { name: "crazyhouse", action: "crazyhouse", aliases: ["crazy"], usage: "crazyhouse [reserve|drop|test] ...", summary: "Crazyhouse reserve/drop commands." },
+  { name: "atomic", action: "atomic", usage: "atomic [mark|explode|chainreaction|nuclearpawns|test] ...", summary: "Atomic explosion commands." },
+  { name: "hill", action: "hill", aliases: ["kingofthehill"], usage: "hill [setup|state|mark|test] ...", summary: "King of the Hill commands." }
 ];
 
-
-export const DEV_COMMAND_PARAMETER_DOCS = {
-  help: [{ name: "command_name", required: false, description: "Optional command or alias to inspect. Omit it to list all commands." }],
-  clear: [],
-  findOpenMatches: [],
-  spectateMatch: [{ name: "room code | random", required: true, description: "Room code to spectate, or random to pick any active open room." }],
-  joinCode: [{ name: "room code", required: true, description: "Room code to join using normal player/spectator assignment." }],
-  startMatch: [
-    { name: "variant_name", required: true, description: "Variant key/name, for example 3d, threed, threeD, normal." },
-    { name: "num_bots", required: true, description: "0, 1, or 2. With 2 bots, you join as spectator." },
-    { name: "bot_difficulty", required: false, description: "easy, medium, or hard. Defaults to medium." }
-  ],
-  exitMatch: [],
-  roomInfo: [{ name: "room code", required: false, description: "Room to inspect. Defaults to your current room." }],
-  copyRoom: [],
-  setView: [{ name: "view", required: true, description: "Local board view: xz, xy, yz, or iso." }],
-  setLayer: [{ name: "layer", required: true, description: "Layer index from 0 to 7 for the current plane view." }],
-  addPiece: [
-    { name: "location", required: true, description: "Target square as x,y,z, x y z, or e4 for Normal Chess." },
-    { name: "piecetype", required: true, description: "pawn, knight, bishop, rook, queen, or king." },
-    { name: "colour", required: false, description: "white or black. Defaults to the current turn." }
-  ],
-  removePiece: [{ name: "location", required: true, description: "Square to clear as x,y,z, x y z, or e4." }],
-  replaceWithBot: [
-    { name: "name", required: true, description: "Player name, colour slot, or bot name to replace." },
-    { name: "difficulty", required: false, description: "easy, medium, or hard. Defaults to medium." }
-  ],
-  replacePlayer: [{ name: "name", required: true, description: "Player, bot, or colour slot you will take over." }],
-  endMatch: [{ name: "winner", required: false, description: "white, black, none, draw, or nowinner. Defaults to no winner." }],
-  findPlayer: [{ name: "name", required: true, description: "Name or partial name to search across active rooms." }],
-  playerCount: [],
-  spectatorOverride: [{ name: "player", required: false, description: "Participant to grant all-piece movement to. Defaults to yourself." }],
-  clearOverride: [{ name: "player", required: false, description: "Participant to remove override from. Defaults to yourself." }],
-  setTimer: [
-    { name: "time", required: true, description: "Clock value as seconds, mm:ss, or hh:mm:ss." },
-    { name: "player", required: false, description: "white or black. Defaults to the current turn." }
-  ],
-  setPlayerColour: [
-    { name: "name", required: true, description: "Player/spectator name. Quote names with spaces." },
-    { name: "colour", required: true, description: "white, black, or spectator." }
-  ],
-  listPieces: [{ name: "colour", required: false, description: "Optional filter: white or black." }],
-  setTurn: [{ name: "colour", required: true, description: "white or black." }],
-  teleportPiece: [
-    { name: "from", required: true, description: "Source square as x,y,z, x y z, or e4." },
-    { name: "to", required: true, description: "Destination square. Bypasses normal legality and does not record a normal move." }
-  ],
-  moveForce: [
-    { name: "from", required: true, description: "Source square as x,y,z, x y z, or e4." },
-    { name: "to", required: true, description: "Destination square. Bypasses legality and records the move." }
-  ],
-  legalMovesAt: [{ name: "location", required: true, description: "Square containing the piece to inspect." }],
-  checkStatus: [],
-  validateBoard: [],
-  resetMatch: [],
-  clonePosition: [],
-  loadPosition: [{ name: "code", required: true, description: "Encoded position string created by cloneposition." }],
-  aiThink: [
-    { name: "colour", required: true, description: "white or black side to evaluate." },
-    { name: "difficulty", required: false, description: "easy, medium, or hard. Defaults to the room/selected difficulty." }
-  ],
-  forceAIMove: [
-    { name: "colour", required: true, description: "white or black side to move." },
-    { name: "difficulty", required: false, description: "easy, medium, or hard. Defaults to the room/selected difficulty." }
-  ],
-  setAIDifficulty: [
-    { name: "colour", required: true, description: "white or black bot slot." },
-    { name: "difficulty", required: true, description: "easy, medium, or hard." }
-  ],
-  pauseBots: [],
-  resumeBots: [],
-  botBattle: [
-    { name: "variant", required: true, description: "normal or 3d/threed." },
-    { name: "difficulty1", required: false, description: "White bot difficulty. Defaults to selected AI difficulty/medium." },
-    { name: "difficulty2", required: false, description: "Black bot difficulty. Currently maps to the same room bot difficulty if unsupported separately." }
-  ],
-  evalPosition: [{ name: "colour", required: true, description: "white or black perspective to evaluate." }],
-  topMoves: [
-    { name: "colour", required: true, description: "white or black side to inspect." },
-    { name: "n", required: false, description: "Number of candidate moves to list. Defaults to 5." }
-  ],
-  kickPlayer: [{ name: "name", required: true, description: "Player/spectator to remove from the room." }],
-  lockRoom: [],
-  unlockRoom: [],
-  renameRoom: [{ name: "name", required: true, description: "New display name for the current room." }],
-  broadcast: [{ name: "message", required: true, description: "System message text to add to the current room chat." }],
-  shout: [{ name: "message", required: true, description: "Large overlay message to display on every screen in the current room." }],
-  systemChat: [{ name: "message", required: true, description: "System chat text to add to the current room chat." }],
-  listRoomsDetailed: [{ name: "detailed", required: false, description: "Use detailed to request expanded room metadata." }],
-  pauseTimer: [],
-  resumeTimer: [],
-  addTime: [
-    { name: "colour", required: true, description: "white or black clock to modify." },
-    { name: "time", required: true, description: "Time to add as seconds, mm:ss, or hh:mm:ss." }
-  ],
-  setTimeControl: [{ name: "time_control", required: true, description: "classical, rapid, blitz, or bullet. Resets both clocks." }],
-  flagPlayer: [{ name: "colour", required: true, description: "white or black player to flag on time." }],
-  showCoords: [],
-  showAttacks: [{ name: "colour", required: true, description: "white or black attack map to highlight." }],
-  showChecks: [],
-  highlightSquare: [{ name: "location", required: true, description: "Square to highlight as x,y,z, x y z, or e4." }],
-  clearHighlights: [],
-  ghostMove: [
-    { name: "from", required: true, description: "Source square for the visual ghost arrow/marker." },
-    { name: "to", required: true, description: "Destination square for the visual ghost arrow/marker." }
-  ],
-  chaosMove: [],
-  swapKings: [],
-  promoteAll: [
-    { name: "colour", required: true, description: "white or black pawns to promote." },
-    { name: "piece", required: true, description: "New piece type: knight, bishop, rook, or queen." }
-  ],
-  army: [
-    { name: "colour", required: true, description: "white or black side to modify." },
-    { name: "piece", required: true, description: "Piece type to use for all non-king pieces." }
-  ],
-  mirrorBoard: [],
-  scramble: [],
-  shuffleBackRank: [],
-  spawnArmy: [
-    { name: "colour", required: true, description: "white or black side to spawn pieces for." },
-    { name: "piece", required: true, description: "Piece type to spawn." },
-    { name: "count", required: true, description: "Number of pieces to add." }
-  ],
-  nuke: [
-    { name: "location", required: true, description: "Centre square of the removal radius." },
-    { name: "radius", required: true, description: "Integer distance around the centre. Non-king pieces are removed." }
-  ],
-  kingOfTheHill: []
+const GROUPS = {
+  room: {
+    page: 1,
+    summary: "Rooms and matchmaking.",
+    subcommands: [
+      ["list open", "room list open", "List open rooms."],
+      ["list detailed", "room list detailed", "List all rooms with metadata."],
+      ["spectate", "room spectate [room|random]", "Spectate a room."],
+      ["join", "room join [room]", "Join a room."],
+      ["start", "room start [variant] [bots=0] [difficulty=medium]", "Start a dev match."],
+      ["botbattle", "room botbattle [variant] [difficulty1] [difficulty2]", "Start bot-vs-bot match."],
+      ["exit", "room exit", "Return to home/lobby."],
+      ["info", "room info [room=current]", "Show room metadata."],
+      ["copy", "room copy", "Copy current room code."],
+      ["kick", "room kick [name]", "Kick a player/spectator back to home screen."],
+      ["lock", "room lock", "Prevent additional spectators."],
+      ["unlock", "room unlock", "Allow spectators."],
+      ["rename", "room rename [name]", "Set room display name."]
+    ]
+  },
+  player: {
+    page: 1,
+    summary: "Players, seats, identities.",
+    subcommands: [
+      ["bot", "player bot [name] [difficulty=medium]", "Replace player with bot."],
+      ["takeover", "player takeover [name]", "Take over a player slot."],
+      ["find", "player find [name]", "Find player in rooms."],
+      ["count", "player count", "Show player/bot/spectator counts."],
+      ["override", "player override [self|name] [on|off]", "Allow moving all pieces."],
+      ["colour", "player colour [name] [white|black|spectator]", "Move participant to slot."],
+      ["rename", "player rename [white|black|name] [new name]", "Temporarily rename a player."]
+    ]
+  },
+  match: {
+    page: 1,
+    summary: "Match-level state.",
+    subcommands: [
+      ["end", "match end [white|black|none]", "End the match."],
+      ["turn", "match turn [white|black]", "Force current turn."],
+      ["reset", "match reset", "Reset to starting position."],
+      ["validate", "match validate", "Validate board state."],
+      ["forfeit", "match forfeit", "Forfeit as current player."]
+    ]
+  },
+  chat: {
+    page: 1,
+    summary: "Chat, fake messages, announcements.",
+    subcommands: [
+      ["shout", "chat shout [message]", "Large overlay announcement. Alias: shout."],
+      ["announce", "chat announce [message]", "System-style announcement. Alias: announce."],
+      ["system", "chat system [message]", "System chat line."],
+      ["sudo", "chat sudo [white|black|name] [message]", "Fake chat from a player. Alias: sudo."],
+      ["whisper", "chat whisper [white|black|name] [message]", "Private dev message. Alias: whisper."],
+      ["quote", "chat quote blunder", "Random blunder quote. Alias: blunderquote."]
+    ]
+  },
+  board: {
+    page: 2,
+    summary: "Whole-board state.",
+    subcommands: [
+      ["clear", "board clear", "Remove all pieces."],
+      ["copy", "board copy", "Print position code."],
+      ["load", "board load [code]", "Load position code."],
+      ["mirror", "board mirror", "Mirror all pieces."],
+      ["shuffle backrank", "board shuffle backrank", "Randomise back rank."]
+    ]
+  },
+  piece: {
+    page: 2,
+    summary: "Piece editing and inspection.",
+    subcommands: [
+      ["add", "piece add [square] [piece] [colour=turn]", "Add a piece."],
+      ["remove", "piece remove [square]", "Remove piece."],
+      ["teleport", "piece teleport [from] [to]", "Move without recording."],
+      ["force", "piece force [from] [to]", "Move and record, ignoring legality."],
+      ["replace", "piece replace [square] [piece] [colour]", "Replace occupied square."],
+      ["list", "piece list [white|black]", "List pieces."],
+      ["find", "piece find [id|type]", "Find pieces."],
+      ["legal", "piece legal [square]", "List legal moves."],
+      ["attacks", "piece attacks [square]", "List attack squares."],
+      ["kill king", "piece kill king [white|black]", "Remove a king."],
+      ["promote", "piece promote [square] [piece]", "Change one piece type."],
+      ["moved", "piece moved [square] [true|false]", "Edit hasMoved flag."],
+      ["god", "piece god [square] [on|off]", "Make a piece unkillable. Alias: god."]
+    ]
+  },
+  view: {
+    page: 2,
+    summary: "Local view controls.",
+    subcommands: [
+      ["mode", "view mode [xz|xy|yz|iso]", "Set view plane."],
+      ["layer", "view layer [0-7]", "Set 3D layer."],
+      ["coords", "view coords [on|off|toggle]", "Coordinate labels."]
+    ]
+  },
+  mark: {
+    page: 2,
+    summary: "Local board markers.",
+    subcommands: [
+      ["square", "mark square [square]", "Highlight a square."],
+      ["clear", "mark clear", "Clear highlights/ghosts."],
+      ["ghost", "mark ghost [from] [to|clear]", "Show projected move."],
+      ["checks", "mark checks", "Highlight king squares."],
+      ["attacks", "mark attacks [white|black]", "Highlight piece origins."],
+      ["spotlight", "mark spotlight [square]", "Dramatic local spotlight. Alias: spotlight."],
+      ["ping", "mark ping [square]", "Ping a square. Alias: ping."]
+    ]
+  },
+  ai: {
+    page: 2,
+    summary: "AI tools.",
+    subcommands: [
+      ["think", "ai think [white|black] [difficulty]", "AI candidates."],
+      ["move", "ai move [white|black] [difficulty]", "Force AI move."],
+      ["difficulty", "ai difficulty [white|black] [easy|medium|hard]", "Set bot difficulty."],
+      ["pause", "ai pause", "Pause bots."],
+      ["resume", "ai resume", "Resume bots."],
+      ["eval", "ai eval [white|black]", "Evaluate position."],
+      ["top", "ai top [white|black] [n=5]", "Top moves."]
+    ]
+  },
+  clock: {
+    page: 2,
+    summary: "Timer controls.",
+    subcommands: [
+      ["set", "clock set [white|black] [seconds|mm:ss]", "Set clock."],
+      ["pause", "clock pause", "Pause clock."],
+      ["resume", "clock resume", "Resume clock."],
+      ["add", "clock add [white|black] [seconds|mm:ss]", "Add time."],
+      ["preset", "clock preset [classical|rapid|blitz|bullet]", "Reset time control."],
+      ["flag", "clock flag [white|black]", "Force timeout."]
+    ]
+  },
+  fx: {
+    page: 3,
+    summary: "Visual-only troll/feedback effects.",
+    options: [
+      "confetti", "flashboard", "invertboard [turns]", "drunkboard [turns]", "earthquake", "emoji [emoji]", "rain [emoji|piece]",
+      "freeze [seconds]", "fakecheck", "fakewin [white|black]", "pause dramatic", "bonk [player]", "jumpscare [player|all]",
+      "toasty", "laser [from] [to]", "board rainbow|disco|fog|snow|bloodmoon|night|mirror|tilt|squish|theme [theme]", "fireworks",
+      "scooby zoinks|jinkies|footprints|haunt|ghosttrap|smoke|mysterymachine|clue|traproulette|boo|owners|panicpawns|magnify"
+    ],
+    subcommands: [
+      ["effect", "fx [effect] [args]", "Run visual effect. See options below."],
+      ["clear", "fx clear", "Clear active visual effects."]
+    ]
+  },
+  cosmetic: {
+    page: 3,
+    summary: "Visual-only cosmetics.",
+    options: ["piece [square] size big|tiny", "piece [square] spin|jiggle|glow [colour]|hat [type]|mustache|name [text]|clown|ghost", "icon [colour] [piece] [emoji]", "player [white|black] duckify|scoobydoo", "curse [player] [slippery|haunted|tiny|giant|rainbow|upsideDown]", "clear"],
+    subcommands: [
+      ["piece", "cosmetic piece [square] [effect] ...", "Apply piece cosmetic."],
+      ["player", "cosmetic player [player] [effect]", "Apply player cosmetic."],
+      ["icon", "cosmetic icon [colour] [piece] [emoji]", "Override piece icon locally."],
+      ["curse", "cosmetic curse [player] [curse|clear]", "Apply/remove visual curse."],
+      ["clear", "cosmetic clear", "Clear cosmetics."]
+    ]
+  },
+  chaos: {
+    page: 4,
+    summary: "[DANGEROUS] General game-state chaos.",
+    subcommands: [
+      ["move", "chaos move", "Random legal move."],
+      ["swap", "chaos swap kings|queens", "Swap key pieces."],
+      ["shuffle", "chaos shuffle [white|black|all]", "Shuffle pieces."],
+      ["yeet", "chaos yeet [square]", "Remove piece."],
+      ["clone", "chaos clone [from] [to]", "Duplicate piece."],
+      ["mutate", "chaos mutate [square] [piece]", "Change piece type."],
+      ["promote", "chaos promote random [colour]", "Randomly upgrade one piece."],
+      ["downgrade", "chaos downgrade [square]", "Turn piece into pawn."],
+      ["king", "chaos king teleport [colour] [square]", "Teleport king."],
+      ["pawnstorm", "chaos pawnstorm [colour]", "Advance pawns."],
+      ["civilwar", "chaos civilwar [colour]", "Swap same-colour pieces."],
+      ["tax", "chaos tax [colour]", "Remove random non-king."],
+      ["blessing", "chaos blessing [colour]", "Shield/buff random piece."]
+    ]
+  },
+  predict: {
+    page: 4,
+    summary: "Predict variant debug and fun.",
+    subcommands: [
+      ["state", "predict state", "Round and locked status."],
+      ["reveal", "predict reveal", "Reveal pending moves to dev."],
+      ["clear", "predict clear [white|black|all]", "Clear pending move(s)."],
+      ["lock", "predict lock [colour] [from] [to]", "Force pending move."],
+      ["resolve", "predict resolve", "Resolve pending moves."],
+      ["round", "predict round [number]", "Set round counter."],
+      ["ghost", "predict ghost [colour]", "Show pending move as local ghost."],
+      ["peek", "predict peek [white|black]", "Dev-only peek. Alias: predictpeek."],
+      ["test", "predict test capture|illegal|mate", "Create test setup."],
+      ["fake", "predict fake [colour] [square]", "Fake prediction marker."],
+      ["panic", "predict panic", "Suspense overlay."]
+    ]
+  },
+  scooby: {
+    page: 5,
+    summary: "Scooby variant trap/smoke/control tools.",
+    subcommands: [
+      ["state", "scooby state", "Trap/smoke/control state."],
+      ["reveal", "scooby reveal", "Reveal all traps to dev."],
+      ["hide", "scooby hide", "Return to hidden mode."],
+      ["visible", "scooby visible [white|black]", "What a player sees."],
+      ["detected", "scooby detected [white|black]", "Pawn-detected traps."],
+      ["owners", "scooby owners", "Owner summary."],
+      ["trap", "scooby trap add|remove|clear|list|counts|limit|random|storm|convert|trigger|defuse|spring ...", "Trap editing/chaos."],
+      ["smoke", "scooby smoke add|clear|list|expire|turns|bomb ...", "Smoke editing."],
+      ["control", "scooby control add|release|list|expire|turns|zap ...", "Mind-control editing."],
+      ["test", "scooby test defuse|mine|pitfall|smoke|mindcontrol ...", "Quick test setups."]
+    ]
+  },
+  tycoon: {
+    page: 5,
+    summary: "Tycoon economy/building tools.",
+    subcommands: [
+      ["state", "tycoon state", "Money/upgrades/walls/bombs."],
+      ["money", "tycoon money set|add|remove|bankrupt [colour] [amount]", "Edit money."],
+      ["upgrade", "tycoon upgrade storage|production [colour] [level]", "Set upgrades."],
+      ["income", "tycoon income [colour]", "Force income tick."],
+      ["wall", "tycoon wall place|clear|remove ...", "Wall tools."],
+      ["bomb", "tycoon bomb place|explode|clear|party ...", "Bomb tools."],
+      ["shield", "tycoon shield add|remove [square]", "Shield tools."],
+      ["silo", "tycoon silo list", "List silos."],
+      ["buy", "tycoon buy queen [colour] [square] free", "Free piece buy."],
+      ["buyout", "tycoon buyout [square] [colour]", "Convert piece ownership."]
+    ]
+  },
+  nuke: {
+    page: 6,
+    summary: "Nuke variant tools.",
+    subcommands: [
+      ["state", "nuke state", "Charge/active nuke state."],
+      ["charge", "nuke charge set|add|max [colour] [amount]", "Edit charge."],
+      ["launch", "nuke launch [square] [colour] [radius]", "Force launch."],
+      ["explode", "nuke explode [colour]", "Detonate active nuke."],
+      ["clear", "nuke clear", "Clear active nukes."],
+      ["mark", "nuke mark [square] [radius]", "Highlight blast."],
+      ["timer", "nuke timer [colour] [turns]", "Edit timer."],
+      ["oops", "nuke oops [square]", "Place real short-timer nuke."],
+      ["blast", "nuke blast [square] [radius]", "Generic instant board nuke."]
+    ]
+  },
+  crazyhouse: {
+    page: 6,
+    summary: "Crazyhouse reserve/drop tools.",
+    subcommands: [
+      ["reserve", "crazyhouse reserve list|add|clear|gift|bomb ...", "Reserve editing."],
+      ["drop", "crazyhouse drop [colour] [piece] [square] | chaos [count]", "Drops."],
+      ["test", "crazyhouse test dropcheck", "Drop-check setup."]
+    ]
+  },
+  atomic: {
+    page: 6,
+    summary: "Atomic tools.",
+    subcommands: [
+      ["mark", "atomic mark [square]", "Show blast area."],
+      ["explode", "atomic explode [square] [real]", "Trigger explosion."],
+      ["chainreaction", "atomic chainreaction", "Repeated explosions."],
+      ["nuclearpawns", "atomic nuclearpawns", "Toggle pawn captures explode."],
+      ["test", "atomic test king|pawn", "Test setups."]
+    ]
+  },
+  hill: {
+    page: 6,
+    summary: "King of the Hill tools.",
+    subcommands: [
+      ["setup", "hill setup", "Move kings to hill setup."],
+      ["state", "hill state", "Show distances."],
+      ["mark", "hill mark", "Highlight hill."],
+      ["test", "hill test win [colour]", "Immediate hill win setup."]
+    ]
+  }
 };
 
-export function getDevCommandHelp(command) {
-  if (!command) return ["! command not found"];
-  const aliases = command.aliases?.length ? command.aliases.join(", ") : "none";
-  const params = DEV_COMMAND_PARAMETER_DOCS[command.action] || [];
-  const lines = [
-    `${command.name}`,
-    `usage: ${command.usage}`,
-    `aliases: ${aliases}`,
-    `function: ${command.summary || "No summary available."}`
-  ];
-  if (!params.length) {
-    lines.push("parameters: none");
-  } else {
-    lines.push("parameters:");
-    for (const param of params) {
-      lines.push(`- ${param.name} (${param.required ? "required" : "optional"}): ${param.description}`);
-    }
+const LEGACY = {
+  findopenmatches: ["room", "list", "open"], rooms: ["room", "list", "open"], listrooms: ["room", "list", "detailed"], openmatches: ["room", "list", "open"],
+  spectatematch: ["room", "spectate"], spectate: ["room", "spectate"], watch: ["room", "spectate"],
+  joincode: ["room", "join"], join: ["room", "join"], joinroom: ["room", "join"],
+  startmatch: ["room", "start"], newmatch: ["room", "start"], spawnmatch: ["room", "start"], botbattle: ["room", "botbattle"],
+  exitmatch: ["room", "exit"], exit: ["room", "exit"], leave: ["room", "exit"], home: ["room", "exit"],
+  roominfo: ["room", "info"], copyroom: ["room", "copy"], kickplayer: ["room", "kick"], lockroom: ["room", "lock"], unlockroom: ["room", "unlock"], renameroom: ["room", "rename"],
+  replacewithbot: ["player", "bot"], replaceplayer: ["player", "takeover"], findplayer: ["player", "find"], playercount: ["player", "count"], spectatoroverride: ["player", "override", "self", "on"], clearoverride: ["player", "override", "self", "off"], setplayercolour: ["player", "colour"], rename: ["player", "rename"],
+  endmatch: ["match", "end"], setturn: ["match", "turn"], resetmatch: ["match", "reset"], validateboard: ["match", "validate"],
+  shout: ["chat", "shout"], announce: ["chat", "announce"], broadcast: ["chat", "system"], systemchat: ["chat", "system"], sudo: ["chat", "sudo"], whisper: ["chat", "whisper"], blunderquote: ["chat", "quote", "blunder"],
+  clearboard: ["board", "clear"], cloneposition: ["board", "copy"], loadposition: ["board", "load"], mirrorboard: ["board", "mirror"], shufflebackrank: ["board", "shuffle", "backrank"],
+  addpiece: ["piece", "add"], removepiece: ["piece", "remove"], teleportpiece: ["piece", "teleport"], moveforce: ["piece", "force"], replacepiece: ["piece", "replace"], listpieces: ["piece", "list"], findpiece: ["piece", "find"], legalmoves: ["piece", "legal"], attacks: ["piece", "attacks"], killking: ["piece", "kill", "king"], promote: ["piece", "promote"], setmoved: ["piece", "moved"], god: ["piece", "god"],
+  setview: ["view", "mode"], setlayer: ["view", "layer"], showcoords: ["view", "coords", "toggle"],
+  showattacks: ["mark", "attacks"], showchecks: ["mark", "checks"], highlight: ["mark", "square"], clearhighlights: ["mark", "clear"], ghostmove: ["mark", "ghost"], clearghost: ["mark", "ghost", "clear"], spotlight: ["mark", "spotlight"], ping: ["mark", "ping"],
+  aithink: ["ai", "think"], forceaimove: ["ai", "move"], setaidifficulty: ["ai", "difficulty"], pausebots: ["ai", "pause"], resumebots: ["ai", "resume"], evalposition: ["ai", "eval"], topmoves: ["ai", "top"],
+  settimer: ["clock", "set"], pausetimer: ["clock", "pause"], resumetimer: ["clock", "resume"], addtime: ["clock", "add"], settimecontrol: ["clock", "preset"], flag: ["clock", "flag"],
+  confetti: ["fx", "confetti"], flashboard: ["fx", "flashboard"], invertboard: ["fx", "invertboard"], drunkboard: ["fx", "drunkboard"], earthquake: ["fx", "earthquake"], emoji: ["fx", "emoji"], rain: ["fx", "rain"], freezeui: ["fx", "freeze"], fakecheck: ["fx", "fakecheck"], fakewin: ["fx", "fakewin"], dramaticpause: ["fx", "pause", "dramatic"], bonk: ["fx", "bonk"], jumpscare: ["fx", "jumpscare"], toasty: ["fx", "toasty"], laser: ["fx", "laser"], rainbowboard: ["fx", "board", "rainbow"], disco: ["fx", "board", "disco"], fog: ["fx", "board", "fog"], snow: ["fx", "board", "snow"], fireworks: ["fx", "fireworks"], bloodmoon: ["fx", "board", "bloodmoon"], nightmode: ["fx", "board", "night"], mirrorvisual: ["fx", "board", "mirror"], tiltboard: ["fx", "board", "tilt"], squishboard: ["fx", "board", "squish"], boardtheme: ["fx", "board", "theme"], clearvisuals: ["fx", "clear"],
+  bigpiece: ["cosmetic", "piece", null, "size", "big"], tinypiece: ["cosmetic", "piece", null, "size", "tiny"], spinpiece: ["cosmetic", "piece", null, "spin"], jigglepiece: ["cosmetic", "piece", null, "jiggle"], glowpiece: ["cosmetic", "piece", null, "glow"], hat: ["cosmetic", "piece", null, "hat"], mustache: ["cosmetic", "piece", null, "mustache"], renamepiece: ["cosmetic", "piece", null, "name"], swapicons: ["cosmetic", "icon"], duckify: ["cosmetic", "player", null, "duckify"], clownpiece: ["cosmetic", "piece", null, "clown"], ghostpiece: ["cosmetic", "piece", null, "ghost"], curse: ["cosmetic", "curse"], uncurse: ["cosmetic", "curse", null, "clear"], clearcosmetics: ["cosmetic", "clear"],
+  chaosmove: ["chaos", "move"], swapkings: ["chaos", "swap", "kings"], swapqueens: ["chaos", "swap", "queens"], shufflepieces: ["chaos", "shuffle"], yeet: ["chaos", "yeet"], clonepiece: ["chaos", "clone"], mutatepiece: ["chaos", "mutate"], randompromote: ["chaos", "promote", "random"], downgrade: ["chaos", "downgrade"], teleportking: ["chaos", "king", "teleport"], pawnstorm: ["chaos", "pawnstorm"], civilwar: ["chaos", "civilwar"], tax: ["chaos", "tax"], blessing: ["chaos", "blessing"],
+  predictstate: ["predict", "state"], predictreveal: ["predict", "reveal"], predictclear: ["predict", "clear"], predictlock: ["predict", "lock"], predictresolve: ["predict", "resolve"], predictround: ["predict", "round"], predictghost: ["predict", "ghost"], predicttestcapture: ["predict", "test", "capture"], predicttestillegal: ["predict", "test", "illegal"], predicttestmate: ["predict", "test", "mate"], predictpeek: ["predict", "peek"], fakepredict: ["predict", "fake"], misdirect: ["predict", "misdirect"], doubleblind: ["predict", "doubleblind"], spoiler: ["predict", "spoiler"], mindread: ["predict", "mindread"], predictpanic: ["predict", "panic"], confidence: ["predict", "confidence"], fakeunlock: ["predict", "fakeunlock"], predicttaunt: ["predict", "taunt"],
+  scoobystate: ["scooby", "state"], scoobyreveal: ["scooby", "reveal"], scoobyhide: ["scooby", "hide"], scoobyvisible: ["scooby", "visible"], scoobydetected: ["scooby", "detected"], scoobyowners: ["scooby", "owners"], listtraps: ["scooby", "trap", "list"], trapcounts: ["scooby", "trap", "counts"], settraplimit: ["scooby", "trap", "limit"], resettraplimits: ["scooby", "trap", "limits", "reset"], addtrap: ["scooby", "trap", "add"], removetrap: ["scooby", "trap", "remove"], cleartraps: ["scooby", "trap", "clear"], triggertrap: ["scooby", "trap", "trigger"], defusetrap: ["scooby", "trap", "defuse"], randomtrap: ["scooby", "trap", "random"], trapstorm: ["scooby", "trap", "storm"], allmines: ["scooby", "trap", "convert", "mines"], allfake: ["scooby", "trap", "convert", "decoys"], springtrap: ["scooby", "trap", "spring"], addsmoke: ["scooby", "smoke", "add"], clearsmoke: ["scooby", "smoke", "clear"], listsmoke: ["scooby", "smoke", "list"], expiresmoke: ["scooby", "smoke", "expire"], smoketurns: ["scooby", "smoke", "turns"], smokebomb: ["scooby", "smoke", "bomb"], controlpiece: ["scooby", "control", "add"], releasepiece: ["scooby", "control", "release"], listcontrolled: ["scooby", "control", "list"], expirecontrol: ["scooby", "control", "expire"], controlturns: ["scooby", "control", "turns"], mindzap: ["scooby", "control", "zap"],
+  tycoonstate: ["tycoon", "state"], setmoney: ["tycoon", "money", "set"], addmoney: ["tycoon", "money", "add"], givemoney: ["tycoon", "money", "add"], takemoney: ["tycoon", "money", "remove"], bankrupt: ["tycoon", "money", "bankrupt"], setstorage: ["tycoon", "upgrade", "storage"], setproduction: ["tycoon", "upgrade", "production"], forceincome: ["tycoon", "income"], placewall: ["tycoon", "wall", "place"], freewall: ["tycoon", "wall", "place", null, null, "free"], clearwalls: ["tycoon", "wall", "clear"], evict: ["tycoon", "wall", "remove"], placebomb: ["tycoon", "bomb", "place"], explodebomb: ["tycoon", "bomb", "explode"], clearbombs: ["tycoon", "bomb", "clear"], bombparty: ["tycoon", "bomb", "party"], shield: ["tycoon", "shield", "add"], unshield: ["tycoon", "shield", "remove"], listsilos: ["tycoon", "silo", "list"], freequeen: ["tycoon", "buy", "queen", null, null, "free"], hostilebuyout: ["tycoon", "buyout"],
+  nukestate: ["nuke", "state"], setnukecharge: ["nuke", "charge", "set"], addnukecharge: ["nuke", "charge", "add"], maxcharge: ["nuke", "charge", "max"], launchnuke: ["nuke", "launch"], explodenuke: ["nuke", "explode"], clearnukes: ["nuke", "clear"], nukeblast: ["nuke", "mark"], nuketimer: ["nuke", "timer"], testrookblock: ["nuke", "test", "rookblock"], oopsnuke: ["nuke", "oops"],
+  reserves: ["crazyhouse", "reserve", "list"], addreserve: ["crazyhouse", "reserve", "add"], clearreserve: ["crazyhouse", "reserve", "clear"], dropreserve: ["crazyhouse", "drop"], testdropcheck: ["crazyhouse", "test", "dropcheck"], pocketgift: ["crazyhouse", "reserve", "gift"], pocketbomb: ["crazyhouse", "reserve", "bomb"], dropchaos: ["crazyhouse", "drop", "chaos"],
+  atomicblast: ["atomic", "mark"], explode: ["atomic", "explode"], realboom: ["atomic", "explode", null, "real"], chainreaction: ["atomic", "chainreaction"], nuclearpawns: ["atomic", "nuclearpawns"], testatomicking: ["atomic", "test", "king"], testatomicpawn: ["atomic", "test", "pawn"],
+  hillstate: ["hill", "state"], showhill: ["hill", "mark"], testhillwin: ["hill", "test", "win"]
+};
+
+function normalizeName(name) {
+  return String(name || "").trim().toLowerCase().replace(/^\/+/, "");
+}
+
+function expandPrefix(prefix, args) {
+  const next = [];
+  let argIndex = 0;
+  for (const item of prefix) {
+    if (item === null) next.push(args[argIndex++] ?? "");
+    else next.push(item);
   }
-  return lines;
+  return [...next, ...args.slice(argIndex)];
 }
 
-export function getDevCommandListLines() {
-  return DEV_COMMANDS.map((entry) => entry.usage);
+export function findDevCommand(name) {
+  const key = normalizeName(name);
+  if (!key) return null;
+  const direct = DEV_COMMANDS.find((command) => command.name === key || command.aliases?.includes(key));
+  if (direct) return direct;
+  const prefix = LEGACY[key];
+  if (!prefix) return null;
+  const action = prefix[0];
+  return {
+    name: key,
+    action,
+    prefixArgs: prefix.slice(1),
+    usage: `${key} ...`,
+    summary: `Alias for ${prefix.filter(Boolean).join(" ")}.`
+  };
 }
 
-export function findDevCommand(inputName) {
-  const normalised = normaliseCommandName(inputName);
-  return DEV_COMMANDS.find((command) => {
-    const names = [command.name, ...(command.aliases || [])].map(normaliseCommandName);
-    return names.includes(normalised);
-  }) || null;
+export function applyCommandPrefix(command, args) {
+  if (!command?.prefixArgs) return args;
+  return expandPrefix(command.prefixArgs, args);
 }
 
-export function normaliseCommandName(value) {
-  return String(value || "").trim().toLowerCase().replace(/[\s_-]+/g, "");
+export function getDevCommandListLines(page = null) {
+  const pageNumber = Number.parseInt(page, 10);
+  if (!Number.isInteger(pageNumber)) {
+    return [
+      "Developer console help is paged.",
+      "Use: help 1, help 2, help 3, ...",
+      "Use: help [category] for category commands, e.g. help chat",
+      "Use: help [command] for aliases, e.g. help sudo",
+      "Pages:",
+      "1 room / player / match / chat",
+      "2 board / piece / view / mark / ai / clock",
+      "3 fx / cosmetic",
+      "4 chaos / predict",
+      "5 scooby / tycoon",
+      "6 nuke / crazyhouse / atomic / hill"
+    ];
+  }
+  const names = Object.entries(GROUPS).filter(([, group]) => group.page === pageNumber);
+  if (!names.length) return [`No help page ${pageNumber}. Available: help 1 to help 6.`];
+  return [
+    `Help page ${pageNumber}:`,
+    ...names.map(([name, group]) => `${name.padEnd(12)} ${group.summary}`),
+    "Use help [category] for subcommands."
+  ];
+}
+
+export function getDevCommandHelp(target = "") {
+  const query = Array.isArray(target) ? target.join(" ") : String(target || "").trim();
+  if (!query) return getDevCommandListLines();
+  const pageNumber = Number.parseInt(query, 10);
+  if (Number.isInteger(pageNumber)) return getDevCommandListLines(pageNumber);
+
+  const tokens = query.split(/\s+/).filter(Boolean).map(normalizeName);
+  const first = tokens[0];
+  const command = findDevCommand(first);
+  if (!command) return [`No help found for: ${query}`];
+
+  const category = command.action;
+  const args = applyCommandPrefix(command, tokens.slice(1));
+  const group = GROUPS[category];
+
+  if (!group) {
+    return [
+      `${command.name}`,
+      `Usage: ${command.usage}`,
+      command.summary || ""
+    ].filter(Boolean);
+  }
+
+  if (!args.length) {
+    return [
+      `${category}: ${group.summary}`,
+      "Subcommands:",
+      ...group.subcommands.map(([name, usage, summary]) => `  ${name.padEnd(18)} ${usage} — ${summary}`),
+      ...(group.options ? ["Options:", ...group.options.map((item) => `  ${item}`)] : [])
+    ];
+  }
+
+  const lookup = args.join(" ");
+  const sub = group.subcommands.find(([name]) => lookup === name || lookup.startsWith(`${name} `) || name.split(" ")[0] === args[0]);
+  if (sub) {
+    return [
+      `${category} ${sub[0]}`,
+      `Usage: ${sub[1]}`,
+      sub[2],
+      ...(group.options ? ["Available options:", ...group.options.map((item) => `  ${item}`)] : [])
+    ];
+  }
+
+  return [
+    `${category}: ${group.summary}`,
+    `No exact subcommand help for "${args.join(" ")}".`,
+    `Try: help ${category}`
+  ];
+}
+
+export function getDevCommandByAction(action) {
+  return DEV_COMMANDS.find((command) => command.action === action) || null;
 }

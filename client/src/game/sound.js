@@ -80,6 +80,32 @@ export function playSoundEffect(type, options = {}) {
     return;
   }
 
+  if (type === "explosion") {
+    tone(80, 0.18, "sawtooth", master, now);
+    tone(55, 0.28, "sine", master, now + 0.04);
+    tone(160, 0.09, "square", master, now + 0.02);
+    return;
+  }
+
+  if (type === "income") {
+    tone(660, 0.06, "triangle", master, now);
+    tone(880, 0.08, "triangle", master, now + 0.055);
+    tone(1100, 0.1, "sine", master, now + 0.12);
+    return;
+  }
+
+  if (type === "trap") {
+    tone(300, 0.08, "square", master, now);
+    tone(180, 0.12, "sawtooth", master, now + 0.07);
+    return;
+  }
+
+  if (type === "ping") {
+    tone(980, 0.045, "sine", master, now);
+    tone(1240, 0.055, "sine", master, now + 0.04);
+    return;
+  }
+
   tone(360, 0.055, "triangle", master, now);
   tone(260, 0.07, "sine", master, now + 0.045);
 }
@@ -101,6 +127,9 @@ function tone(frequency, duration, type, destination, startTime) {
 function durationFor(type) {
   if (type === "checkmate" || type === "gameOver") return 0.62;
   if (type === "matchFound" || type === "start") return 0.38;
+  if (type === "explosion") return 0.42;
+  if (type === "income") return 0.32;
+  if (type === "trap") return 0.28;
   if (type === "shout") return 0.32;
   if (type === "check") return 0.26;
   if (type === "capture") return 0.22;

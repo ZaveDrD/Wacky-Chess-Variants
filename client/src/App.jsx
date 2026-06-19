@@ -15,7 +15,7 @@ import {
   getAIDifficultyLabel
 } from "./game/variants.js";
 import { buildReviewTimeline } from "./game/replay.js";
-import { DEV_COMMANDS, DEV_CONSOLE_UNLOCK_SEQUENCE, findDevCommand, getDevCommandHelp, getDevCommandListLines } from "./game/devCommands.js";
+import { DEV_CONSOLE_UNLOCK_SEQUENCE, findDevCommand, applyCommandPrefix, getDevCommandHelp, getDevCommandListLines } from "./game/devCommands.js";
 import { playSoundEffect, unlockAudio } from "./game/sound.js";
 
 const VIEWS = ["XZ", "XY", "YZ", "ISO"];
@@ -63,6 +63,9 @@ export default function App() {
   const [soundEnabled, setSoundEnabled] = useState(localStorage.getItem("soundEnabled") !== "false");
   const [soundVolume, setSoundVolume] = useState(Number(localStorage.getItem("soundVolume") || "0.45"));
   const [shoutOverlay, setShoutOverlay] = useState(null);
+  const [feedbackOverlay, setFeedbackOverlay] = useState(null);
+  const [devFxClass, setDevFxClass] = useState("");
+  const [devCosmetics, setDevCosmetics] = useState({ pieces: {}, icons: {}, curses: {} });
   const devSequenceIndexRef = useRef(0);
   const previousGameRef = useRef(null);
   const previousChatLengthRef = useRef(0);
@@ -149,6 +152,11 @@ export default function App() {
       if (lines.length) appendDevLines(lines.map((line) => result.ok === false ? `! ${line}` : String(line)));
     });
 
+    socket.on("devKickedHome", ({ reason } = {}) => {
+      setNotice(reason || "You were kicked from the room.");
+      returnHome();
+    });
+
     socket.on("shoutMessage", ({ message, from } = {}) => {
       const body = String(message || "").trim();
       if (!body) return;
@@ -178,6 +186,7 @@ export default function App() {
       socket.off("invalidMove");
       socket.off("chatError");
       socket.off("devCommandResult");
+      socket.off("devKickedHome");
       socket.off("shoutMessage");
       socket.off("legalMoves");
     };
@@ -237,6 +246,23 @@ export default function App() {
     playSoundEffect(type, { enabled: soundEnabled, volume: soundVolume });
   }
 
+  function triggerFeedback(text, type = "info", duration = 2600) {
+    if (!text) return;
+    const id = Date.now() + Math.random();
+    setFeedbackOverlay({ id, text, type });
+    window.setTimeout(() => {
+      setFeedbackOverlay((current) => current?.id === id ? null : current);
+    }, duration);
+  }
+
+  function triggerBoardFx(className, duration = 1600, text = "") {
+    setDevFxClass(className || "");
+    if (text) triggerFeedback(text, className || "fx", duration);
+    window.setTimeout(() => {
+      setDevFxClass((current) => current === className ? "" : current);
+    }, duration);
+  }
+
   useEffect(() => {
     localStorage.setItem("soundEnabled", String(soundEnabled));
   }, [soundEnabled]);
@@ -260,7 +286,26 @@ export default function App() {
       const nextMoveCount = game.moveHistory?.length || 0;
       if (nextMoveCount > previousMoveCount) {
         const lastMove = game.moveHistory?.[nextMoveCount - 1];
-        playUiSound(lastMove?.captured ? "capture" : "move");
+        const atomicCount = lastMove?.atomicRemoved?.length || 0;
+        const trap = lastMove?.scoobyTrap;
+        if (atomicCount || lastMove?.tycoonExplosion || lastMove?.nukeExplosion) {
+          playUiSound("explosion");
+          triggerBoardFx("fx-earthquake", 900, atomicCount ? `Atomic blast: ${atomicCount} piece${atomicCount === 1 ? "" : "s"} removed.` : "Explosion resolved.");
+        } else if (trap) {
+          playUiSound("trap");
+          triggerFeedback(`Scooby trap triggered: ${trap.type || "trap"}.`, "trap");
+        } else {
+          playUiSound(lastMove?.captured ? "capture" : "move");
+        }
+      }
+
+      const incomeEffects = game.effects?.income || [];
+      const previousIncomeKey = (previousGame.effects?.income || []).map((item) => `${item.color}:${item.amount}:${item.time}`).join("|");
+      const nextIncomeKey = incomeEffects.map((item) => `${item.color}:${item.amount}:${item.time}`).join("|");
+      if (incomeEffects.length && nextIncomeKey !== previousIncomeKey) {
+        const latestIncome = incomeEffects[incomeEffects.length - 1];
+        playUiSound("income");
+        triggerFeedback(`${latestIncome.color} earned +$${latestIncome.amount} from Tycoon production.`, "income");
       }
 
       if (!previousGame.check && game.check) playUiSound("check");
@@ -357,17 +402,18 @@ export default function App() {
     }
 
     if (command.action === "help") {
-      if (args.length) {
-        const target = findDevCommand(args.join(" ")) || findDevCommand(args[0]);
-        appendDevLines(getDevCommandHelp(target));
-      } else {
-        appendDevLines(["available commands:", ...getDevCommandListLines(), "type help [command_name] for details."]);
-      }
+      appendDevLines(getDevCommandHelp(args));
       return;
     }
 
     if (command.action === "clear") {
       setDevConsoleLines([]);
+      return;
+    }
+
+    const routedArgs = applyCommandPrefix(command, args);
+
+    if (handleLocalDevCommand(command.action, routedArgs)) {
       return;
     }
 
@@ -476,13 +522,223 @@ export default function App() {
 
     socket.emit("devCommand", {
       action: command.action,
-      args,
+      args: routedArgs,
       name: name.trim() || "Developer",
       currentRoomCode: roomCode,
       selectedVariant,
       selectedTimeControl,
       selectedAIDifficulty
     });
+  }
+
+
+  function handleLocalDevCommand(action, args) {
+    if (action === "room" && args[0] === "copy") {
+      copyRoomCode();
+      appendDevLines(roomCode ? `copied ${roomCode}` : "! no active room code");
+      return true;
+    }
+
+    if (action === "room" && args[0] === "exit") {
+      socket.emit("devCommand", {
+        action,
+        args,
+        name: name.trim() || "Developer",
+        currentRoomCode: roomCode,
+        selectedVariant,
+        selectedTimeControl,
+        selectedAIDifficulty
+      });
+      returnHome();
+      return true;
+    }
+
+    if (action === "view") {
+      const sub = String(args[0] || "").toLowerCase();
+      if (sub === "mode") {
+        const nextView = String(args[1] || "").trim().toUpperCase();
+        if (!["XZ", "XY", "YZ", "ISO"].includes(nextView)) { appendDevLines("! usage: view mode [xz | xy | yz | iso]"); return true; }
+        setView(nextView);
+        appendDevLines(`view=${nextView}`);
+        return true;
+      }
+      if (sub === "layer") {
+        const nextLayer = Number.parseInt(args[1], 10);
+        if (!Number.isInteger(nextLayer) || nextLayer < 0 || nextLayer > 7) { appendDevLines("! usage: view layer [0-7]"); return true; }
+        setLayer(nextLayer);
+        appendDevLines(`layer=${nextLayer}`);
+        return true;
+      }
+      if (sub === "coords") {
+        const mode = String(args[1] || "toggle").toLowerCase();
+        setDevVisuals((current) => ({ ...current, showCoords: mode === "on" ? true : mode === "off" ? false : !current.showCoords }));
+        appendDevLines("coordinate labels updated.");
+        return true;
+      }
+    }
+
+    if (action === "mark") {
+      const sub = String(args[0] || "").toLowerCase();
+      if (sub === "clear") {
+        setDevVisuals((current) => ({ ...current, highlights: [], ghostMove: null, spotlight: null, pings: [] }));
+        appendDevLines("dev markers cleared.");
+        return true;
+      }
+      if (sub === "square" || sub === "spotlight" || sub === "ping") {
+        const loc = parseDevLocation(args, 1)?.location;
+        if (!loc) { appendDevLines(`! usage: mark ${sub} [location]`); return true; }
+        setDevVisuals((current) => ({
+          ...current,
+          highlights: sub === "square" ? [...(current.highlights || []), loc].slice(-64) : current.highlights,
+          spotlight: sub === "spotlight" ? loc : current.spotlight,
+          pings: sub === "ping" ? [...(current.pings || []), { ...loc, id: Date.now() }].slice(-8) : current.pings
+        }));
+        triggerFeedback(sub === "ping" ? `Ping ${coordText(loc)}` : `Spotlight ${coordText(loc)}`, sub);
+        playUiSound("ping");
+        return true;
+      }
+      if (sub === "ghost") {
+        if (String(args[1] || "").toLowerCase() === "clear") {
+          setDevVisuals((current) => ({ ...current, ghostMove: null }));
+          appendDevLines("ghost move cleared.");
+          return true;
+        }
+        const from = parseDevLocation(args, 1);
+        const to = from ? parseDevLocation(args, from.nextIndex) : null;
+        if (!from || !to) { appendDevLines("! usage: mark ghost [from] [to|clear]"); return true; }
+        setDevVisuals((current) => ({ ...current, ghostMove: { from: from.location, to: to.location } }));
+        appendDevLines(`ghost move ${coordText(from.location)} → ${coordText(to.location)}.`);
+        return true;
+      }
+      if (sub === "checks") {
+        const kings = (game?.pieces || []).filter((piece) => piece.type === "king").map(({x,y,z}) => ({x,y,z}));
+        setDevVisuals((current) => ({ ...current, highlights: kings }));
+        appendDevLines(`highlighted ${kings.length} king square(s).`);
+        return true;
+      }
+      if (sub === "attacks") {
+        const side = String(args[1] || game?.turn || "").toLowerCase();
+        const highlights = (game?.pieces || []).filter((piece) => !side || piece.color === side).map(({x,y,z}) => ({x,y,z}));
+        setDevVisuals((current) => ({ ...current, highlights }));
+        appendDevLines(`debug-highlighted ${highlights.length} ${side || "all"} piece origin square(s).`);
+        return true;
+      }
+    }
+
+    if (action === "fx") {
+      const sub = String(args[0] || "").toLowerCase();
+      if (sub === "clear") {
+        setDevFxClass("");
+        setFeedbackOverlay(null);
+        setDevVisuals((current) => ({ ...current, fakeTraps: [], fakeSmoke: [], pings: [], spotlight: null }));
+        appendDevLines("visual effects cleared.");
+        return true;
+      }
+      const text = formatFxMessage(args);
+      const classMap = {
+        earthquake: "fx-earthquake",
+        flashboard: "fx-flash",
+        invertboard: "fx-invert",
+        drunkboard: "fx-drunk",
+        disco: "fx-disco",
+        bloodmoon: "fx-bloodmoon",
+        night: "fx-night",
+        fog: "fx-fog",
+        snow: "fx-snow",
+        rainbow: "fx-rainbow",
+        tilt: "fx-tilt",
+        squish: "fx-squish"
+      };
+      let className = classMap[sub] || "";
+      if (sub === "board") className = classMap[String(args[1] || "").toLowerCase()] || "fx-board";
+      triggerBoardFx(className, 2200, text);
+      if (sub === "scooby" && ["ghosttrap", "smoke", "footprints", "jinkies", "haunt", "boo", "magnify"].includes(String(args[1] || "").toLowerCase())) {
+        const loc = parseDevLocation(args, 2)?.location;
+        if (loc) {
+          setDevVisuals((current) => ({
+            ...current,
+            fakeTraps: String(args[1]).toLowerCase() === "ghosttrap" ? [...(current.fakeTraps || []), { ...loc, id: Date.now() }].slice(-16) : current.fakeTraps,
+            fakeSmoke: String(args[1]).toLowerCase() === "smoke" ? [...(current.fakeSmoke || []), { ...loc, id: Date.now() }].slice(-16) : current.fakeSmoke,
+            pings: ["jinkies", "footprints", "haunt", "boo", "magnify"].includes(String(args[1]).toLowerCase()) ? [...(current.pings || []), { ...loc, id: Date.now(), scooby: true }].slice(-8) : current.pings
+          }));
+        }
+      }
+      playUiSound(["earthquake", "jumpscare", "fakecheck", "fakewin"].includes(sub) ? "shout" : "ping");
+      appendDevLines(`fx: ${args.join(" ") || "effect"}`);
+      return true;
+    }
+
+    if (action === "cosmetic") {
+      const sub = String(args[0] || "").toLowerCase();
+      if (sub === "clear") {
+        setDevCosmetics({ pieces: {}, icons: {}, curses: {} });
+        appendDevLines("cosmetics cleared.");
+        return true;
+      }
+      if (sub === "piece") {
+        const parsed = parseDevLocation(args, 1);
+        if (!parsed) { appendDevLines("! usage: cosmetic piece [square] [effect] ..."); return true; }
+        const effect = args[parsed.nextIndex] || "glow";
+        const value = args.slice(parsed.nextIndex + 1).join(" ");
+        const key = coordText(parsed.location);
+        setDevCosmetics((current) => ({
+          ...current,
+          pieces: { ...(current.pieces || {}), [key]: { effect, value } }
+        }));
+        appendDevLines(`cosmetic piece ${key}: ${effect} ${value}`.trim());
+        return true;
+      }
+      if (sub === "curse") {
+        const target = String(args[1] || "").toLowerCase();
+        const curse = String(args[2] || "clear").toLowerCase();
+        setDevCosmetics((current) => {
+          const curses = { ...(current.curses || {}) };
+          if (curse === "clear") delete curses[target];
+          else curses[target] = curse;
+          return { ...current, curses };
+        });
+        appendDevLines(curse === "clear" ? `curse cleared for ${target}` : `${target} cursed: ${curse}`);
+        return true;
+      }
+      if (sub === "icon") {
+        const [colour, piece, icon] = args.slice(1);
+        if (!colour || !piece || !icon) { appendDevLines("! usage: cosmetic icon [colour] [piece] [emoji]"); return true; }
+        setDevCosmetics((current) => ({ ...current, icons: { ...(current.icons || {}), [`${colour}:${piece}`]: icon } }));
+        appendDevLines(`icon override ${colour} ${piece}=${icon}`);
+        return true;
+      }
+      if (sub === "player") {
+        triggerFeedback(`Cosmetic player effect: ${args.slice(1).join(" ")}`, "cosmetic");
+        appendDevLines(`player cosmetic: ${args.slice(1).join(" ")}`);
+        return true;
+      }
+    }
+
+    if (action === "predict" && args[0] === "ghost") {
+      const side = String(args[1] || color || "white").toLowerCase();
+      const pending = game?.predict?.pending?.[side];
+      if (pending?.to && pending?.pieceId) {
+        const piece = game.pieces.find((candidate) => candidate.id === pending.pieceId);
+        if (piece) {
+          setDevVisuals((current) => ({ ...current, ghostMove: { from: { x: piece.x, y: piece.y, z: piece.z }, to: pending.to } }));
+          appendDevLines(`predict ghost shown for ${side}.`);
+        } else appendDevLines("! pending piece no longer exists.");
+      } else appendDevLines(`! no visible pending move for ${side}.`);
+      return true;
+    }
+
+    return false;
+  }
+
+  function formatFxMessage(args) {
+    const sub = String(args[0] || "effect").toLowerCase();
+    if (sub === "board") return `Board FX: ${args.slice(1).join(" ") || "effect"}`;
+    if (sub === "scooby") return `Scooby FX: ${args.slice(1).join(" ") || "zoinks"}`;
+    if (sub === "emoji") return args[1] || "✨";
+    if (sub === "fakecheck") return "CHECK?";
+    if (sub === "fakewin") return `${args[1] || "Someone"} wins! (fake)`;
+    if (sub === "pause") return "Dramatic pause...";
+    return sub.toUpperCase();
   }
 
   function saveName() {
@@ -853,6 +1109,8 @@ export default function App() {
           </div>
         </section>
         {shoutOverlay && <ShoutOverlay message={shoutOverlay.message} from={shoutOverlay.from} />}
+      {feedbackOverlay && <FeedbackOverlay text={feedbackOverlay.text} type={feedbackOverlay.type} />}
+        {feedbackOverlay && <FeedbackOverlay text={feedbackOverlay.text} type={feedbackOverlay.type} />}
         <DevConsole
           open={devConsoleOpen}
           input={devConsoleInput}
@@ -870,7 +1128,7 @@ export default function App() {
   }
 
   return (
-    <main className="app game-app">
+    <main className={`app game-app ${devFxClass} ${devCosmetics.curses?.[color] ? `curse-${devCosmetics.curses[color]}` : ""}`}>
       <section className="top-bar">
         <div>
           <h1>{getVariantLabel(game.variant)} {game.variant !== "normal" && <button className="variant-info-button" type="button" onClick={() => { setShowVariantGuide(true); setGuideStep(0); }} aria-label="Show variant guide">i</button>}</h1>
@@ -982,7 +1240,7 @@ export default function App() {
                 onLayerChange={is3DVariant ? setLayer : null}
                 stacked={is3DVariant}
                 title={is3DVariant ? undefined : getVariantLabel(game.variant)}
-                devVisuals={devVisuals}
+                devVisuals={{ ...devVisuals, cosmetics: devCosmetics }}
                 variantHighlights={variantHighlights}
               />
             )}
@@ -1145,6 +1403,15 @@ function ShoutOverlay({ message, from }) {
         <span>{from}</span>
         <strong>{message}</strong>
       </div>
+    </div>
+  );
+}
+
+
+function FeedbackOverlay({ text, type }) {
+  return (
+    <div className={`feedback-overlay ${type || "info"}`} aria-live="polite">
+      <strong>{text}</strong>
     </div>
   );
 }
@@ -1384,6 +1651,10 @@ function ScoobyPanel({ game, color, disabled, selectedAction, onSelect }) {
     <section className="variant-control-card scooby-panel">
       <h2>Scooby</h2>
       <p className="subtle">Pick a trap to place, or choose defuse and click any square.</p>
+      <div className="scooby-legend">
+        <span className="scooby-legend-chip own"><strong>Yours</strong><small>green ring</small></span>
+        <span className="scooby-legend-chip detected"><strong>Detected enemy</strong><small>gold ring</small></span>
+      </div>
       <div className="scooby-action-grid">
         {actions.map((action) => {
           const left = Math.max(0, (limits[action.id] || 0) - (ownedCounts[action.id] || 0));
@@ -1716,7 +1987,12 @@ function buildVariantHighlights(game) {
     for (const trap of game.scooby?.traps || []) {
       const type = trap.displayType || trap.type;
       const isOwnTrap = Boolean(trap.viewerOwned);
-      add(trap.pos, isOwnTrap ? "scooby-trap-own" : "scooby-trap-detected", iconMap[type] || "?", "scooby-trap-marker");
+      add(
+        trap.pos,
+        isOwnTrap ? "scooby-trap-own" : "scooby-trap-detected",
+        iconMap[type] || "?",
+        `scooby-trap-marker ${isOwnTrap ? "own" : "detected"}`
+      );
     }
     for (const smoke of game.scooby?.smokes || []) {
       for (let dx = -2; dx <= 2; dx += 1) {

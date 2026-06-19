@@ -4559,3 +4559,346 @@ select {
     padding: 0.28rem 0.22rem;
   }
 }
+
+
+/* Tycoon wall icon polish */
+.wall-piece {
+  display: inline-grid !important;
+  place-items: center !important;
+  width: 1em;
+  height: 1em;
+  line-height: 1 !important;
+  font-family: "Segoe UI Symbol", "Noto Sans Symbols 2", "DejaVu Sans", "Apple Symbols", serif !important;
+  font-variant-emoji: text;
+  transform: translateY(0.01em) scale(1.02) !important;
+  letter-spacing: 0 !important;
+  filter: drop-shadow(0 2px 2px rgba(0,0,0,0.3));
+}
+
+.wall-piece.white {
+  text-shadow: 0 1px 1px #111, 0 2px 2px rgba(0,0,0,0.35) !important;
+}
+
+.wall-piece.black {
+  text-shadow: 0 1px 1px rgba(255,255,255,0.45) !important;
+}
+
+
+/* Scooby trap clarity */
+.scooby-legend {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem;
+  margin-bottom: 0.2rem;
+}
+
+.scooby-legend-chip {
+  display: grid;
+  gap: 0.08rem;
+  padding: 0.42rem 0.5rem;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.04);
+}
+
+.scooby-legend-chip strong {
+  font-size: 0.76rem;
+}
+
+.scooby-legend-chip small {
+  color: #b8b8b8;
+  font-size: 0.68rem;
+}
+
+.scooby-legend-chip.own {
+  box-shadow: inset 0 0 0 1px rgba(34,197,94,0.32);
+}
+
+.scooby-legend-chip.detected {
+  box-shadow: inset 0 0 0 1px rgba(251,191,36,0.36);
+}
+
+.scooby-trap-marker {
+  width: 1.18rem;
+  height: 1.18rem;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.scooby-trap-marker.own {
+  background: rgba(34,197,94,0.22);
+  border: 1px solid rgba(34,197,94,0.78);
+  color: #ecfdf5;
+  box-shadow: 0 0 0 1px rgba(34,197,94,0.22), 0 0 10px rgba(34,197,94,0.22);
+}
+
+.scooby-trap-marker.detected {
+  background: rgba(251,191,36,0.24);
+  border: 1px solid rgba(251,191,36,0.82);
+  color: #fff7d6;
+  box-shadow: 0 0 0 1px rgba(251,191,36,0.2), 0 0 10px rgba(251,191,36,0.2);
+}
+
+.scooby-trap-marker.detected::after {
+  content: "!";
+  position: absolute;
+  right: -0.24rem;
+  top: -0.22rem;
+  width: 0.68rem;
+  height: 0.68rem;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: #f59e0b;
+  color: #171614;
+  font-size: 0.52rem;
+  font-weight: 900;
+}
+
+
+/* Developer console restructure: feedback, FX, cosmetics */
+.feedback-overlay {
+  position: fixed;
+  left: 50%;
+  top: 18%;
+  transform: translateX(-50%);
+  z-index: 80;
+  padding: 0.75rem 1rem;
+  border-radius: 999px;
+  border: 1px solid rgba(238,238,210,0.35);
+  background: rgba(23,22,20,0.88);
+  color: #eeeed2;
+  box-shadow: 0 18px 60px rgba(0,0,0,0.45);
+  pointer-events: none;
+  animation: feedbackPop 2.6s ease-out forwards;
+}
+
+.feedback-overlay.income {
+  border-color: rgba(34,197,94,0.55);
+}
+
+.feedback-overlay.trap {
+  border-color: rgba(251,191,36,0.62);
+}
+
+@keyframes feedbackPop {
+  0% { opacity: 0; transform: translate(-50%, -14px) scale(0.92); }
+  12% { opacity: 1; transform: translate(-50%, 0) scale(1); }
+  82% { opacity: 1; transform: translate(-50%, 0) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -10px) scale(0.98); }
+}
+
+.fx-earthquake .board-frame,
+.fx-earthquake .board-wrap {
+  animation: devShake 0.55s linear infinite;
+}
+
+.fx-flash .board-frame {
+  animation: devFlash 0.28s linear alternate infinite;
+}
+
+.fx-invert .board-frame {
+  filter: invert(1);
+}
+
+.fx-drunk .board-frame {
+  animation: devDrunk 1.2s ease-in-out infinite alternate;
+}
+
+.fx-disco .board-frame,
+.fx-rainbow .board-frame {
+  animation: devHue 1.4s linear infinite;
+}
+
+.fx-bloodmoon .board-frame {
+  box-shadow: inset 0 0 0 9999px rgba(185, 28, 28, 0.22);
+}
+
+.fx-night .board-frame,
+.fx-fog .board-frame {
+  filter: brightness(0.62) saturate(0.72);
+}
+
+.fx-snow .board-frame::after,
+.fx-fog .board-frame::after {
+  content: "❄  ❄     ❄   ❄      ❄";
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: rgba(255,255,255,0.55);
+  font-size: 2rem;
+  pointer-events: none;
+}
+
+.fx-tilt .board-frame {
+  transform: rotate(-2deg);
+}
+
+.fx-squish .board-frame {
+  transform: scaleX(1.05) scaleY(0.96);
+}
+
+@keyframes devShake {
+  0%, 100% { transform: translate(0,0); }
+  25% { transform: translate(4px,-2px); }
+  50% { transform: translate(-3px,3px); }
+  75% { transform: translate(2px,2px); }
+}
+
+@keyframes devFlash {
+  from { filter: brightness(1); }
+  to { filter: brightness(1.9) saturate(1.8); }
+}
+
+@keyframes devDrunk {
+  from { transform: rotate(-1.5deg) translateX(-4px); }
+  to { transform: rotate(1.5deg) translateX(4px); }
+}
+
+@keyframes devHue {
+  from { filter: hue-rotate(0deg) saturate(1.3); }
+  to { filter: hue-rotate(360deg) saturate(1.3); }
+}
+
+.square.dev-spotlight::before {
+  background: radial-gradient(circle, rgba(255,255,255,0.72), rgba(255,255,255,0.08));
+  box-shadow: inset 0 0 0 3px rgba(255,255,255,0.76), 0 0 22px rgba(255,255,255,0.6);
+}
+
+.square.dev-ping::before {
+  background: rgba(59,130,246,0.28);
+  box-shadow: inset 0 0 0 2px rgba(59,130,246,0.7);
+  animation: pingPulse 0.7s ease-out infinite alternate;
+}
+
+.ping-marker,
+.fake-trap-marker,
+.fake-smoke-marker {
+  left: 50%;
+  top: 50%;
+  right: auto;
+  transform: translate(-50%, -50%);
+  font-size: 1rem;
+}
+
+.fake-trap-marker {
+  color: #fbbf24;
+}
+
+.fake-smoke-marker {
+  color: #e5e7eb;
+}
+
+@keyframes pingPulse {
+  from { opacity: 0.35; }
+  to { opacity: 0.8; }
+}
+
+.god-piece {
+  text-shadow: 0 0 8px #fde68a, 0 0 16px rgba(253,230,138,0.55) !important;
+}
+
+.god-marker {
+  position: absolute;
+  right: -0.32rem;
+  top: -0.28rem;
+  color: #facc15;
+  font-size: 0.72rem;
+}
+
+.cosmetic-size {
+  transform: scale(1.28);
+}
+
+.cosmetic-spin {
+  animation: cosmeticSpin 1.8s linear infinite;
+}
+
+.cosmetic-jiggle {
+  animation: cosmeticJiggle 0.25s linear infinite alternate;
+}
+
+.cosmetic-glow {
+  text-shadow: 0 0 12px currentColor, 0 0 22px currentColor !important;
+}
+
+.cosmetic-ghost {
+  opacity: 0.45;
+}
+
+.cosmetic-clown::after {
+  content: "🤡";
+  position: absolute;
+  right: -0.35rem;
+  bottom: -0.25rem;
+  font-size: 0.7rem;
+}
+
+.cosmetic-hat {
+  position: absolute;
+  top: -0.65rem;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.7rem;
+}
+
+.cosmetic-mustache {
+  position: absolute;
+  bottom: 0.05rem;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.7rem;
+}
+
+.cosmetic-name {
+  position: absolute;
+  left: 50%;
+  top: 105%;
+  transform: translateX(-50%);
+  font-size: 0.45rem;
+  background: rgba(23,22,20,0.75);
+  color: #eeeed2;
+  border-radius: 999px;
+  padding: 0.08rem 0.22rem;
+  white-space: nowrap;
+}
+
+@keyframes cosmeticSpin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes cosmeticJiggle {
+  from { transform: translateX(-2px) rotate(-4deg); }
+  to { transform: translateX(2px) rotate(4deg); }
+}
+
+.curse-upsideDown .board-frame {
+  transform: rotate(180deg);
+}
+
+.curse-rainbow .board-frame {
+  animation: devHue 1.2s linear infinite;
+}
+
+.curse-tiny .piece {
+  transform: scale(0.72);
+}
+
+.curse-giant .piece {
+  transform: scale(1.2);
+}
+
+.curse-haunted .board-frame {
+  filter: grayscale(0.5) brightness(0.72);
+}
+
+.curse-slippery .piece {
+  animation: cosmeticJiggle 0.35s linear infinite alternate;
+}
+
+.board-frame { position: relative; }

@@ -63,7 +63,8 @@ export function getLegalMoves(game, piece) {
 
   return withCastling.filter((move) => {
     const testGame = cloneGame(game);
-    applyMoveUnchecked(testGame, piece.id, move, { promotion: "queen" });
+    const result = applyMoveUnchecked(testGame, piece.id, move, { promotion: "queen", dryRun: true });
+    if (!result?.ok) return false;
     return !isKingInCheck(testGame, piece.color);
   });
 }
@@ -281,6 +282,10 @@ export function applyMoveUnchecked(game, pieceId, move, options = {}) {
     ? getPieceAt(game, { x: to.x, y: to.y, z: to.z - pawnZDir(piece.color) })
     : getPieceAt(game, to);
 
+  if (targetBefore?.god && targetBefore.id !== piece.id) {
+    return { ok: false, reason: "That piece is protected by god mode." };
+  }
+
   if (targetBefore?.shielded) {
     targetBefore.shielded = false;
     shieldBlocked = true;
@@ -387,7 +392,7 @@ function resolveAtomicExplosion(game, centre, movingPieceId, captured) {
   for (const piece of game.pieces) {
     const directlyInvolved = piece.id === movingPieceId || piece.id === captured.id;
     const adjacent = Math.max(Math.abs(piece.x - centre.x), Math.abs(piece.y - centre.y), Math.abs(piece.z - centre.z)) <= 1;
-    if (directlyInvolved || (adjacent && piece.type !== "pawn")) removeIds.add(piece.id);
+    if (!piece.god && (directlyInvolved || (adjacent && piece.type !== "pawn"))) removeIds.add(piece.id);
   }
 
   removePiecesByIds(game, removeIds, removed);
@@ -796,6 +801,7 @@ function addExplosionEffect(game, centre, radius, type) {
 function removePiecesByIds(game, ids, removed) {
   game.pieces = game.pieces.filter((piece) => {
     if (!ids.has(piece.id)) return true;
+    if (piece.god) return true;
     if (piece.shielded) {
       piece.shielded = false;
       return true;
@@ -806,36 +812,111 @@ function removePiecesByIds(game, ids, removed) {
 }
 
 
+
+function findPredictCandidateMove(game, piece, to) {
+  if (!piece || !to || !inBounds(to) || piece.type === "wall") return null;
+  if (game.variant !== "threeD" && to.y !== 0) return null;
+
+  const target = getPieceAt(game, to);
+  if (target?.type === "wall" || target?.type === "king") return null;
+
+  const candidates = [...getPseudoLegalMoves(game, piece)];
+  if (piece.type === "king") candidates.push(...getCastleMoves(game, piece));
+
+  // In Predict, let players intentionally lock moves that are currently unsafe,
+  // because the opponent's simultaneous move may remove the attack.
+  let chosen = candidates.find((move) => samePos(move, to));
+  if (chosen) return chosen;
+
+  // Also allow a player to aim at one of their own currently occupied squares.
+  // This represents predicting that the occupant will be captured/moved before
+  // resolution. If it is still occupied by the same side at resolution, it fails.
+  if (target?.color === piece.color) {
+    const testGame = cloneGame(game);
+    testGame.pieces = testGame.pieces.filter((candidate) => candidate.id !== target.id);
+    const testPiece = getPieceById(testGame, piece.id);
+    let predictive = [...getPseudoLegalMoves(testGame, testPiece)];
+    if (testPiece?.type === "king") predictive = [...predictive, ...getCastleMoves(testGame, testPiece)];
+    chosen = predictive.find((move) => samePos(move, to));
+    if (chosen) return { ...chosen, predictiveOwnSquare: true };
+
+    // Pawns need a special case: diagonally moving onto an own piece is a
+    // predictive recapture pattern rather than a normal quiet move.
+    if (piece.type === "pawn" && to.y === piece.y && Math.abs(to.x - piece.x) === 1 && to.z - piece.z === pawnZDir(piece.color)) {
+      return { x: to.x, y: to.y, z: to.z, capture: true, promotion: isPromotionSquare(piece, to, game), predictiveOwnSquare: true };
+    }
+  }
+
+  return null;
+}
+
+function applyPredictPendingMove(game, entry) {
+  const piece = getPieceById(game, entry.pieceId);
+  if (!piece || piece.color !== entry.color) return { ok: false, reason: `${entry.color}'s predicted piece no longer exists.` };
+  const target = getPieceAt(game, entry.to);
+  if (target?.color === entry.color && target.id !== piece.id) {
+    return { ok: false, reason: `${entry.color}'s predicted square was still occupied by their own ${target.type}.` };
+  }
+  const move = findPredictCandidateMove(game, piece, entry.to);
+  if (!move) return { ok: false, reason: `${entry.color}'s predicted move was no longer possible.` };
+  return applyMoveUnchecked(game, entry.pieceId, move, { promotion: entry.promotion || "queen" });
+}
+
+function applyPredictFinalCheck(game) {
+  const whiteInCheck = isKingInCheck(game, "white");
+  const blackInCheck = isKingInCheck(game, "black");
+  if (whiteInCheck && blackInCheck) {
+    game.check = null;
+    game.checkmate = true;
+    game.stalemate = false;
+    game.winner = null;
+    game.status = "finished";
+    game.message = "Predict chaos: both kings remained in check. Draw.";
+    game.lastTurnStartedAt = null;
+    return true;
+  }
+  if (whiteInCheck || blackInCheck) {
+    const loser = whiteInCheck ? "white" : "black";
+    game.check = loser;
+    game.checkmate = true;
+    game.stalemate = false;
+    game.winner = opponent(loser);
+    game.status = "finished";
+    game.message = `${loser}'s prediction failed: their king remained in check. ${opponent(loser)} wins.`;
+    game.lastTurnStartedAt = null;
+    return true;
+  }
+  return false;
+}
+
 function ensurePredictState(game) {
   if (!game.predict) game.predict = { round: 1, pending: { white: null, black: null } };
   if (!game.predict.pending) game.predict.pending = { white: null, black: null };
 }
 
-function resolvePredictRound(game) {
+export function resolvePredictRound(game) {
   ensurePredictState(game);
   const pendingWhite = game.predict.pending.white;
   const pendingBlack = game.predict.pending.black;
   if (!pendingWhite || !pendingBlack) return;
 
-  const applyPending = (entry) => {
-    const piece = getPieceById(game, entry.pieceId);
-    if (!piece || piece.color !== entry.color) return false;
-    const move = getLegalMoves(game, piece).find((candidate) => candidate.x === entry.to.x && candidate.y === entry.to.y && candidate.z === entry.to.z);
-    if (!move) return false;
-    const result = applyMoveUnchecked(game, entry.pieceId, move, { promotion: entry.promotion || "queen" });
-    return Boolean(result?.ok);
-  };
+  const resolutionLines = [];
+  const whiteResult = applyPredictPendingMove(game, pendingWhite);
+  resolutionLines.push(whiteResult.ok ? "white prediction resolved." : whiteResult.reason);
 
-  applyPending(pendingWhite);
+  // Keep the original Predict rule: if White's resolved move checkmates Black,
+  // Black's queued move is cancelled.
   if (game.status !== "finished") {
     const afterWhite = getGameEndState(game, "black");
     if (afterWhite.checkmate && afterWhite.winner === "white") {
       Object.assign(game, afterWhite);
+      resolutionLines.push("black prediction cancelled because white checkmated first.");
     }
   }
 
   if (game.status !== "finished") {
-    applyPending(pendingBlack);
+    const blackResult = applyPredictPendingMove(game, pendingBlack);
+    resolutionLines.push(blackResult.ok ? "black prediction resolved." : blackResult.reason);
   }
 
   game.predict.pending.white = null;
@@ -844,11 +925,15 @@ function resolvePredictRound(game) {
   game.turn = "white";
   game.turnToken = (Number(game.turnToken) || 0) + 1;
   resolveStartOfTurnEffects(game, "white");
-  if (game.status !== "finished") {
+
+  if (game.status !== "finished" && !applyPredictFinalCheck(game)) {
     Object.assign(game, getGameEndState(game, "white"));
     applyAutomaticDrawRules(game);
   }
-  game.message = game.status === "playing" ? `Predict round ${game.predict.round}: white to lock a move.` : game.message;
+
+  if (game.status === "playing") {
+    game.message = `Predict round ${game.predict.round}: ${resolutionLines.filter(Boolean).join(" ")} white to lock a move.`;
+  }
   game.lastTurnStartedAt = game.status === "playing" ? Date.now() : null;
 }
 
@@ -1021,11 +1106,11 @@ export function attemptLegalMove(game, playerId, pieceId, to, options = {}) {
   const player = game.players[piece.color];
   if ((!player || player.id !== playerId) && !devOverride) return { ok: false, reason: "You do not control that piece." };
 
-  const legalMoves = getLegalMoves(game, piece);
-  const chosen = legalMoves.find((move) => move.x === to.x && move.y === to.y && move.z === to.z);
-  if (!chosen) return { ok: false, reason: "Illegal move." };
+  let chosen = null;
 
   if (game.variant === "predict") {
+    chosen = findPredictCandidateMove(game, piece, to);
+    if (!chosen) return { ok: false, reason: "Illegal Predict move." };
     ensurePredictState(game);
     game.predict.pending[movingColor] = { pieceId, color: movingColor, to: { x: chosen.x, y: chosen.y, z: chosen.z }, promotion: options.promotion || "queen" };
     if (movingColor === "white") {
@@ -1038,6 +1123,10 @@ export function attemptLegalMove(game, playerId, pieceId, to, options = {}) {
     }
     return { ok: true, game };
   }
+
+  const legalMoves = getLegalMoves(game, piece);
+  chosen = legalMoves.find((move) => move.x === to.x && move.y === to.y && move.z === to.z);
+  if (!chosen) return { ok: false, reason: "Illegal move." };
 
   const result = applyMoveUnchecked(game, pieceId, chosen, options);
   if (!result.ok) return result;

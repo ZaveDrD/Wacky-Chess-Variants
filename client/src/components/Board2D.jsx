@@ -119,12 +119,17 @@ function LayerCard({
       const variantHighlight = !isGhost ? variantHighlights.find((item) => sameCoord(item, coord)) : null;
       const ghostFrom = !isGhost && devVisuals.ghostMove?.from && sameCoord(devVisuals.ghostMove.from, coord);
       const ghostTo = !isGhost && devVisuals.ghostMove?.to && sameCoord(devVisuals.ghostMove.to, coord);
+      const spotlight = !isGhost && devVisuals.spotlight && sameCoord(devVisuals.spotlight, coord);
+      const ping = !isGhost && (devVisuals.pings || []).find((item) => sameCoord(item, coord));
+      const fakeTrap = !isGhost && (devVisuals.fakeTraps || []).find((item) => sameCoord(item, coord));
+      const fakeSmoke = !isGhost && (devVisuals.fakeSmoke || []).find((item) => sameCoord(item, coord));
+      const cosmetic = !isGhost ? devVisuals.cosmetics?.pieces?.[coordText(coord)] : null;
       const light = (row + col) % 2 === 0;
 
       squares.push(
         <button
           key={`${coord.x}-${coord.y}-${coord.z}`}
-          className={`square ${light ? "light" : "dark"} ${selected ? "selected" : ""} ${legalMove ? "legal" : ""} ${legalMove?.capture ? "capture" : ""} ${highlighted ? "dev-highlight" : ""} ${variantHighlight ? `variant-highlight ${variantHighlight.className || ""}` : ""} ${ghostFrom ? "ghost-from" : ""} ${ghostTo ? "ghost-to" : ""}`}
+          className={`square ${light ? "light" : "dark"} ${selected ? "selected" : ""} ${legalMove ? "legal" : ""} ${legalMove?.capture ? "capture" : ""} ${highlighted ? "dev-highlight" : ""} ${spotlight ? "dev-spotlight" : ""} ${ping ? "dev-ping" : ""} ${fakeTrap ? "fake-trap-square" : ""} ${fakeSmoke ? "fake-smoke-square" : ""} ${variantHighlight ? `variant-highlight ${variantHighlight.className || ""}` : ""} ${ghostFrom ? "ghost-from" : ""} ${ghostTo ? "ghost-to" : ""}`}
           style={{
             background: selected
               ? COLORS.selected
@@ -145,13 +150,21 @@ function LayerCard({
           {ghostFrom && <span className="dev-marker from">A</span>}
           {ghostTo && <span className="dev-marker to">B</span>}
           {variantHighlight?.marker && <span className={`variant-marker ${variantHighlight.markerClass || ""}`}>{variantHighlight.marker}</span>}
+          {fakeTrap && <span className="variant-marker fake-trap-marker">?</span>}
+          {fakeSmoke && <span className="variant-marker fake-smoke-marker">☁</span>}
+          {ping && <span className="variant-marker ping-marker">{ping.scooby ? "!" : "•"}</span>}
           {piece && (
             <span
-              className={`piece ${piece.type === "wall" ? `${piece.owner || "white"} wall-piece` : piece.color} ${piece.shielded ? "shielded-piece" : ""}`}
+              className={`piece ${piece.type === "wall" ? `${piece.owner || "white"} wall-piece` : piece.color} ${piece.shielded ? "shielded-piece" : ""} ${piece.god ? "god-piece" : ""} ${cosmetic ? `cosmetic-${cosmetic.effect}` : ""}`}
               style={{ color: piece.type === "wall" ? (piece.owner === "black" ? COLORS.blackPiece : COLORS.whitePiece) : piece.color === "white" ? COLORS.whitePiece : COLORS.blackPiece }}
+              title={cosmetic?.value ? String(cosmetic.value) : undefined}
             >
-              {getPieceSymbol(piece)}
+              {getPieceSymbol(piece, devVisuals.cosmetics)}
               {piece.shielded && <span className="shield-marker">◆</span>}
+              {piece.god && <span className="god-marker">✦</span>}
+              {cosmetic?.effect === "hat" && <span className="cosmetic-hat">{cosmetic.value || "♕"}</span>}
+              {cosmetic?.effect === "mustache" && <span className="cosmetic-mustache">〰</span>}
+              {cosmetic?.effect === "name" && <span className="cosmetic-name">{cosmetic.value}</span>}
             </span>
           )}
         </button>
@@ -180,9 +193,14 @@ function LayerCard({
   );
 }
 
-function getPieceSymbol(piece) {
-  if (piece.type === "wall") return "▥";
-  return PIECE_SYMBOLS[piece.color]?.[piece.type] || "?";
+function coordText(coord) {
+  return `(${coord.x},${coord.y},${coord.z})`;
+}
+
+function getPieceSymbol(piece, cosmetics = {}) {
+  if (piece.type === "wall") return "⛨";
+  const override = cosmetics?.icons?.[`${piece.color}:${piece.type}`];
+  return override || PIECE_SYMBOLS[piece.color]?.[piece.type] || "?";
 }
 
 function PlaneAxisLabels({ plane }) {

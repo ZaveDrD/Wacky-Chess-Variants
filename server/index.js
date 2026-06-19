@@ -54,6 +54,7 @@ function getViewerColor(game, socketId) {
 
 function visibleScoobyTraps(game, viewerColor) {
   const traps = game.scooby?.traps || [];
+  if (game.scooby?.devReveal) return traps.map((trap) => ({ ...trap, displayType: trap.type, detected: true, viewerOwned: trap.owner === viewerColor, devRevealed: true }));
   if (!viewerColor) return [];
   const own = traps
     .filter((trap) => trap.owner === viewerColor)
@@ -375,7 +376,7 @@ io.on("connection", (socket) => {
 
 
 function handleDevCommand(socket, payload = {}) {
-  const action = String(payload.action || "").trim();
+  let action = String(payload.action || "").trim();
 
   if (action === "devUnlock") {
     if (verifyDevPassword(payload.password)) {
@@ -388,7 +389,10 @@ function handleDevCommand(socket, payload = {}) {
   if (!devAuthenticatedSockets.has(socket.id)) {
     return { response: { ok: false, lines: [] } };
   }
-  const args = Array.isArray(payload.args) ? payload.args : [];
+  let args = Array.isArray(payload.args) ? payload.args : [];
+  const routed = routeStructuredDevCommand(action, args);
+  action = routed.action;
+  args = routed.args;
   const name = String(payload.name || "").trim() || "Developer";
   const currentRoomCode = String(payload.currentRoomCode || "").trim().toUpperCase();
   const selectedVariant = normaliseDevVariant(payload.selectedVariant || args[0] || "threeD");
@@ -661,6 +665,52 @@ function handleDevCommand(socket, payload = {}) {
     };
   }
 
+  if (["sudoChat", "whisperChat", "blunderQuote", "renamePlayer"].includes(action)) {
+    const game = rooms.get(currentRoomCode);
+    if (!game) return { response: { ok: false, lines: ["No current room."] } };
+    if (action === "blunderQuote") {
+      const quotes = [
+        "I calculated everything except the move.",
+        "My queen went on a gap year.",
+        "That was theory from a universe where I am winning.",
+        "The blunder was a positional sacrifice of dignity.",
+        "Stockfish would understand. Eventually."
+      ];
+      const body = quotes[Math.floor(Math.random() * quotes.length)];
+      if (!Array.isArray(game.chat)) game.chat = [];
+      game.chat.push({ id: `quote-${Date.now()}`, time: Date.now(), color: "system", role: "system", name: "Blunder Oracle", body });
+      return { response: { ok: true, lines: [`Blunder quote: ${body}`] }, gameStateRoom: currentRoomCode };
+    }
+    if (action === "sudoChat") {
+      const target = String(args[0] || "").trim();
+      const body = args.slice(1).join(" ").trim().slice(0, 240);
+      if (!target || !body) return { response: { ok: false, lines: ["Usage: chat sudo [white|black|name] [message]"] } };
+      const participant = findDevParticipant(game, target);
+      if (!Array.isArray(game.chat)) game.chat = [];
+      game.chat.push({ id: `sudo-${Date.now()}`, time: Date.now(), color: participant?.color || "system", role: "player", name: participant?.name || target, body });
+      return { response: { ok: true, lines: [`sudo ${participant?.name || target}: ${body}`] }, gameStateRoom: currentRoomCode };
+    }
+    if (action === "whisperChat") {
+      const target = String(args[0] || "").trim();
+      const body = args.slice(1).join(" ").trim().slice(0, 240);
+      if (!target || !body) return { response: { ok: false, lines: ["Usage: chat whisper [white|black|name] [message]"] } };
+      const participant = findDevParticipant(game, target);
+      const targetSocket = participant?.id ? io.sockets.sockets.get(participant.id) : null;
+      if (targetSocket) targetSocket.emit("devCommandResult", { ok: true, lines: [`[whisper from ${name}] ${body}`] });
+      return { response: { ok: true, lines: [`Whisper sent to ${participant?.name || target}.`] } };
+    }
+    if (action === "renamePlayer") {
+      const target = String(args[0] || "").trim();
+      const newName = args.slice(1).join(" ").trim().slice(0, 32);
+      if (!target || !newName) return { response: { ok: false, lines: ["Usage: player rename [white|black|name] [new name]"] } };
+      const participant = findDevParticipant(game, target);
+      if (!participant) return { response: { ok: false, lines: ["Player not found."] } };
+      participant.ref.name = newName;
+      game.message = `${target} is now ${newName}.`;
+      return { response: { ok: true, lines: [game.message] }, gameStateRoom: currentRoomCode };
+    }
+  }
+
   if (action === "listRoomsDetailed") {
     return { response: { ok: true, lines: getDetailedRoomLines() } };
   }
@@ -692,6 +742,10 @@ function handleDevCommand(socket, payload = {}) {
   const utility = runDevUtilityCommand(currentRoomCode, action, args, socket.id, name);
   if (utility) {
     if (!utility.ok) return { response: { ok: false, lines: [utility.reason || "Command failed."] } };
+    if (utility.kickedSocketId) {
+      const targetSocket = io.sockets.sockets.get(utility.kickedSocketId);
+      if (targetSocket) targetSocket.emit("devKickedHome", { reason: utility.lines?.[0] || "You were kicked by a developer." });
+    }
     return { response: { ok: true, lines: utility.lines || ["OK"] }, gameStateRoom: currentRoomCode, scheduleRoomCode: currentRoomCode };
   }
 
@@ -706,6 +760,127 @@ function handleDevCommand(socket, payload = {}) {
   return { response: { ok: false, lines: [`Unknown developer command: ${action}`] } };
 }
 
+
+
+function routeStructuredDevCommand(action, args = []) {
+  const first = String(args[0] || "").toLowerCase();
+  const second = String(args[1] || "").toLowerCase();
+
+  if (action === "room") {
+    if (first === "list") return { action: second === "detailed" ? "listRoomsDetailed" : "findOpenMatches", args: args.slice(2) };
+    if (first === "spectate") return { action: "spectateMatch", args: args.slice(1) };
+    if (first === "join") return { action: "joinCode", args: args.slice(1) };
+    if (first === "start") return { action: "startMatch", args: args.slice(1) };
+    if (first === "botbattle") return { action: "startMatch", args: [args[1], "2", args[2] || "medium"] };
+    if (first === "exit") return { action: "exitMatch", args: [] };
+    if (first === "info") return { action: "roomInfo", args: args.slice(1) };
+    if (first === "kick") return { action: "kickPlayer", args: args.slice(1) };
+    if (first === "lock") return { action: "lockRoom", args: [] };
+    if (first === "unlock") return { action: "unlockRoom", args: [] };
+    if (first === "rename") return { action: "renameRoom", args: args.slice(1) };
+  }
+
+  if (action === "player") {
+    if (first === "bot") return { action: "replaceWithBot", args: args.slice(1) };
+    if (first === "takeover") return { action: "replacePlayer", args: args.slice(1) };
+    if (first === "find") return { action: "findPlayer", args: args.slice(1) };
+    if (first === "count") return { action: "playerCount", args: [] };
+    if (first === "override") return { action: ["off", "false", "0"].includes(String(args.at(-1)).toLowerCase()) ? "clearOverride" : "spectatorOverride", args: ["on", "off", "true", "false", "0", "1"].includes(String(args.at(-1)).toLowerCase()) ? args.slice(1, -1) : args.slice(1) };
+    if (first === "colour" || first === "color") return { action: "setPlayerColour", args: args.slice(1) };
+    if (first === "rename") return { action: "renamePlayer", args: args.slice(1) };
+  }
+
+  if (action === "match") {
+    if (first === "end") return { action: "endMatch", args: args.slice(1) };
+    if (first === "turn") return { action: "setTurn", args: args.slice(1) };
+    if (first === "reset") return { action: "resetMatch", args: [] };
+    if (first === "validate") return { action: "validateBoard", args: [] };
+    if (first === "forfeit") return { action: "forfeitDev", args: [] };
+  }
+
+  if (action === "chat") {
+    if (first === "shout") return { action: "shout", args: args.slice(1) };
+    if (["announce", "system"].includes(first)) return { action: "systemChat", args: args.slice(1) };
+    if (first === "sudo") return { action: "sudoChat", args: args.slice(1) };
+    if (first === "whisper") return { action: "whisperChat", args: args.slice(1) };
+    if (first === "quote") return { action: "blunderQuote", args: args.slice(1) };
+  }
+
+  if (action === "board") {
+    if (first === "clear") return { action: "clearBoard", args: [] };
+    if (first === "copy") return { action: "clonePosition", args: [] };
+    if (first === "load") return { action: "loadPosition", args: args.slice(1) };
+    if (first === "mirror") return { action: "mirrorBoard", args: [] };
+    if (first === "shuffle" && second === "backrank") return { action: "shuffleBackRank", args: [] };
+  }
+
+  if (action === "piece") {
+    if (first === "add") return { action: "addPiece", args: args.slice(1) };
+    if (first === "remove") return { action: "removePiece", args: args.slice(1) };
+    if (first === "teleport") return { action: "teleportPiece", args: args.slice(1) };
+    if (first === "force") return { action: "moveForce", args: args.slice(1) };
+    if (first === "replace") return { action: "replacePiece", args: args.slice(1) };
+    if (first === "list") return { action: "listPieces", args: args.slice(1) };
+    if (first === "find") return { action: "findPiece", args: args.slice(1) };
+    if (first === "legal") return { action: "legalMovesAt", args: args.slice(1) };
+    if (first === "attacks") return { action: "attackSquaresAt", args: args.slice(1) };
+    if (first === "kill" && second === "king") return { action: "killKing", args: args.slice(2) };
+    if (first === "promote") return { action: "promotePiece", args: args.slice(1) };
+    if (first === "moved") return { action: "setPieceMoved", args: args.slice(1) };
+    if (first === "god") return { action: "godPiece", args: args.slice(1) };
+  }
+
+  if (action === "ai") {
+    if (first === "think") return { action: "aiThink", args: args.slice(1) };
+    if (first === "move") return { action: "forceAIMove", args: args.slice(1) };
+    if (first === "difficulty") return { action: "setAIDifficulty", args: args.slice(1) };
+    if (first === "pause") return { action: "pauseBots", args: [] };
+    if (first === "resume") return { action: "resumeBots", args: [] };
+    if (first === "eval") return { action: "evalPosition", args: args.slice(1) };
+    if (first === "top") return { action: "topMoves", args: args.slice(1) };
+  }
+
+  if (action === "clock") {
+    if (first === "set") return { action: "setTimer", args: args[1] && ["white","black"].includes(String(args[1]).toLowerCase()) ? [args[2], args[1]] : args.slice(1) };
+    if (first === "pause") return { action: "pauseTimer", args: [] };
+    if (first === "resume") return { action: "resumeTimer", args: [] };
+    if (first === "add") return { action: "addTime", args: args.slice(1) };
+    if (first === "preset") return { action: "setTimeControl", args: args.slice(1) };
+    if (first === "flag") return { action: "flagPlayer", args: args.slice(1) };
+  }
+
+  if (action === "chaos") return { action: "chaosCommand", args };
+  if (action === "predict") return { action: "predictCommand", args };
+  if (action === "scooby") return { action: "scoobyCommand", args };
+  if (action === "tycoon") return { action: "tycoonCommand", args };
+  if (action === "nuke") {
+    const firstLooksLocation = parseChessSquare(args[0]) || parseXYZ(args[0]) || Number.isInteger(Number.parseInt(args[0], 10));
+    return { action: "nukeCommand", args: firstLooksLocation ? ["blast", ...args] : args };
+  }
+  if (action === "crazyhouse") return { action: "crazyhouseCommand", args };
+  if (action === "atomic") return { action: "atomicCommand", args };
+  if (action === "hill") return { action: "hillCommand", args };
+
+  return { action, args };
+}
+
+function findDevParticipant(game, targetRaw) {
+  const target = String(targetRaw || "").trim().toLowerCase();
+  if (!game || !target) return null;
+  for (const color of ["white", "black"]) {
+    const player = game.players?.[color];
+    if (!player) continue;
+    if (target === color || player.name?.toLowerCase() === target || player.name?.toLowerCase()?.includes(target)) {
+      return { role: "player", color, id: player.id, name: player.name, ref: player };
+    }
+  }
+  for (const spectator of game.spectators || []) {
+    if (spectator.name?.toLowerCase() === target || spectator.name?.toLowerCase()?.includes(target)) {
+      return { role: "spectator", color: "spectator", id: spectator.id, name: spectator.name, ref: spectator };
+    }
+  }
+  return null;
+}
 
 function consumeLocationArgs(args) {
   if (!Array.isArray(args) || args.length < 1) return null;
@@ -749,6 +924,8 @@ function normaliseDevVariant(value) {
   if (["atomic", "atomicchess"].includes(text)) return "atomic";
   if (["nuke", "nukechess"].includes(text)) return "nuke";
   if (["tycoon", "tycoonchess"].includes(text)) return "tycoon";
+  if (["predict", "predictchess"].includes(text)) return "predict";
+  if (["scooby", "scoobychess"].includes(text)) return "scooby";
   if (["threed", "3d", "3dchess", "three", "threechess"].includes(text)) return "threeD";
   return "threeD";
 }

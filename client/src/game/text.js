@@ -74,6 +74,7 @@ export const UI_TEXT = {
       subtitle: "Charge a nuke by capturing pieces.",
       rules: [
         "Captures charge your nuke up to radius 3.",
+        "Nukes can only be launched within 2 squares of one of your pieces.",
         "Launching a nuke uses your turn and detonates after 3 turns.",
         "Rooks block the blast along ranks and files.",
         "If a nuke destroys both kings, the launcher loses.",
@@ -85,9 +86,13 @@ export const UI_TEXT = {
       subtitle: "Earn money from silos to buy upgrades.",
       rules: [
         "Pieces in silo squares generate money each turn.",
-        "Bought pieces are placedwithin one square of your king and cannot move immediately.",
-        "Walls block movement and check; bombs destroy walls and pieces.",
-        "Checkmate your opponent to win."
+        "Higher piece rank = more money generated.",
+        "Place bought pieces within one square of your king.",
+        "Walls block movement.",
+        "Bombs destroy walls and pieces.",
+        "Storage increases your max money.",
+        "Production increases your money gain.",
+        "Checkmate or blow up your opponent to win."
       ]
     },
     predict: {

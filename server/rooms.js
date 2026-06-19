@@ -1,6 +1,6 @@
 import { customAlphabet } from "nanoid";
 import { createGame, TIME_CONTROLS } from "./rules/setup.js";
-import { getGameEndState, getLegalMoves, isKingInCheck, isSquareAttacked } from "./rules/check.js";
+import { getGameEndState, getLegalMoves, isKingInCheck, isSquareAttacked, resolvePredictRound } from "./rules/check.js";
 import { cloneGame, getPieceAt, getPieceById, inBounds, opponent, recordCurrentPosition, removePieceAt } from "./rules/utils.js";
 
 const nanoid = customAlphabet("ABCDEFGHJKLMNPQRSTUVWXYZ23456789", 6);
@@ -1049,6 +1049,87 @@ export function runDevUtilityCommand(roomCodeRaw, action, args = [], requesterSo
     return { ok: true, game, lines: issues.length ? issues : ["Board valid."] };
   }
 
+
+  if (action === "clearBoard") {
+    game.pieces = [];
+    game.lastMove = null;
+    game.moveHistory.push({ dev: true, pieceColor: game.turn, pieceType: "clear", from: null, to: null, time: Date.now() });
+    game.message = "Developer cleared the board.";
+    return { ok: true, game, lines: ["Board cleared."] };
+  }
+
+  if (action === "replacePiece") {
+    const parsed = consumeDevLocationArgs(args, 0);
+    if (!parsed) return { ok: false, reason: "Usage: piece replace [square] [piece] [colour]" };
+    const type = normalisePieceType(args[parsed.nextIndex]);
+    const color = normaliseColour(args[parsed.nextIndex + 1]) || game.turn || "white";
+    if (!type) return { ok: false, reason: "Piece type must be pawn, knight, bishop, rook, queen, or king." };
+    removePieceAt(game, parsed.location);
+    game.pieces.push({ id: `dev_${color}_${type}_${Date.now()}`, type, color, ...parsed.location, hasMoved: true });
+    return { ok: true, game, lines: [`Replaced ${fmtLoc(parsed.location)} with ${color} ${type}.`] };
+  }
+
+  if (action === "findPiece") {
+    const query = String(args.join(" ") || "").trim().toLowerCase();
+    if (!query) return { ok: false, reason: "Usage: piece find [id|type]" };
+    const matches = game.pieces.filter((p) => p.id.toLowerCase().includes(query) || p.type.toLowerCase() === query || `${p.color} ${p.type}`.includes(query));
+    return { ok: true, game, lines: matches.length ? matches.map((p) => `${p.id} | ${p.color} ${p.type}${p.god ? " GOD" : ""} @ ${fmtLoc(p)}`) : [`No piece matched: ${query}`] };
+  }
+
+  if (action === "attackSquaresAt") {
+    const parsed = consumeDevLocationArgs(args, 0);
+    if (!parsed) return { ok: false, reason: "Usage: piece attacks [square]" };
+    const piece = getPieceAt(game, parsed.location);
+    if (!piece) return { ok: false, reason: "No piece at that location." };
+    // Compact approximation: legal/capture destinations are the actionable attack/debug list.
+    const moves = getLegalMoves(game, piece);
+    return { ok: true, game, lines: [`${piece.color} ${piece.type} attack/debug squares:`, ...moves.map(fmtLoc).slice(0, 80)] };
+  }
+
+  if (action === "killKing") {
+    const color = normaliseColour(args[0]);
+    if (!color) return { ok: false, reason: "Usage: piece kill king [white|black]" };
+    const before = game.pieces.length;
+    game.pieces = game.pieces.filter((p) => !(p.color === color && p.type === "king"));
+    Object.assign(game, getGameEndState(game, opponent(color)));
+    return { ok: true, game, lines: [`Removed ${before - game.pieces.length} ${color} king(s).`] };
+  }
+
+  if (action === "promotePiece") {
+    const parsed = consumeDevLocationArgs(args, 0);
+    if (!parsed) return { ok: false, reason: "Usage: piece promote [square] [piece]" };
+    const piece = getPieceAt(game, parsed.location);
+    const type = normalisePieceType(args[parsed.nextIndex]);
+    if (!piece || !type) return { ok: false, reason: "Need a target piece and a valid piece type." };
+    const old = piece.type;
+    piece.type = type;
+    return { ok: true, game, lines: [`Changed ${piece.color} ${old} at ${fmtLoc(piece)} to ${type}.`] };
+  }
+
+  if (action === "setPieceMoved") {
+    const parsed = consumeDevLocationArgs(args, 0);
+    if (!parsed) return { ok: false, reason: "Usage: piece moved [square] [true|false]" };
+    const piece = getPieceAt(game, parsed.location);
+    if (!piece) return { ok: false, reason: "No piece at that square." };
+    piece.hasMoved = !["false", "0", "no", "off"].includes(String(args[parsed.nextIndex] || "").toLowerCase());
+    return { ok: true, game, lines: [`${piece.id}.hasMoved=${piece.hasMoved}`] };
+  }
+
+  if (action === "godPiece") {
+    const parsed = consumeDevLocationArgs(args, 0);
+    if (!parsed) return { ok: false, reason: "Usage: piece god [square] [on|off]" };
+    const piece = getPieceAt(game, parsed.location);
+    if (!piece) return { ok: false, reason: "No piece at that square." };
+    const mode = String(args[parsed.nextIndex] || "on").toLowerCase();
+    piece.god = !["off", "false", "0", "no"].includes(mode);
+    game.message = `${piece.color} ${piece.type} at ${fmtLoc(piece)} is ${piece.god ? "unkillable" : "mortal"} now.`;
+    return { ok: true, game, lines: [game.message] };
+  }
+
+  if (action === "forfeitDev") {
+    return forfeitGame(requesterSocketId, roomCode);
+  }
+
   if (action === "resetMatch") {
     const reset = createGame(game.roomCode, { variant: game.variant, timeControl: game.timeControl, gameMode: game.gameMode, aiDifficulty: game.ai?.difficulty });
     reset.players = game.players;
@@ -1108,7 +1189,7 @@ export function runDevUtilityCommand(roomCodeRaw, action, args = [], requesterSo
     if (target.role === "player") game.players[target.color] = null;
     else game.spectators = (game.spectators || []).filter((s) => s.id !== target.id);
     game.message = `${target.name} was kicked by developer.`;
-    return { ok: true, game, lines: [game.message] };
+    return { ok: true, game, lines: [game.message], kickedSocketId: target.id };
   }
 
   if (action === "lockRoom") { game.locked = true; return { ok: true, game, lines: ["Room locked to new spectators."] }; }
@@ -1234,6 +1315,273 @@ export function runDevUtilityCommand(roomCodeRaw, action, args = [], requesterSo
     return { ok: true, game, lines: ["King of the hill setup applied."] };
   }
 
+  if (action === "chaosCommand") {
+    const sub = String(args[0] || "").toLowerCase();
+    if (sub === "move") return runDevUtilityCommand(roomCode, "chaosMove", [], requesterSocketId, requesterName);
+    if (sub === "swap") {
+      if (String(args[1] || "").toLowerCase() === "queens") {
+        const wq = game.pieces.find((p) => p.color === "white" && p.type === "queen");
+        const bq = game.pieces.find((p) => p.color === "black" && p.type === "queen");
+        if (!wq || !bq) return { ok: false, reason: "Both queens are required." };
+        const w = { x: wq.x, y: wq.y, z: wq.z }; Object.assign(wq, { x: bq.x, y: bq.y, z: bq.z }); Object.assign(bq, w);
+        return { ok: true, game, lines: ["Queens swapped."] };
+      }
+      return runDevUtilityCommand(roomCode, "swapKings", [], requesterSocketId, requesterName);
+    }
+    if (sub === "shuffle") {
+      const color = normaliseColour(args[1]);
+      const pool = game.pieces.filter((p) => p.type !== "king" && (!color || p.color === color));
+      const positions = pool.map((p) => ({ x: p.x, y: p.y, z: p.z })).sort(() => Math.random() - 0.5);
+      pool.forEach((p, i) => Object.assign(p, positions[i]));
+      return { ok: true, game, lines: [`Shuffled ${pool.length} piece(s).`] };
+    }
+    if (sub === "yeet") {
+      const parsed = consumeDevLocationArgs(args, 1);
+      if (!parsed) return { ok: false, reason: "Usage: chaos yeet [square]" };
+      const removed = removePieceAt(game, parsed.location);
+      if (!removed) return { ok: false, reason: "No piece at that square." };
+      return { ok: true, game, lines: [`Yeeted ${removed.color} ${removed.type} from ${fmtLoc(parsed.location)}.`] };
+    }
+    if (sub === "clone") {
+      const from = consumeDevLocationArgs(args, 1);
+      const to = from ? consumeDevLocationArgs(args, from.nextIndex) : null;
+      if (!from || !to) return { ok: false, reason: "Usage: chaos clone [from] [to]" };
+      const piece = getPieceAt(game, from.location);
+      if (!piece || getPieceAt(game, to.location)) return { ok: false, reason: "Need source piece and empty target." };
+      game.pieces.push({ ...piece, id: `clone_${piece.id}_${Date.now()}`, x: to.location.x, y: to.location.y, z: to.location.z, hasMoved: true });
+      return { ok: true, game, lines: [`Cloned ${piece.color} ${piece.type} to ${fmtLoc(to.location)}.`] };
+    }
+    if (sub === "mutate") {
+      const parsed = consumeDevLocationArgs(args, 1);
+      const type = parsed ? normalisePieceType(args[parsed.nextIndex]) : null;
+      if (!parsed || !type) return { ok: false, reason: "Usage: chaos mutate [square] [piece]" };
+      const piece = getPieceAt(game, parsed.location);
+      if (!piece) return { ok: false, reason: "No piece at square." };
+      piece.type = type;
+      return { ok: true, game, lines: [`Mutated piece at ${fmtLoc(piece)} to ${type}.`] };
+    }
+    if (sub === "promote" && String(args[1] || "").toLowerCase() === "random") {
+      const color = normaliseColour(args[2]);
+      const pool = game.pieces.filter((p) => p.type !== "king" && (!color || p.color === color));
+      const piece = pool[Math.floor(Math.random() * pool.length)];
+      if (!piece) return { ok: false, reason: "No target piece." };
+      const types = ["knight", "bishop", "rook", "queen"];
+      piece.type = types[Math.floor(Math.random() * types.length)];
+      return { ok: true, game, lines: [`Random-promoted ${piece.color} piece to ${piece.type}.`] };
+    }
+    if (sub === "downgrade") {
+      const parsed = consumeDevLocationArgs(args, 1);
+      if (!parsed) return { ok: false, reason: "Usage: chaos downgrade [square]" };
+      const piece = getPieceAt(game, parsed.location);
+      if (!piece || piece.type === "king") return { ok: false, reason: "Need non-king target." };
+      piece.type = "pawn";
+      return { ok: true, game, lines: [`Downgraded piece at ${fmtLoc(piece)} to pawn.`] };
+    }
+    if (sub === "king" && String(args[1] || "").toLowerCase() === "teleport") {
+      const color = normaliseColour(args[2]);
+      const parsed = consumeDevLocationArgs(args, 3);
+      if (!color || !parsed) return { ok: false, reason: "Usage: chaos king teleport [colour] [square]" };
+      const king = game.pieces.find((p) => p.color === color && p.type === "king");
+      if (!king) return { ok: false, reason: "King not found." };
+      Object.assign(king, parsed.location);
+      return { ok: true, game, lines: [`Teleported ${color} king to ${fmtLoc(king)}.`] };
+    }
+    if (sub === "pawnstorm") {
+      const color = normaliseColour(args[1]) || game.turn;
+      let moved = 0;
+      const dir = color === "white" ? 1 : -1;
+      for (const pawn of game.pieces.filter((p) => p.color === color && p.type === "pawn")) {
+        const to = { x: pawn.x, y: pawn.y, z: pawn.z + dir };
+        if (inBounds(to) && !getPieceAt(game, to)) { Object.assign(pawn, to, { hasMoved: true }); moved++; }
+      }
+      return { ok: true, game, lines: [`Pawnstorm moved ${moved} pawn(s).`] };
+    }
+    if (sub === "civilwar") {
+      const color = normaliseColour(args[1]) || game.turn;
+      const pool = game.pieces.filter((p) => p.color === color && p.type !== "king");
+      if (pool.length < 2) return { ok: false, reason: "Need at least two pieces." };
+      const a = pool[Math.floor(Math.random() * pool.length)];
+      let b = pool[Math.floor(Math.random() * pool.length)];
+      if (a === b) b = pool[(pool.indexOf(a) + 1) % pool.length];
+      const pos = { x: a.x, y: a.y, z: a.z }; Object.assign(a, { x: b.x, y: b.y, z: b.z }); Object.assign(b, pos);
+      return { ok: true, game, lines: [`Civil war swapped ${a.id} and ${b.id}.`] };
+    }
+    if (sub === "tax") {
+      const color = normaliseColour(args[1]) || game.turn;
+      const pool = game.pieces.filter((p) => p.color === color && p.type !== "king" && !p.god);
+      const piece = pool[Math.floor(Math.random() * pool.length)];
+      if (!piece) return { ok: false, reason: "No taxable piece." };
+      removePieceAt(game, piece);
+      return { ok: true, game, lines: [`Tax removed ${color} ${piece.type}.`] };
+    }
+    if (sub === "blessing") {
+      const color = normaliseColour(args[1]) || game.turn;
+      const pool = game.pieces.filter((p) => p.color === color);
+      const piece = pool[Math.floor(Math.random() * pool.length)];
+      if (!piece) return { ok: false, reason: "No piece to bless." };
+      piece.shielded = true;
+      return { ok: true, game, lines: [`Blessed ${piece.color} ${piece.type} with a shield.`] };
+    }
+    return { ok: false, reason: "Usage: chaos [move|swap|shuffle|yeet|clone|mutate|promote|downgrade|king|pawnstorm|civilwar|tax|blessing]" };
+  }
+
+  if (action === "predictCommand") {
+    if (game.variant !== "predict") return { ok: false, reason: "Predict commands need a Predict game." };
+    if (!game.predict) game.predict = { round: 1, pending: { white: null, black: null } };
+    const sub = String(args[0] || "").toLowerCase();
+    if (sub === "state") return { ok: true, game, lines: [`round=${game.predict.round}`, `white=${game.predict.pending?.white ? "locked" : "open"}`, `black=${game.predict.pending?.black ? "locked" : "open"}`] };
+    if (sub === "reveal" || sub === "peek") {
+      const side = normaliseColour(args[1]);
+      const colors = side ? [side] : ["white", "black"];
+      return { ok: true, game, lines: colors.map((c) => `${c}: ${game.predict.pending?.[c] ? `${game.predict.pending[c].pieceId} -> ${fmtLoc(game.predict.pending[c].to)}` : "none"}`) };
+    }
+    if (sub === "clear") {
+      const side = normaliseColour(args[1]);
+      if (side) game.predict.pending[side] = null; else game.predict.pending = { white: null, black: null };
+      return { ok: true, game, lines: [`Predict pending cleared${side ? ` for ${side}` : ""}.`] };
+    }
+    if (sub === "round") { game.predict.round = Math.max(1, Number.parseInt(args[1], 10) || 1); return { ok: true, game, lines: [`Predict round=${game.predict.round}`] }; }
+    if (sub === "lock") {
+      const color = normaliseColour(args[1]);
+      const from = consumeDevLocationArgs(args, 2);
+      const to = from ? consumeDevLocationArgs(args, from.nextIndex) : null;
+      if (!color || !from || !to) return { ok: false, reason: "Usage: predict lock [colour] [from] [to]" };
+      const piece = getPieceAt(game, from.location);
+      if (!piece || piece.color !== color) return { ok: false, reason: "No matching piece at source." };
+      game.predict.pending[color] = { pieceId: piece.id, color, to: to.location, promotion: "queen" };
+      return { ok: true, game, lines: [`Locked ${color} ${piece.type} to ${fmtLoc(to.location)}.`] };
+    }
+    if (sub === "resolve") {
+      if (!game.predict.pending.white || !game.predict.pending.black) return { ok: false, reason: "Both sides must have pending moves to resolve." };
+      resolvePredictRound(game);
+      return { ok: true, game, lines: [game.message || "Predict round resolved."] };
+    }
+    if (["test", "fake", "panic", "mindread", "misdirect", "doubleblind", "spoiler", "confidence", "fakeunlock", "taunt"].includes(sub)) {
+      return { ok: true, game, lines: [`Predict ${args.join(" ")} effect queued in client/help layer.`] };
+    }
+    return { ok: false, reason: "Usage: predict [state|reveal|peek|clear|lock|round|test|fake|panic]" };
+  }
+
+  if (action === "scoobyCommand") {
+    if (game.variant !== "scooby") return { ok: false, reason: "Scooby commands need a Scooby game." };
+    ensureDevScooby(game);
+    const sub = String(args[0] || "").toLowerCase();
+    if (sub === "state") return { ok: true, game, lines: devScoobyStateLines(game) };
+    if (sub === "reveal") { game.scooby.devReveal = true; return { ok: true, game, lines: ["Scooby dev reveal enabled."] }; }
+    if (sub === "hide") { game.scooby.devReveal = false; return { ok: true, game, lines: ["Scooby dev reveal disabled."] }; }
+    if (sub === "visible" || sub === "detected") return { ok: true, game, lines: devScoobyVisibleLines(game, normaliseColour(args[1]) || game.turn) };
+    if (sub === "owners") return { ok: true, game, lines: (game.scooby.traps || []).map((t) => `${t.owner} ${t.type} @ ${fmtLoc(t.pos)}`) };
+    if (sub === "trap") return devScoobyTrapCommand(game, args.slice(1));
+    if (sub === "smoke") return devScoobySmokeCommand(game, args.slice(1));
+    if (sub === "control") return devScoobyControlCommand(game, args.slice(1));
+    if (sub === "test") return devScoobyTrapCommand(game, ["add", String(args[1] || "mine").replace("mindcontrol", "mindControl"), args[2] || "e4", game.turn]);
+    return { ok: false, reason: "Usage: scooby [state|reveal|hide|visible|detected|owners|trap|smoke|control|test]" };
+  }
+
+  if (action === "tycoonCommand") {
+    if (game.variant !== "tycoon") return { ok: false, reason: "Tycoon commands need a Tycoon game." };
+    ensureDevTycoon(game);
+    const sub = String(args[0] || "").toLowerCase();
+    if (sub === "state") return { ok: true, game, lines: [`money white=${game.tycoon.money.white}/${game.tycoon.maxMoney.white}, black=${game.tycoon.money.black}/${game.tycoon.maxMoney.black}`, `production white=${game.tycoon.production.white}, black=${game.tycoon.production.black}`, `bombs=${game.tycoon.bombs.length}`] };
+    if (sub === "money") {
+      const verb = String(args[1] || "").toLowerCase(); const color = normaliseColour(args[2]); const amount = Number.parseInt(args[3], 10) || 0;
+      if (!color && verb !== "bankrupt") return { ok: false, reason: "Usage: tycoon money set|add|remove|bankrupt [colour] [amount]" };
+      if (verb === "set") game.tycoon.money[color] = amount;
+      else if (verb === "add") game.tycoon.money[color] = (game.tycoon.money[color] || 0) + amount;
+      else if (verb === "remove") game.tycoon.money[color] = Math.max(0, (game.tycoon.money[color] || 0) - amount);
+      else if (verb === "bankrupt") game.tycoon.money[color] = 0;
+      else return { ok: false, reason: "Usage: tycoon money set|add|remove|bankrupt [colour] [amount]" };
+      return { ok: true, game, lines: [`${color} money=${game.tycoon.money[color]}`] };
+    }
+    if (sub === "upgrade") {
+      const kind = String(args[1] || "").toLowerCase(); const color = normaliseColour(args[2]); const level = Math.max(0, Number.parseInt(args[3], 10) || 0);
+      if (!color || !["storage","production"].includes(kind)) return { ok: false, reason: "Usage: tycoon upgrade storage|production [colour] [level]" };
+      if (kind === "storage") { game.tycoon.storageLevel[color] = level; game.tycoon.maxMoney[color] = 15 + level * 10; }
+      else { game.tycoon.productionLevel[color] = level; game.tycoon.production[color] = level; }
+      return { ok: true, game, lines: [`${color} ${kind} level=${level}`] };
+    }
+    if (sub === "wall") {
+      const verb = String(args[1] || "").toLowerCase();
+      if (verb === "clear") { const before = game.pieces.length; game.pieces = game.pieces.filter((p) => p.type !== "wall"); return { ok: true, game, lines: [`Cleared ${before-game.pieces.length} wall(s).`] }; }
+      const parsed = consumeDevLocationArgs(args, 2); const owner = normaliseColour(args[parsed?.nextIndex || 3]) || game.turn;
+      if (verb === "remove") return runDevUtilityCommand(roomCode, "removePiece", args.slice(2), requesterSocketId, requesterName);
+      if (verb !== "place" || !parsed) return { ok: false, reason: "Usage: tycoon wall place|remove|clear [square] [owner]" };
+      removePieceAt(game, parsed.location);
+      game.pieces.push({ id:`wall_${owner}_${Date.now()}`, type:"wall", owner, color: owner, ...parsed.location, hasMoved:true });
+      return { ok: true, game, lines: [`Placed ${owner} wall at ${fmtLoc(parsed.location)}.`] };
+    }
+    if (sub === "bomb") {
+      const verb = String(args[1] || "").toLowerCase();
+      if (verb === "clear") { game.tycoon.bombs = []; return { ok: true, game, lines: ["Bombs cleared."] }; }
+      if (verb === "party") {
+        const count = Math.min(12, Math.max(1, Number.parseInt(args[2], 10) || 3));
+        for (let i=0;i<count;i++) game.tycoon.bombs.push({ owner: game.turn, centre: { x:Math.floor(Math.random()*8), y:0, z:Math.floor(Math.random()*8) }, targetTurn:(Number(game.turnToken)||0)+2 });
+        return { ok: true, game, lines: [`Bomb party placed ${count} bombs.`] };
+      }
+      const parsed = consumeDevLocationArgs(args, 2);
+      if (!parsed) return { ok: false, reason: "Usage: tycoon bomb place|explode [square] ..." };
+      if (verb === "explode") return runDevUtilityCommand(roomCode, "nuke", [`${parsed.location.x},${parsed.location.y},${parsed.location.z}`, "1"], requesterSocketId, requesterName);
+      const owner = normaliseColour(args[parsed.nextIndex]) || game.turn; const turns = Number.parseInt(args[parsed.nextIndex+1], 10) || 2;
+      game.tycoon.bombs.push({ owner, centre: parsed.location, targetTurn: (Number(game.turnToken)||0)+turns*2 });
+      return { ok: true, game, lines: [`Placed ${owner} bomb at ${fmtLoc(parsed.location)}.`] };
+    }
+    if (sub === "shield") { const parsed=consumeDevLocationArgs(args,2); const p=parsed?getPieceAt(game,parsed.location):null; if(!p) return {ok:false, reason:"Usage: tycoon shield add|remove [square]"}; p.shielded=String(args[1]).toLowerCase()!=="remove"; return {ok:true, game, lines:[`${p.id} shielded=${p.shielded}`]}; }
+    if (sub === "silo") return { ok: true, game, lines: game.pieces.filter((p)=>[`${p.x},${p.z}`].some(()=> (p.x===1 && [3,4].includes(p.z)) || (p.x===6 && [3,4].includes(p.z)))).map((p)=>`${p.color} ${p.type} @ ${fmtLoc(p)}`) };
+    if (sub === "buy" && args[1] === "queen") { const color=normaliseColour(args[2]); const parsed=consumeDevLocationArgs(args,3); if(!color||!parsed) return {ok:false, reason:"Usage: tycoon buy queen [colour] [square] free"}; game.pieces.push({id:`freequeen_${Date.now()}`, type:"queen", color, ...parsed.location, hasMoved:true}); return {ok:true, game, lines:[`Free queen placed for ${color}.`]}; }
+    if (sub === "buyout") { const parsed=consumeDevLocationArgs(args,1); const color=normaliseColour(args[parsed?.nextIndex]); const p=parsed?getPieceAt(game,parsed.location):null; if(!p||!color) return {ok:false, reason:"Usage: tycoon buyout [square] [colour]"}; p.color=color; p.owner=color; return {ok:true, game, lines:[`Piece bought out by ${color}.`]}; }
+    if (sub === "income") { const color=normaliseColour(args[1])||game.turn; const amount=5+(game.tycoon.production[color]||0); game.tycoon.money[color]=Math.min(game.tycoon.maxMoney[color]||15,(game.tycoon.money[color]||0)+amount); if(!game.effects) game.effects={explosions:[],income:[]}; game.effects.income.push({color,amount,time:Date.now()}); return {ok:true, game, lines:[`${color} gained $${amount}.`]};}
+    return { ok: false, reason: "Usage: tycoon [state|money|upgrade|income|wall|bomb|shield|silo|buy|buyout]" };
+  }
+
+  if (action === "nukeCommand") {
+    const sub = String(args[0] || "").toLowerCase();
+    if (sub === "blast") return runDevUtilityCommand(roomCode, "nuke", args.slice(1), requesterSocketId, requesterName);
+    if (sub === "state") return { ok: true, game, lines: [`white charge=${game.nuke?.white?.charge ?? 0}, active=${game.nuke?.white?.active ? fmtLoc(game.nuke.white.active.centre) : "none"}`, `black charge=${game.nuke?.black?.charge ?? 0}, active=${game.nuke?.black?.active ? fmtLoc(game.nuke.black.active.centre) : "none"}`] };
+    if (!game.nuke) game.nuke = { white:{charge:0,active:null}, black:{charge:0,active:null} };
+    if (sub === "charge") { const verb=String(args[1]||"").toLowerCase(); const color=normaliseColour(args[2]); const amount=Number.parseInt(args[3],10)||0; if(!color) return {ok:false,reason:"Usage: nuke charge set|add|max [colour] [amount]"}; if(verb==="set") game.nuke[color].charge=amount; else if(verb==="add") game.nuke[color].charge=(game.nuke[color].charge||0)+amount; else if(verb==="max") game.nuke[color].charge=3; return {ok:true,game,lines:[`${color} nuke charge=${game.nuke[color].charge}`]}; }
+    if (sub === "clear") { game.nuke.white.active=null; game.nuke.black.active=null; return {ok:true,game,lines:["Active nukes cleared."]}; }
+    if (sub === "launch" || sub === "oops") { const parsed=consumeDevLocationArgs(args,1); const color=normaliseColour(args[parsed?.nextIndex])||game.turn; const radius=Number.parseInt(args[(parsed?.nextIndex||2)+1],10)||2; if(!parsed) return {ok:false,reason:"Usage: nuke launch [square] [colour] [radius]"}; game.nuke[color].active={centre:parsed.location,radius,targetTurn:(Number(game.turnToken)||0)+(sub==="oops"?1:2)}; game.message=`${color} nuke armed at ${fmtLoc(parsed.location)}.`; return {ok:true,game,lines:[game.message]};}
+    if (sub === "explode") return runDevUtilityCommand(roomCode, "nuke", ["4,0,4", "8"], requesterSocketId, requesterName);
+    if (sub === "mark" || sub === "timer" || sub === "test") return {ok:true,game,lines:[`Nuke ${args.join(" ")} helper acknowledged.`]};
+    return { ok: false, reason: "Usage: nuke [state|charge|launch|explode|clear|mark|timer|oops|blast]" };
+  }
+
+  if (action === "crazyhouseCommand") {
+    if (!game.reserves) game.reserves = { white: [], black: [] };
+    const sub = String(args[0] || "").toLowerCase();
+    if (sub === "reserve") {
+      const verb=String(args[1]||"list").toLowerCase();
+      if (verb==="list") return {ok:true,game,lines:[`white: ${(game.reserves.white||[]).join(",")||"empty"}`,`black: ${(game.reserves.black||[]).join(",")||"empty"}`]};
+      const color=normaliseColour(args[2]); const type=normalisePieceType(args[3]); const count=Math.max(1,Number.parseInt(args[4],10)||1);
+      if (!color) return {ok:false,reason:"Usage: crazyhouse reserve add|clear|gift|bomb [colour] [piece] [count]"};
+      if (["clear","bomb"].includes(verb)) { game.reserves[color]=[]; return {ok:true,game,lines:[`${color} reserve cleared.`]};}
+      if (!type) return {ok:false,reason:"Need a piece type."};
+      for(let i=0;i<count;i++) game.reserves[color].push(type);
+      return {ok:true,game,lines:[`Added ${count} ${type} to ${color} reserve.`]};
+    }
+    if (sub === "drop" && String(args[1]||"").toLowerCase()==="chaos") return {ok:true,game,lines:["Drop chaos acknowledged; use reserve add + normal drops for precision."]};
+    return {ok:false, reason:"Usage: crazyhouse reserve list|add|clear|gift|bomb ..."};
+  }
+
+  if (action === "atomicCommand") {
+    const sub=String(args[0]||"").toLowerCase();
+    if (sub==="mark" || sub==="test") return {ok:true,game,lines:[`Atomic ${args.join(" ")} helper acknowledged.`]};
+    if (sub==="explode" || sub==="chainreaction") {
+      const parsed=consumeDevLocationArgs(args,1) || {location:{x:Math.floor(Math.random()*8),y:0,z:Math.floor(Math.random()*8)}, nextIndex:1};
+      return runDevUtilityCommand(roomCode, "nuke", [`${parsed.location.x},${parsed.location.y},${parsed.location.z}`, sub==="chainreaction" ? "2" : "1"], requesterSocketId, requesterName);
+    }
+    if (sub==="nuclearpawns") { game.atomicNuclearPawns = !game.atomicNuclearPawns; return {ok:true,game,lines:[`nuclear pawns=${game.atomicNuclearPawns}`]};}
+    return {ok:false,reason:"Usage: atomic [mark|explode|chainreaction|nuclearpawns|test]"};
+  }
+
+  if (action === "hillCommand") {
+    const sub=String(args[0]||"setup").toLowerCase();
+    if (sub==="setup") return runDevUtilityCommand(roomCode, "kingOfTheHill", [], requesterSocketId, requesterName);
+    if (sub==="state") { const wk=game.pieces.find((p)=>p.color==="white"&&p.type==="king"); const bk=game.pieces.find((p)=>p.color==="black"&&p.type==="king"); return {ok:true,game,lines:[`white king ${wk?fmtLoc(wk):"missing"}`,`black king ${bk?fmtLoc(bk):"missing"}`]};}
+    if (sub==="test") { const color=normaliseColour(args[2]||args[1])||"white"; const k=game.pieces.find((p)=>p.color===color&&p.type==="king"); if(k) Object.assign(k,{x:3,y:0,z:3}); Object.assign(game,getGameEndState(game,opponent(color))); return {ok:true,game,lines:[`${color} king moved to hill.`]};}
+    if (sub==="mark") return {ok:true,game,lines:["Hill squares are centre 4 squares: d4/e4/d5/e5."]};
+  }
+
   return null;
 }
 
@@ -1254,7 +1602,58 @@ function consumeDevLocationArgs(args, startIndex = 0) {
     const xyz = [args[startIndex], args[startIndex+1], args[startIndex+2]].map((v)=>Number.parseInt(v,10));
     if (xyz.every(Number.isInteger)) return { location: { x: xyz[0], y: xyz[1], z: xyz[2] }, nextIndex: startIndex + 3 };
   }
+
+
   return null;
 }
 
 function fmtLoc(pos) { return `(${pos.x},${pos.y},${pos.z})`; }
+
+function ensureDevScooby(game) {
+  if (!game.scooby) game.scooby = { traps: [], smokes: [], trapLimits: { mine:1, pitfall:2, smoke:1, decoy:2, mindControl:1 } };
+  if (!Array.isArray(game.scooby.traps)) game.scooby.traps = [];
+  if (!Array.isArray(game.scooby.smokes)) game.scooby.smokes = [];
+  if (!game.scooby.trapLimits) game.scooby.trapLimits = { mine:1, pitfall:2, smoke:1, decoy:2, mindControl:1 };
+}
+function ensureDevTycoon(game) {
+  if (!game.tycoon) game.tycoon = { money:{white:0,black:0}, maxMoney:{white:15,black:15}, production:{white:0,black:0}, storageLevel:{white:0,black:0}, productionLevel:{white:0,black:0}, walls:{white:0,black:0}, bombs:[], lastIncome:{white:0,black:0} };
+  if (!Array.isArray(game.tycoon.bombs)) game.tycoon.bombs = [];
+  if (!game.effects) game.effects = { explosions: [], income: [] };
+}
+function devScoobyStateLines(game) {
+  ensureDevScooby(game);
+  return [
+    `traps=${game.scooby.traps.length}`,
+    ...game.scooby.traps.map((t)=>`${t.owner} ${t.type} @ ${fmtLoc(t.pos)}`),
+    `smokes=${game.scooby.smokes.length}`,
+    ...game.scooby.smokes.map((s)=>`smoke @ ${fmtLoc(s.centre)} expires=${s.expiresAtTurn}`),
+    `controlled=${game.pieces.filter((p)=>p.controlledBy).length}`
+  ];
+}
+function devScoobyVisibleLines(game, color) {
+  ensureDevScooby(game);
+  const pawns = game.pieces.filter((p)=>p.color===color && p.type==="pawn");
+  const visible = game.scooby.traps.filter((trap)=>trap.owner===color || pawns.some((p)=>(Math.abs(p.x-trap.pos.x)===1&&p.z===trap.pos.z)||(Math.abs(p.z-trap.pos.z)===1&&p.x===trap.pos.x)));
+  return visible.length ? visible.map((t)=>`${t.owner===color?"own":"detected"} ${t.type} @ ${fmtLoc(t.pos)}`) : [`No traps visible to ${color}.`];
+}
+function devScoobyTrapCommand(game, args) {
+  ensureDevScooby(game);
+  const verb=String(args[0]||"").toLowerCase();
+  if (verb==="list") return {ok:true,game,lines:game.scooby.traps.map((t)=>`${t.owner} ${t.type} @ ${fmtLoc(t.pos)}`)};
+  if (verb==="counts") return {ok:true,game,lines:["white "+JSON.stringify(countTrapTypes(game,"white")),"black "+JSON.stringify(countTrapTypes(game,"black"))]};
+  if (verb==="clear") { const color=normaliseColour(args[1]); const before=game.scooby.traps.length; game.scooby.traps=color?game.scooby.traps.filter((t)=>t.owner!==color):[]; return {ok:true,game,lines:[`Cleared ${before-game.scooby.traps.length} trap(s).`]};}
+  if (verb==="limit") { const type=args[1]; const n=Number.parseInt(args[2],10); if(!type||!Number.isInteger(n)) return {ok:false,reason:"Usage: scooby trap limit [type] [number]"}; game.scooby.trapLimits[type]=n; return {ok:true,game,lines:[`${type} limit=${n}`]};}
+  if (verb==="limits" && args[1]==="reset") { game.scooby.trapLimits={mine:1,pitfall:2,smoke:1,decoy:2,mindControl:1}; return {ok:true,game,lines:["Trap limits reset."]};}
+  if (verb==="convert") { const to=String(args[1]||"").includes("mine")?"mine":"decoy"; game.scooby.traps.forEach((t)=>{t.type=to;}); return {ok:true,game,lines:[`All traps converted to ${to}.`]};}
+  if (verb==="random" || verb==="storm") { const owner=normaliseColour(args[1])||game.turn; const count=verb==="storm" ? Math.min(20,Math.max(1,Number.parseInt(args[2],10)||5)) : 1; const types=["mine","pitfall","smoke","decoy","mindControl"]; let placed=0; for(let i=0;i<500&&placed<count;i++){ const pos={x:Math.floor(Math.random()*8),y:0,z:Math.floor(Math.random()*8)}; if(getPieceAt(game,pos)||game.scooby.traps.some((t)=>t.pos.x===pos.x&&t.pos.z===pos.z)) continue; const type=types[Math.floor(Math.random()*types.length)]; game.scooby.traps.push({id:`devtrap_${Date.now()}_${placed}`,owner,type,pos,apparentType:type,placedAtTurn:game.turnToken||0}); placed++; } return {ok:true,game,lines:[`Placed ${placed} random trap(s).`]};}
+  const parsed=consumeDevLocationArgs(args, verb==="add"?2:1);
+  if (verb==="remove"||verb==="defuse") { if(!parsed) return {ok:false,reason:"Usage: scooby trap remove [square]"}; const before=game.scooby.traps.length; game.scooby.traps=game.scooby.traps.filter((t)=>!(t.pos.x===parsed.location.x&&t.pos.z===parsed.location.z)); return {ok:true,game,lines:[`Removed ${before-game.scooby.traps.length} trap(s).`]};}
+  if (verb==="trigger"||verb==="spring") return {ok:true,game,lines:["Trap spring acknowledged; move a piece onto it to use normal trigger logic."]};
+  if (verb==="add") { const type=String(args[1]||"mine"); if(!parsed) return {ok:false,reason:"Usage: scooby trap add [type] [square] [owner]"}; const owner=normaliseColour(args[parsed.nextIndex])||game.turn; game.scooby.traps.push({id:`devtrap_${Date.now()}`,owner,type,pos:parsed.location,apparentType:type,placedAtTurn:game.turnToken||0}); return {ok:true,game,lines:[`Added ${owner} ${type} trap at ${fmtLoc(parsed.location)}.`]};}
+  return {ok:false,reason:"Usage: scooby trap add|remove|clear|list|counts|limit|random|storm|convert|trigger|defuse|spring"};
+}
+function devScoobySmokeCommand(game,args){ ensureDevScooby(game); const verb=String(args[0]||"").toLowerCase(); if(verb==="clear"){game.scooby.smokes=[]; return {ok:true,game,lines:["Smoke cleared."]};} if(verb==="list") return {ok:true,game,lines:game.scooby.smokes.map((s)=>`smoke @ ${fmtLoc(s.centre)} expires=${s.expiresAtTurn}`)}; if(verb==="expire"){game.scooby.smokes=[]; return {ok:true,game,lines:["Smoke expired."]};} const parsed=consumeDevLocationArgs(args,1); if(["add","bomb","turns"].includes(verb)&&parsed){ const turns=Number.parseInt(args[parsed.nextIndex],10)||3; game.scooby.smokes.push({owner:game.turn,centre:parsed.location,expiresAtTurn:(game.turnToken||0)+turns*2}); return {ok:true,game,lines:[`Smoke added at ${fmtLoc(parsed.location)} for ${turns} turn(s).`]};} return {ok:false,reason:"Usage: scooby smoke add|clear|list|expire|turns|bomb [square] [turns]"};}
+function devScoobyControlCommand(game,args){ const verb=String(args[0]||"").toLowerCase(); if(verb==="list") return {ok:true,game,lines:game.pieces.filter((p)=>p.controlledBy).map((p)=>`${p.id} controlledBy=${p.controlledBy} until=${p.controlledUntilTurn}`)}; if(verb==="expire"){for(const p of game.pieces){ if(p.originalColor){p.color=p.originalColor; delete p.originalColor;} delete p.controlledBy; delete p.controlledUntilTurn;} return {ok:true,game,lines:["Control expired."]};} const parsed=consumeDevLocationArgs(args,1); const p=parsed?getPieceAt(game,parsed.location):null; if(!p) return {ok:false,reason:"Usage: scooby control add|release|turns|zap [square] ..."}; if(verb==="release"){ if(p.originalColor)p.color=p.originalColor; delete p.originalColor; delete p.controlledBy; delete p.controlledUntilTurn; return {ok:true,game,lines:["Piece released."]};} const color=normaliseColour(args[parsed.nextIndex])||opponent(p.color); const turns=Number.parseInt(args[parsed.nextIndex+1],10)||2; if(!p.originalColor)p.originalColor=p.color; p.color=color; p.controlledBy=color; p.controlledUntilTurn=(game.turnToken||0)+turns*2; return {ok:true,game,lines:[`${p.id} controlled by ${color} for ${turns} turn(s).`]};}
+function countTrapTypes(game,color){ return game.scooby.traps.filter((t)=>t.owner===color).reduce((a,t)=>{a[t.type]=(a[t.type]||0)+1; return a;},{});}
+
+
