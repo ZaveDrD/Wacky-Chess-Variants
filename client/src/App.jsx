@@ -20,6 +20,7 @@ import { playSoundEffect, unlockAudio } from "./game/sound.js";
 
 const VIEWS = ["XZ", "XY", "YZ", "ISO"];
 const REVIEW_PLAY_DELAY_MS = 650;
+const MOBILE_DEV_TOUCH_SEQUENCE = ["topLeft", "topRight", "bottomLeft", "bottomRight", "centre"];
 
 export default function App() {
   const [name, setName] = useState(localStorage.getItem("playerName") || "");
@@ -68,6 +69,8 @@ export default function App() {
   const [devFxItems, setDevFxItems] = useState([]);
   const [devCosmetics, setDevCosmetics] = useState({ pieces: {}, icons: {}, curses: {}, players: {} });
   const devSequenceIndexRef = useRef(0);
+  const devTouchSequenceIndexRef = useRef(0);
+  const devTouchLastAtRef = useRef(0);
   const previousGameRef = useRef(null);
   const previousChatLengthRef = useRef(0);
   const previousClockWarningRef = useRef(null);
@@ -218,6 +221,14 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    function openDevConsoleFromHiddenInput(event) {
+      devSequenceIndexRef.current = 0;
+      devTouchSequenceIndexRef.current = 0;
+      devTouchLastAtRef.current = 0;
+      setDevConsoleOpen(true);
+      event?.preventDefault?.();
+    }
+
     function handleGlobalKeyDown(event) {
       if (devConsoleOpen) {
         if (event.key === "Escape") {
@@ -232,9 +243,7 @@ export default function App() {
       if (event.key === expected) {
         const nextIndex = devSequenceIndexRef.current + 1;
         if (nextIndex >= sequence.length) {
-          devSequenceIndexRef.current = 0;
-          setDevConsoleOpen(true);
-          event.preventDefault();
+          openDevConsoleFromHiddenInput(event);
         } else {
           devSequenceIndexRef.current = nextIndex;
         }
@@ -244,8 +253,41 @@ export default function App() {
       devSequenceIndexRef.current = event.key === sequence[0] ? 1 : 0;
     }
 
+    function handleViewportDevTouch(event) {
+      if (devConsoleOpen) return;
+      if (event.defaultPrevented) return;
+      if (event.pointerType === "mouse" && event.button !== 0) return;
+
+      const interactiveTag = event.target?.closest?.("input, textarea, select, [contenteditable='true']");
+      if (interactiveTag) return;
+
+      const zone = getViewportDevTouchZone(event.clientX, event.clientY);
+      if (!zone) return;
+
+      const now = Date.now();
+      if (now - devTouchLastAtRef.current > 5000) devTouchSequenceIndexRef.current = 0;
+      devTouchLastAtRef.current = now;
+
+      const expected = MOBILE_DEV_TOUCH_SEQUENCE[devTouchSequenceIndexRef.current];
+      if (zone === expected) {
+        const nextIndex = devTouchSequenceIndexRef.current + 1;
+        if (nextIndex >= MOBILE_DEV_TOUCH_SEQUENCE.length) {
+          openDevConsoleFromHiddenInput(event);
+        } else {
+          devTouchSequenceIndexRef.current = nextIndex;
+        }
+        return;
+      }
+
+      devTouchSequenceIndexRef.current = zone === MOBILE_DEV_TOUCH_SEQUENCE[0] ? 1 : 0;
+    }
+
     window.addEventListener("keydown", handleGlobalKeyDown);
-    return () => window.removeEventListener("keydown", handleGlobalKeyDown);
+    window.addEventListener("pointerdown", handleViewportDevTouch, { passive: false });
+    return () => {
+      window.removeEventListener("keydown", handleGlobalKeyDown);
+      window.removeEventListener("pointerdown", handleViewportDevTouch);
+    };
   }, [devConsoleOpen]);
 
   const is3DVariant = (game?.variant || selectedVariant) === "threeD";
@@ -1677,6 +1719,29 @@ function FeedbackOverlay({ text, type }) {
   );
 }
 
+
+function getViewportDevTouchZone(clientX, clientY) {
+  const width = window.innerWidth || document.documentElement.clientWidth || 0;
+  const height = window.innerHeight || document.documentElement.clientHeight || 0;
+  if (!width || !height) return null;
+
+  const shortest = Math.min(width, height);
+  const cornerSize = Math.max(54, Math.min(104, shortest * 0.18));
+  const centreSize = Math.max(74, Math.min(140, shortest * 0.24));
+  const centreX = width / 2;
+  const centreY = height / 2;
+
+  if (clientX <= cornerSize && clientY <= cornerSize) return "topLeft";
+  if (clientX >= width - cornerSize && clientY <= cornerSize) return "topRight";
+  if (clientX <= cornerSize && clientY >= height - cornerSize) return "bottomLeft";
+  if (clientX >= width - cornerSize && clientY >= height - cornerSize) return "bottomRight";
+
+  if (Math.abs(clientX - centreX) <= centreSize / 2 && Math.abs(clientY - centreY) <= centreSize / 2) {
+    return "centre";
+  }
+
+  return null;
+}
 
 function DevFxLayer({ items }) {
   if (!items?.length) return null;

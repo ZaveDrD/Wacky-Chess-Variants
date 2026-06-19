@@ -245,3 +245,18 @@ Changes:
 - `fireworks` now creates multiple bursts across the screen.
 - `rain` now repeats the requested item across the whole screen.
 - common chess words such as `pawns`, `queen`, `rooks`, `knights`, etc. now map to chess symbols.
+
+
+## Mobile developer console unlock
+
+The developer console can now be opened on phones with a viewport-based tap sequence:
+
+```text
+top-left → top-right → bottom-left → bottom-right → centre
+```
+
+Notes:
+- The hit zones are based on the visible browser window using pointer `clientX/clientY`, not page scroll position.
+- You do not need to scroll to reach the bottom corners.
+- The sequence must be completed within about 5 seconds.
+- It only opens the locked console; the dev password is still required.
