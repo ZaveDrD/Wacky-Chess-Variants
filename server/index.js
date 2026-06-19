@@ -16,6 +16,7 @@ const PORT = process.env.PORT || 3001;
 const DEV_PASSWORD_SALT = "wcv-dev-console-v1-salt";
 const DEV_PASSWORD_HASH = "716b38d8fc25690f55750b70a610c967e1ed93c67095dab364958ef51bd8858f";
 const devAuthenticatedSockets = new Set();
+const connectedClients = new Map();
 
 function verifyDevPassword(password) {
   const digest = pbkdf2Sync(String(password || ""), DEV_PASSWORD_SALT, 120000, 32, "sha256").toString("hex");
@@ -158,20 +159,26 @@ function emitGameStateToRoom(io, game) {
 }
 
 io.on("connection", (socket) => {
+  connectedClients.set(socket.id, { id: socket.id, name: "Guest", connectedAt: Date.now(), lastRoomCode: null });
+
   socket.on("createRoom", ({ name, variant, timeControl, gameMode, aiDifficulty } = {}) => {
+    updateConnectedClient(socket.id, name, null);
     const game = createRoom(socket, name, { variant, timeControl, gameMode, aiDifficulty });
+    updateConnectedClient(socket.id, name, game.roomCode);
     socket.emit("roomCreated", { roomCode: game.roomCode, color: "white", role: "player", game: sanitiseGameForViewer(game, socket.id) });
     emitGameStateToRoom(io, game);
     scheduleAIMoveIfNeeded(game);
   });
 
   socket.on("joinRoom", ({ roomCode, name } = {}) => {
+    updateConnectedClient(socket.id, name, roomCode);
     const result = joinRoom(socket, roomCode, name);
     if (!result.ok) {
       socket.emit("joinError", result.reason);
       return;
     }
 
+    updateConnectedClient(socket.id, name, result.game.roomCode);
     socket.emit("roomJoined", { roomCode: result.game.roomCode, color: result.color, role: result.role, game: sanitiseGameForViewer(result.game, socket.id) });
     emitGameStateToRoom(io, result.game);
     scheduleAIMoveIfNeeded(result.game);
@@ -179,12 +186,14 @@ io.on("connection", (socket) => {
 
 
   socket.on("quickMatch", ({ name, variant, timeControl, scope } = {}) => {
+    updateConnectedClient(socket.id, name, null);
     const result = quickMatch(socket, name, { variant, timeControl, scope });
     if (!result.ok) {
       socket.emit("matchmakingError", result.reason || "Quick match failed.");
       return;
     }
 
+    updateConnectedClient(socket.id, name, result.roomCode || result.game.roomCode);
     socket.emit("roomJoined", {
       roomCode: result.roomCode || result.game.roomCode,
       color: result.color,
@@ -204,6 +213,11 @@ io.on("connection", (socket) => {
   socket.on("cancelQuickMatch", () => {
     const result = cancelQuickMatch(socket.id);
     socket.emit("matchmakingStatus", { searching: false, cancelled: result.ok });
+  });
+
+  socket.on("clientPresence", ({ name, state, roomCode } = {}) => {
+    const lobbyState = String(state || "").toLowerCase() === "lobby";
+    updateConnectedClient(socket.id, name, lobbyState ? null : roomCode, lobbyState ? "lobby" : "room");
   });
 
   socket.on("selectPiece", ({ roomCode, pieceId } = {}) => {
@@ -356,6 +370,11 @@ io.on("connection", (socket) => {
     if (result?.shoutRoomCode && result?.shoutPayload) {
       io.to(result.shoutRoomCode).emit("shoutMessage", result.shoutPayload);
     }
+    if (Array.isArray(result?.forcedVisualTargets) && result?.forcedVisualPayload) {
+      for (const targetId of result.forcedVisualTargets) {
+        io.to(targetId).emit("devForcedVisual", result.forcedVisualPayload);
+      }
+    }
     if (result?.scheduleRoomCode) {
       const game = rooms.get(result.scheduleRoomCode);
       if (game) {
@@ -367,6 +386,7 @@ io.on("connection", (socket) => {
 
   socket.on("disconnect", () => {
     devAuthenticatedSockets.delete(socket.id);
+    connectedClients.delete(socket.id);
     const affectedGames = removeSocketFromRooms(socket.id);
     for (const game of affectedGames) {
       emitGameStateToRoom(io, game);
@@ -395,9 +415,33 @@ function handleDevCommand(socket, payload = {}) {
   args = routed.args;
   const name = String(payload.name || "").trim() || "Developer";
   const currentRoomCode = String(payload.currentRoomCode || "").trim().toUpperCase();
+  updateConnectedClient(socket.id, name, currentRoomCode || connectedClients.get(socket.id)?.lastRoomCode || null);
   const selectedVariant = normaliseDevVariant(payload.selectedVariant || args[0] || "threeD");
   const selectedTimeControl = normaliseDevTimeControl(payload.selectedTimeControl || "rapid");
   const selectedDifficulty = normaliseDevDifficulty(payload.selectedAIDifficulty || "medium");
+
+  if (action === "forceFx" || action === "forceCosmetic") {
+    const target = String(args[0] || "room").trim();
+    const effectArgs = args.slice(1);
+    if (!target || !effectArgs.length) {
+      return { response: { ok: false, lines: [`Usage: ${action === "forceFx" ? "fx force" : "cosmetic force"} [target] [command args...]`] } };
+    }
+    const targetIds = resolveForcedVisualTargets(target, currentRoomCode, socket.id);
+    if (!targetIds.length) return { response: { ok: false, lines: [`No target matched: ${target}`] } };
+    return {
+      response: {
+        ok: true,
+        lines: [`Forced ${action === "forceFx" ? "fx" : "cosmetic"} on ${targetIds.length} client(s): ${target}`, `${effectArgs.join(" ")}`]
+      },
+      forcedVisualTargets: targetIds,
+      forcedVisualPayload: {
+        kind: action === "forceFx" ? "fx" : "cosmetic",
+        args: effectArgs,
+        from: name,
+        target
+      }
+    };
+  }
 
   if (action === "findOpenMatches") {
     const matches = getOpenMatches();
@@ -862,6 +906,77 @@ function routeStructuredDevCommand(action, args = []) {
   if (action === "hill") return { action: "hillCommand", args };
 
   return { action, args };
+}
+
+
+function updateConnectedClient(socketId, name = "", roomCode = null, presence = null) {
+  if (!socketId) return;
+  const existing = connectedClients.get(socketId) || { id: socketId, connectedAt: Date.now() };
+  const clean = String(name || existing.name || "Guest").trim().slice(0, 32) || "Guest";
+  connectedClients.set(socketId, {
+    ...existing,
+    id: socketId,
+    name: clean,
+    lastRoomCode: roomCode || (presence === "lobby" ? null : existing.lastRoomCode || null),
+    presence: presence || existing.presence || (roomCode ? "room" : "lobby"),
+    lastSeen: Date.now()
+  });
+}
+
+function socketIsInAnyGameRoom(socketId) {
+  for (const game of rooms.values()) {
+    if (game.players?.white?.id === socketId || game.players?.black?.id === socketId) return true;
+    if ((game.spectators || []).some((spectator) => spectator.id === socketId)) return true;
+  }
+  return false;
+}
+
+function resolveForcedVisualTargets(targetRaw, currentRoomCode, requesterId) {
+  const target = String(targetRaw || "").trim().toLowerCase();
+  const currentGame = currentRoomCode ? rooms.get(currentRoomCode) : null;
+  const allSocketIds = Array.from(io.sockets.sockets.keys());
+
+  const unique = (ids) => [...new Set(ids.filter(Boolean).filter((id) => io.sockets.sockets.has(id)))];
+
+  if (["self", "me"].includes(target)) return unique([requesterId]);
+  if (["all", "*", "everyone"].includes(target)) return unique(allSocketIds.filter((id) => id !== requesterId));
+  if (["lobby", "home"].includes(target)) {
+    return unique(allSocketIds.filter((id) => {
+      if (id === requesterId) return false;
+      const client = connectedClients.get(id);
+      return client?.presence === "lobby" || (!client?.presence && !socketIsInAnyGameRoom(id));
+    }));
+  }
+
+  if (["room", "others", "opponent", "opponents"].includes(target)) {
+    if (!currentGame) return [];
+    let ids = [
+      currentGame.players?.white?.id,
+      currentGame.players?.black?.id,
+      ...(currentGame.spectators || []).map((spectator) => spectator.id)
+    ];
+    if (target === "others" || target === "opponent" || target === "opponents") ids = ids.filter((id) => id !== requesterId);
+    return unique(ids);
+  }
+
+  if (currentGame && ["white", "black"].includes(target)) {
+    return unique([currentGame.players?.[target]?.id]);
+  }
+
+  if (currentGame && ["spectator", "spectators"].includes(target)) {
+    return unique((currentGame.spectators || []).map((spectator) => spectator.id));
+  }
+
+  if (currentGame) {
+    const participant = findDevParticipant(currentGame, target);
+    if (participant?.id) return unique([participant.id]);
+  }
+
+  const byConnectedName = Array.from(connectedClients.values()).filter((client) => {
+    const name = String(client.name || "").toLowerCase();
+    return client.id.toLowerCase() === target || name === target || name.includes(target);
+  }).map((client) => client.id);
+  return unique(byConnectedName);
 }
 
 function findDevParticipant(game, targetRaw) {

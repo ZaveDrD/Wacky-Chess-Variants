@@ -158,6 +158,16 @@ export default function App() {
       returnHome();
     });
 
+    socket.on("devForcedVisual", ({ kind, args = [], from } = {}) => {
+      if (kind === "fx") {
+        triggerDevFx(args, { forcedBy: from || "Developer" });
+        return;
+      }
+      if (kind === "cosmetic") {
+        triggerDevCosmetic(args, { forcedBy: from || "Developer" });
+      }
+    });
+
     socket.on("shoutMessage", ({ message, from } = {}) => {
       const body = String(message || "").trim();
       if (!body) return;
@@ -188,10 +198,19 @@ export default function App() {
       socket.off("chatError");
       socket.off("devCommandResult");
       socket.off("devKickedHome");
+      socket.off("devForcedVisual");
       socket.off("shoutMessage");
       socket.off("legalMoves");
     };
   }, [soundEnabled, soundVolume]);
+
+  useEffect(() => {
+    socket.emit("clientPresence", {
+      name: name.trim() || "Player",
+      state: game ? "room" : "lobby",
+      roomCode: game?.roomCode || roomCode || ""
+    });
+  }, [game?.roomCode, roomCode, name]);
 
   useEffect(() => {
     const id = window.setInterval(() => setClockTick(Date.now()), 250);
@@ -288,11 +307,13 @@ export default function App() {
     }));
   }
 
-  function triggerDevFx(args) {
+  function triggerDevFx(args, options = {}) {
+    const forcedBy = options.forcedBy;
     const sub = String(args[0] || "").toLowerCase();
     if (sub === "clear") {
       clearFxItems();
-      appendDevLines("visual effects cleared.");
+      if (forcedBy) triggerFeedback(`${forcedBy} cleared your visual effects.`, "fx");
+      else appendDevLines("visual effects cleared.");
       return;
     }
 
@@ -339,7 +360,7 @@ export default function App() {
       spawnFxItem("emoji", { icon: args[1] || "✨" }, 2600);
       playUiSound("ping");
     } else if (sub === "rain") {
-      spawnFxItem("rain", { icon: args.slice(1).join(" ") || "♟" }, 4200);
+      spawnFxItem("rain", { icon: normaliseRainIcon(args.slice(1).join(" ")) }, 5200);
       playUiSound("ping");
     } else if (sub === "freeze") {
       spawnFxItem("freeze", {}, 2200);
@@ -419,7 +440,8 @@ export default function App() {
       playUiSound("ping");
     }
 
-    appendDevLines(`fx: ${args.join(" ") || "effect"}`);
+    if (forcedBy) triggerFeedback(`${forcedBy} forced FX: ${args.join(" ") || "effect"}`, "fx");
+    else appendDevLines(`fx: ${args.join(" ") || "effect"}`);
   }
 
   useEffect(() => {
@@ -691,7 +713,163 @@ export default function App() {
   }
 
 
+
+  function triggerDevCosmetic(args, options = {}) {
+    const forcedBy = options.forcedBy;
+    const sub = String(args[0] || "").toLowerCase();
+    if (sub === "clear") {
+      setDevCosmetics({ pieces: {}, icons: {}, curses: {}, players: {} });
+      if (forcedBy) triggerFeedback(`${forcedBy} cleared your cosmetics.`, "cosmetic");
+      return;
+    }
+
+    if (sub === "piece") {
+      const parsed = parseDevLocation(args, 1);
+      if (!parsed) {
+        if (forcedBy) triggerFeedback(`${forcedBy} tried an invalid cosmetic command.`, "cosmetic");
+        return;
+      }
+      const key = coordText(parsed.location);
+      const effect = String(args[parsed.nextIndex] || "glow").toLowerCase();
+      const rest = args.slice(parsed.nextIndex + 1);
+      setDevCosmetics((current) => {
+        const pieces = { ...(current.pieces || {}) };
+        const existing = { ...(pieces[key] || {}) };
+
+        if (effect === "clear" || effect === "remove") {
+          delete pieces[key];
+        } else if (effect === "size") {
+          existing.size = ["tiny", "small"].includes(String(rest[0] || "").toLowerCase()) ? "tiny" : "big";
+          pieces[key] = existing;
+        } else if (["big", "giant"].includes(effect)) {
+          existing.size = "big";
+          pieces[key] = existing;
+        } else if (["tiny", "small"].includes(effect)) {
+          existing.size = "tiny";
+          pieces[key] = existing;
+        } else if (effect === "spin") {
+          existing.spin = true;
+          pieces[key] = existing;
+        } else if (effect === "jiggle") {
+          existing.jiggle = true;
+          pieces[key] = existing;
+        } else if (effect === "glow") {
+          existing.glow = rest[0] || "gold";
+          pieces[key] = existing;
+        } else if (effect === "hat") {
+          existing.hat = rest.join(" ") || "♕";
+          pieces[key] = existing;
+        } else if (effect === "mustache" || effect === "moustache") {
+          existing.mustache = true;
+          pieces[key] = existing;
+        } else if (effect === "name" || effect === "rename") {
+          existing.name = rest.join(" ") || "Gary";
+          pieces[key] = existing;
+        } else if (effect === "clown") {
+          existing.clown = true;
+          pieces[key] = existing;
+        } else if (effect === "ghost") {
+          existing.ghost = true;
+          pieces[key] = existing;
+        } else {
+          existing.glow = effect;
+          pieces[key] = existing;
+        }
+
+        return { ...current, pieces };
+      });
+      if (forcedBy) triggerFeedback(`${forcedBy} changed piece ${key}: ${effect}`, "cosmetic");
+      return;
+    }
+
+    if (sub === "curse") {
+      const target = String(args[1] || "").toLowerCase();
+      const curse = String(args[2] || "clear").toLowerCase();
+      if (!target) return;
+      setDevCosmetics((current) => {
+        const curses = { ...(current.curses || {}) };
+        if (curse === "clear" || curse === "off" || curse === "remove") delete curses[target];
+        else curses[target] = curse;
+        return { ...current, curses };
+      });
+      if (forcedBy) triggerFeedback(`${forcedBy} ${curse === "clear" ? "cleared a curse" : `cursed ${target}: ${curse}`}`, "cosmetic");
+      return;
+    }
+
+    if (sub === "icon") {
+      const [colour, piece, icon] = args.slice(1);
+      if (!colour || !piece || !icon) return;
+      setDevCosmetics((current) => ({ ...current, icons: { ...(current.icons || {}), [`${colour}:${piece}`]: icon } }));
+      if (forcedBy) triggerFeedback(`${forcedBy} changed ${colour} ${piece} icon.`, "cosmetic");
+      return;
+    }
+
+    if (sub === "player") {
+      const target = String(args[1] || "").toLowerCase();
+      const effect = String(args[2] || "").toLowerCase();
+      if (!target || !effect) return;
+      setDevCosmetics((current) => {
+        const players = { ...(current.players || {}) };
+        const existing = { ...(players[target] || {}) };
+        if (effect === "clear" || effect === "off" || effect === "remove") {
+          delete players[target];
+        } else if (effect === "duckify") {
+          existing.duckify = true;
+          existing.scoobydoo = false;
+          players[target] = existing;
+        } else if (effect === "scoobydoo") {
+          existing.scoobydoo = true;
+          existing.duckify = false;
+          players[target] = existing;
+        } else {
+          existing[effect] = true;
+          players[target] = existing;
+        }
+        return { ...current, players };
+      });
+      if (forcedBy) triggerFeedback(`${forcedBy} forced ${target} ${effect}.`, "cosmetic");
+    }
+  }
+
   function handleLocalDevCommand(action, args) {
+    if (action === "fx" && ["force", "send", "push"].includes(String(args[0] || "").toLowerCase())) {
+      const target = args[1] || "room";
+      const fxArgs = args.slice(2);
+      if (!fxArgs.length) {
+        appendDevLines("! usage: fx force [target] [effect args...]");
+        return true;
+      }
+      socket.emit("devCommand", {
+        action: "forceFx",
+        args: [target, ...fxArgs],
+        name: name.trim() || "Developer",
+        currentRoomCode: roomCode,
+        selectedVariant,
+        selectedTimeControl,
+        selectedAIDifficulty
+      });
+      return true;
+    }
+
+    if (action === "cosmetic" && ["force", "send", "push"].includes(String(args[0] || "").toLowerCase())) {
+      const target = args[1] || "room";
+      const cosmeticArgs = args.slice(2);
+      if (!cosmeticArgs.length) {
+        appendDevLines("! usage: cosmetic force [target] [cosmetic args...]");
+        return true;
+      }
+      socket.emit("devCommand", {
+        action: "forceCosmetic",
+        args: [target, ...cosmeticArgs],
+        name: name.trim() || "Developer",
+        currentRoomCode: roomCode,
+        selectedVariant,
+        selectedTimeControl,
+        selectedAIDifficulty
+      });
+      return true;
+    }
+
     if (action === "room" && args[0] === "copy") {
       copyRoomCode();
       appendDevLines(roomCode ? `copied ${roomCode}` : "! no active room code");
@@ -790,118 +968,9 @@ export default function App() {
     }
 
     if (action === "cosmetic") {
-      const sub = String(args[0] || "").toLowerCase();
-      if (sub === "clear") {
-        setDevCosmetics({ pieces: {}, icons: {}, curses: {}, players: {} });
-        appendDevLines("cosmetics cleared.");
-        return true;
-      }
-
-      if (sub === "piece") {
-        const parsed = parseDevLocation(args, 1);
-        if (!parsed) { appendDevLines("! usage: cosmetic piece [square] [effect] ..."); return true; }
-        const key = coordText(parsed.location);
-        const effect = String(args[parsed.nextIndex] || "glow").toLowerCase();
-        const rest = args.slice(parsed.nextIndex + 1);
-        setDevCosmetics((current) => {
-          const pieces = { ...(current.pieces || {}) };
-          const existing = { ...(pieces[key] || {}) };
-
-          if (effect === "clear" || effect === "remove") {
-            delete pieces[key];
-          } else if (effect === "size") {
-            existing.size = ["tiny", "small"].includes(String(rest[0] || "").toLowerCase()) ? "tiny" : "big";
-            pieces[key] = existing;
-          } else if (["big", "giant"].includes(effect)) {
-            existing.size = "big";
-            pieces[key] = existing;
-          } else if (["tiny", "small"].includes(effect)) {
-            existing.size = "tiny";
-            pieces[key] = existing;
-          } else if (effect === "spin") {
-            existing.spin = true;
-            pieces[key] = existing;
-          } else if (effect === "jiggle") {
-            existing.jiggle = true;
-            pieces[key] = existing;
-          } else if (effect === "glow") {
-            existing.glow = rest[0] || "gold";
-            pieces[key] = existing;
-          } else if (effect === "hat") {
-            existing.hat = rest.join(" ") || "♕";
-            pieces[key] = existing;
-          } else if (effect === "mustache" || effect === "moustache") {
-            existing.mustache = true;
-            pieces[key] = existing;
-          } else if (effect === "name" || effect === "rename") {
-            existing.name = rest.join(" ") || "Gary";
-            pieces[key] = existing;
-          } else if (effect === "clown") {
-            existing.clown = true;
-            pieces[key] = existing;
-          } else if (effect === "ghost") {
-            existing.ghost = true;
-            pieces[key] = existing;
-          } else {
-            existing.glow = effect;
-            pieces[key] = existing;
-          }
-
-          return { ...current, pieces };
-        });
-        appendDevLines(`cosmetic piece ${key}: ${effect} ${rest.join(" ")}`.trim());
-        return true;
-      }
-
-      if (sub === "curse") {
-        const target = String(args[1] || "").toLowerCase();
-        const curse = String(args[2] || "clear").toLowerCase();
-        if (!target) { appendDevLines("! usage: cosmetic curse [player] [curse|clear]"); return true; }
-        setDevCosmetics((current) => {
-          const curses = { ...(current.curses || {}) };
-          if (curse === "clear" || curse === "off" || curse === "remove") delete curses[target];
-          else curses[target] = curse;
-          return { ...current, curses };
-        });
-        appendDevLines(curse === "clear" ? `curse cleared for ${target}` : `${target} cursed: ${curse}`);
-        return true;
-      }
-
-      if (sub === "icon") {
-        const [colour, piece, icon] = args.slice(1);
-        if (!colour || !piece || !icon) { appendDevLines("! usage: cosmetic icon [colour] [piece] [emoji]"); return true; }
-        setDevCosmetics((current) => ({ ...current, icons: { ...(current.icons || {}), [`${colour}:${piece}`]: icon } }));
-        appendDevLines(`icon override ${colour} ${piece}=${icon}`);
-        return true;
-      }
-
-      if (sub === "player") {
-        const target = String(args[1] || "").toLowerCase();
-        const effect = String(args[2] || "").toLowerCase();
-        if (!target || !effect) { appendDevLines("! usage: cosmetic player [white|black] [duckify|scoobydoo|clear]"); return true; }
-        setDevCosmetics((current) => {
-          const players = { ...(current.players || {}) };
-          const existing = { ...(players[target] || {}) };
-          if (effect === "clear" || effect === "off" || effect === "remove") {
-            delete players[target];
-          } else if (effect === "duckify") {
-            existing.duckify = true;
-            existing.scoobydoo = false;
-            players[target] = existing;
-          } else if (effect === "scoobydoo") {
-            existing.scoobydoo = true;
-            existing.duckify = false;
-            players[target] = existing;
-          } else {
-            existing[effect] = true;
-            players[target] = existing;
-          }
-          return { ...current, players };
-        });
-        triggerFeedback(`Cosmetic player effect: ${target} ${effect}`, "cosmetic");
-        appendDevLines(`player cosmetic: ${target} ${effect}`);
-        return true;
-      }
+      triggerDevCosmetic(args);
+      appendDevLines(`cosmetic: ${args.join(" ") || "effect"}`);
+      return true;
     }
 
     if (action === "predict" && args[0] === "ghost") {
@@ -1611,28 +1680,42 @@ function FeedbackOverlay({ text, type }) {
 
 function DevFxLayer({ items }) {
   if (!items?.length) return null;
-  const particleCount = 28;
+  const confettiCount = 72;
+  const rainCount = 84;
+  const fireworksBursts = [
+    { x: "18%", y: "28%" },
+    { x: "50%", y: "22%" },
+    { x: "78%", y: "30%" },
+    { x: "33%", y: "56%" },
+    { x: "67%", y: "58%" }
+  ];
+  const fireworkParticles = 20;
+
   return (
     <div className="dev-fx-layer" aria-hidden="true">
       {items.map((item) => {
         if (item.type === "confetti") {
           return (
             <div key={item.id} className="fx-confetti">
-              {Array.from({ length: particleCount }).map((_, index) => <span key={index} style={{ "--i": index }} />)}
+              {Array.from({ length: confettiCount }).map((_, index) => <span key={index} style={confettiStyle(index)} />)}
             </div>
           );
         }
         if (item.type === "fireworks") {
           return (
             <div key={item.id} className="fx-fireworks">
-              {Array.from({ length: 18 }).map((_, index) => <span key={index} style={{ "--i": index }} />)}
+              {fireworksBursts.map((burst, burstIndex) => (
+                <div key={burstIndex} className="fx-firework-burst" style={{ left: burst.x, top: burst.y, "--burst-delay": `${burstIndex * 0.24}s` }}>
+                  {Array.from({ length: fireworkParticles }).map((_, index) => <span key={index} style={fireworkStyle(index, burstIndex)} />)}
+                </div>
+              ))}
             </div>
           );
         }
         if (item.type === "rain") {
           return (
             <div key={item.id} className="fx-rain-items">
-              {Array.from({ length: 26 }).map((_, index) => <span key={index} style={{ "--i": index }}>{item.icon}</span>)}
+              {Array.from({ length: rainCount }).map((_, index) => <span key={index} style={rainStyle(index)}>{item.icon}</span>)}
             </div>
           );
         }
@@ -1653,6 +1736,59 @@ function DevFxLayer({ items }) {
     </div>
   );
 }
+
+function confettiStyle(index) {
+  return {
+    left: `${(index * 37 + 11) % 100}%`,
+    "--delay": `${(index % 18) * -0.055}s`,
+    "--duration": `${2.7 + (index % 7) * 0.18}s`,
+    "--drift": `${((index * 23) % 31) - 15}vw`,
+    "--spin": `${360 + (index % 6) * 180}deg`,
+    "--hue": `${(index * 47) % 360}`
+  };
+}
+
+function rainStyle(index) {
+  return {
+    left: `${(index * 29 + 7) % 100}%`,
+    "--delay": `${(index % 28) * -0.13}s`,
+    "--duration": `${3.1 + (index % 9) * 0.19}s`,
+    "--drift": `${((index * 19) % 17) - 8}vw`,
+    "--rain-size": `${1.1 + (index % 5) * 0.18}rem`,
+    "--rain-rotation": `${180 + (index % 8) * 45}deg`
+  };
+}
+
+function fireworkStyle(index, burstIndex) {
+  const angle = (Math.PI * 2 * index) / 20;
+  const distance = 4.8 + ((index + burstIndex) % 5) * 1.05;
+  return {
+    "--dx": `${Math.cos(angle) * distance}rem`,
+    "--dy": `${Math.sin(angle) * distance}rem`,
+    "--spark-delay": `${burstIndex * 0.24 + (index % 4) * 0.025}s`,
+    "--hue": `${(burstIndex * 73 + index * 29) % 360}`
+  };
+}
+
+function normaliseRainIcon(value) {
+  const key = String(value || "").trim().toLowerCase();
+  const map = {
+    pawn: "♟", pawns: "♟", p: "♟",
+    knight: "♞", knights: "♞", n: "♞",
+    bishop: "♝", bishops: "♝", b: "♝",
+    rook: "♜", rooks: "♜", r: "♜",
+    queen: "♛", queens: "♛", q: "♛",
+    king: "♚", kings: "♚", k: "♚",
+    duck: "🦆", ducks: "🦆",
+    dog: "🐕", dogs: "🐕",
+    skull: "💀", skulls: "💀",
+    clown: "🤡", clowns: "🤡",
+    fire: "🔥", money: "💸", coins: "🪙", nuke: "☢️",
+    confetti: "🎊", heart: "♥"
+  };
+  return map[key] || value || "♟";
+}
+
 
 function DevConsole({ open, input, lines, unlocked, history, historyIndex, onHistoryIndexChange, onInputChange, onSubmit, onClose }) {
   const inputRef = useRef(null);

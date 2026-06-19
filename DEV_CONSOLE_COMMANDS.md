@@ -185,3 +185,63 @@ duckify black
 scoobydoo white
 clearcosmetics
 ```
+
+
+## Forced lobby FX/cosmetics
+
+You can now force visual effects or cosmetics onto other connected clients. Targets include:
+
+```text
+self
+room
+others
+opponent
+white
+black
+spectators
+lobby
+home
+all
+[player name]
+```
+
+Examples:
+
+```text
+fx force lobby jumpscare all
+fx force lobby confetti
+fx force all board theme void
+fx force opponent bonk black
+fx force Ben scooby mysterymachine
+
+cosmetic force lobby curse white haunted
+cosmetic force lobby player white duckify
+cosmetic force all icon white queen 🦆
+cosmetic force opponent piece e4 hat crown
+cosmetic force lobby clear
+```
+
+`lobby` and `home` target clients currently on the home/lobby screen. `all` targets everyone connected except the developer running the command.
+
+## FX particle fix
+
+The particle effects now use explicit per-particle positions instead of unsupported CSS modulo calculations.
+
+Fixed commands:
+
+```text
+fx confetti
+fx fireworks
+fx rain pawns
+fx rain queen
+fx rain duck
+fx force lobby confetti
+fx force lobby fireworks
+fx force lobby rain pawns
+```
+
+Changes:
+- `confetti` now fills the whole screen with many pieces.
+- `fireworks` now creates multiple bursts across the screen.
+- `rain` now repeats the requested item across the whole screen.
+- common chess words such as `pawns`, `queen`, `rooks`, `knights`, etc. now map to chess symbols.

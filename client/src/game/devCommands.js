@@ -171,7 +171,8 @@ const GROUPS = {
       "scooby zoinks|jinkies|footprints|haunt|ghosttrap|smoke|mysterymachine|clue|traproulette|boo|owners|panicpawns|magnify"
     ],
     subcommands: [
-      ["effect", "fx [effect] [args]", "Run visual effect. See options below."],
+      ["effect", "fx [effect] [args]", "Run visual effect locally. See options below."],
+      ["force", "fx force [target] [effect] [args]", "Force an FX command onto another client."],
       ["clear", "fx clear", "Clear active visual effects."]
     ]
   },
@@ -180,8 +181,9 @@ const GROUPS = {
     summary: "Visual-only cosmetics.",
     options: ["piece [square] size big|tiny", "piece [square] spin|jiggle|glow [colour]|hat [type]|mustache|name [text]|clown|ghost", "icon [colour] [piece] [emoji]", "player [white|black] duckify|scoobydoo", "curse [player] [slippery|haunted|tiny|giant|rainbow|upsideDown]", "clear"],
     subcommands: [
-      ["piece", "cosmetic piece [square] [effect] ...", "Apply piece cosmetic."],
-      ["player", "cosmetic player [player] [effect]", "Apply player cosmetic."],
+      ["piece", "cosmetic piece [square] [effect] ...", "Apply piece cosmetic locally."],
+      ["force", "cosmetic force [target] [piece|player|icon|curse|clear] ...", "Force a cosmetic command onto another client."],
+      ["player", "cosmetic player [player] [effect]", "Apply player cosmetic locally."],
       ["icon", "cosmetic icon [colour] [piece] [emoji]", "Override piece icon locally."],
       ["curse", "cosmetic curse [player] [curse|clear]", "Apply/remove visual curse."],
       ["clear", "cosmetic clear", "Clear cosmetics."]
