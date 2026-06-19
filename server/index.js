@@ -8,6 +8,7 @@ import { attemptLegalMove, attemptLegalDrop, attemptLaunchNuke, attemptTycoonAct
 import { chooseAIMove, evaluateAIPosition, isAITurn, runAIMove, scoreAICandidates } from "./rules/ai.js";
 import { cloneGame } from "./rules/utils.js";
 import { createHash, pbkdf2Sync, timingSafeEqual } from "crypto";
+import os from "os";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -17,6 +18,8 @@ const DEV_PASSWORD_SALT = "wcv-dev-console-v1-salt";
 const DEV_PASSWORD_HASH = "716b38d8fc25690f55750b70a610c967e1ed93c67095dab364958ef51bd8858f";
 const devAuthenticatedSockets = new Set();
 const connectedClients = new Map();
+const aiDifficultyAvailability = { easy: true, medium: true, hard: true };
+const networkStats = createNetworkStats();
 
 function verifyDevPassword(password) {
   const digest = pbkdf2Sync(String(password || ""), DEV_PASSWORD_SALT, 120000, 32, "sha256").toString("hex");
@@ -25,6 +28,257 @@ function verifyDevPassword(password) {
   } catch {
     return false;
   }
+}
+
+function createNetworkStats() {
+  const now = Date.now();
+  return {
+    startedAt: now,
+    totalSentBytes: 0,
+    totalReceivedBytes: 0,
+    totalEventsOut: 0,
+    totalEventsIn: 0,
+    perRoom: new Map(),
+    ai: {
+      totalMs: 0,
+      totalMoves: 0,
+      byRoom: new Map(),
+      byDifficulty: {
+        easy: { ms: 0, moves: 0 },
+        medium: { ms: 0, moves: 0 },
+        hard: { ms: 0, moves: 0 }
+      }
+    },
+    samples: [],
+    lastCpuUsage: process.cpuUsage(),
+    lastCpuAt: now
+  };
+}
+
+function getRoomNetworkStats(roomCode) {
+  const key = String(roomCode || "GLOBAL").toUpperCase();
+  if (!networkStats.perRoom.has(key)) {
+    networkStats.perRoom.set(key, {
+      sentBytes: 0,
+      receivedBytes: 0,
+      eventsOut: 0,
+      eventsIn: 0,
+      aiMs: 0,
+      aiMoves: 0,
+      lastSentAt: 0,
+      lastReceivedAt: 0
+    });
+  }
+  return networkStats.perRoom.get(key);
+}
+
+function safePayloadBytes(payload) {
+  try {
+    return Buffer.byteLength(JSON.stringify(payload ?? null), "utf8");
+  } catch {
+    return Buffer.byteLength(String(payload ?? ""), "utf8");
+  }
+}
+
+function recordOutgoing(eventName, payload, roomCode = null, targetCount = 1) {
+  const bytes = safePayloadBytes(payload) * Math.max(1, targetCount || 1);
+  networkStats.totalSentBytes += bytes;
+  networkStats.totalEventsOut += 1;
+  const stat = getRoomNetworkStats(roomCode || "GLOBAL");
+  stat.sentBytes += bytes;
+  stat.eventsOut += 1;
+  stat.lastSentAt = Date.now();
+  return bytes;
+}
+
+function recordIncoming(eventName, payload, roomCode = null) {
+  const bytes = safePayloadBytes(payload);
+  networkStats.totalReceivedBytes += bytes;
+  networkStats.totalEventsIn += 1;
+  const stat = getRoomNetworkStats(roomCode || "GLOBAL");
+  stat.receivedBytes += bytes;
+  stat.eventsIn += 1;
+  stat.lastReceivedAt = Date.now();
+  return bytes;
+}
+
+function recordAIMetrics(game, difficulty, elapsedMs) {
+  const roomCode = game?.roomCode || "GLOBAL";
+  const ms = Math.max(0, Number(elapsedMs) || 0);
+  networkStats.ai.totalMs += ms;
+  networkStats.ai.totalMoves += 1;
+  const roomStat = getRoomNetworkStats(roomCode);
+  roomStat.aiMs += ms;
+  roomStat.aiMoves += 1;
+  const aiRoom = networkStats.ai.byRoom.get(roomCode) || { ms: 0, moves: 0 };
+  aiRoom.ms += ms;
+  aiRoom.moves += 1;
+  networkStats.ai.byRoom.set(roomCode, aiRoom);
+  const diff = normaliseDevDifficulty(difficulty || game?.ai?.difficulty || "medium");
+  networkStats.ai.byDifficulty[diff].ms += ms;
+  networkStats.ai.byDifficulty[diff].moves += 1;
+}
+
+function approximateRoomMemoryBytes(game) {
+  return safePayloadBytes(game);
+}
+
+function getCpuPercentSinceLastSample() {
+  const now = Date.now();
+  const elapsedMs = Math.max(1, now - networkStats.lastCpuAt);
+  const current = process.cpuUsage();
+  const userDelta = current.user - networkStats.lastCpuUsage.user;
+  const systemDelta = current.system - networkStats.lastCpuUsage.system;
+  const cpuMs = (userDelta + systemDelta) / 1000;
+  const percent = Math.min(100 * os.cpus().length, (cpuMs / elapsedMs) * 100);
+  networkStats.lastCpuUsage = current;
+  networkStats.lastCpuAt = now;
+  return percent;
+}
+
+function makeNetworkSample(scope = "overall", roomCode = null) {
+  const now = Date.now();
+  const memory = process.memoryUsage();
+  const uptimeSeconds = Math.max(1, (now - networkStats.startedAt) / 1000);
+  const cpuPercent = getCpuPercentSinceLastSample();
+  const room = roomCode ? rooms.get(String(roomCode).toUpperCase()) : null;
+  const roomStat = roomCode ? getRoomNetworkStats(roomCode) : null;
+  const roomBytes = room ? approximateRoomMemoryBytes(room) : 0;
+  const totalRoomMemory = Array.from(rooms.values()).reduce((sum, game) => sum + approximateRoomMemoryBytes(game), 0);
+  const totalBandwidthBps = (networkStats.totalSentBytes + networkStats.totalReceivedBytes) / uptimeSeconds;
+  const roomBandwidthBps = roomStat ? (roomStat.sentBytes + roomStat.receivedBytes) / uptimeSeconds : 0;
+  const aiTotalMs = networkStats.ai.totalMs;
+  const totalCpuProxyMs = Math.max(aiTotalMs, uptimeSeconds * 1000 * Math.max(0.01, cpuPercent / 100));
+  const aiSharePercent = Math.min(100, (aiTotalMs / Math.max(1, totalCpuProxyMs)) * 100);
+
+  const sample = {
+    time: now,
+    scope,
+    roomCode: room?.roomCode || roomCode || null,
+    server: {
+      status: "online",
+      uptimeSeconds,
+      cpuPercent,
+      cpuCount: os.cpus().length,
+      loadAverage: os.loadavg(),
+      memoryRss: memory.rss,
+      memoryHeapUsed: memory.heapUsed,
+      memoryHeapTotal: memory.heapTotal,
+      systemMemoryUsed: os.totalmem() - os.freemem(),
+      systemMemoryTotal: os.totalmem(),
+      maxBandwidthBps: Number(process.env.MAX_SERVER_BANDWIDTH_BPS || 0)
+    },
+    overall: {
+      rooms: rooms.size,
+      clients: io.sockets.sockets.size,
+      sentBytes: networkStats.totalSentBytes,
+      receivedBytes: networkStats.totalReceivedBytes,
+      eventsOut: networkStats.totalEventsOut,
+      eventsIn: networkStats.totalEventsIn,
+      bandwidthBps: totalBandwidthBps,
+      roomMemoryBytes: totalRoomMemory,
+      aiMs: networkStats.ai.totalMs,
+      aiMoves: networkStats.ai.totalMoves,
+      aiSharePercent
+    },
+    room: room ? {
+      roomCode: room.roomCode,
+      variant: room.variant,
+      status: room.status,
+      players: [room.players?.white?.name, room.players?.black?.name].filter(Boolean),
+      spectators: room.spectators?.length || 0,
+      memoryBytes: roomBytes,
+      sentBytes: roomStat?.sentBytes || 0,
+      receivedBytes: roomStat?.receivedBytes || 0,
+      eventsOut: roomStat?.eventsOut || 0,
+      eventsIn: roomStat?.eventsIn || 0,
+      bandwidthBps: roomBandwidthBps,
+      aiMs: roomStat?.aiMs || 0,
+      aiMoves: roomStat?.aiMoves || 0,
+      aiDifficulty: room.ai?.difficulty || null,
+      aiColors: room.ai?.colors || []
+    } : null,
+    ai: {
+      totalMs: networkStats.ai.totalMs,
+      totalMoves: networkStats.ai.totalMoves,
+      byDifficulty: networkStats.ai.byDifficulty,
+      byRoom: Object.fromEntries(networkStats.ai.byRoom.entries())
+    }
+  };
+
+  networkStats.samples.push(sample);
+  if (networkStats.samples.length > 120) networkStats.samples.shift();
+  return sample;
+}
+
+function getNetworkMetricsPayload({ scope = "overall", roomCode = null } = {}) {
+  const sample = makeNetworkSample(scope, roomCode);
+  const history = networkStats.samples
+    .filter((item) => !roomCode || item.roomCode === roomCode || item.scope === "overall")
+    .slice(-60)
+    .map((item) => ({
+      time: item.time,
+      cpuPercent: item.server.cpuPercent,
+      heapMb: bytesToMb(item.server.memoryHeapUsed),
+      bandwidthKbps: (item.overall.bandwidthBps || 0) / 1024,
+      aiMs: item.ai.totalMs,
+      roomBandwidthKbps: (item.room?.bandwidthBps || 0) / 1024,
+      roomMemoryKb: (item.room?.memoryBytes || 0) / 1024
+    }));
+
+  return { ...sample, history };
+}
+
+function capitalise(text) {
+  const value = String(text || "");
+  return value ? value[0].toUpperCase() + value.slice(1) : value;
+}
+
+function bytesToMb(value) {
+  return Math.round((Number(value) || 0) / 1024 / 1024 * 10) / 10;
+}
+
+function formatBytes(value) {
+  const bytes = Number(value) || 0;
+  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${Math.round(bytes)} B`;
+}
+
+function networkSummaryLines(payload) {
+  const lines = [
+    `Server: ${payload.server.status} | uptime ${Math.round(payload.server.uptimeSeconds)}s | cpu ${payload.server.cpuPercent.toFixed(1)}% | load ${payload.server.loadAverage.map((v) => v.toFixed(2)).join(", ")}`,
+    `Memory: heap ${formatBytes(payload.server.memoryHeapUsed)} / ${formatBytes(payload.server.memoryHeapTotal)} | rss ${formatBytes(payload.server.memoryRss)} | system ${formatBytes(payload.server.systemMemoryUsed)} / ${formatBytes(payload.server.systemMemoryTotal)}`,
+    `Overall network: sent ${formatBytes(payload.overall.sentBytes)}, received ${formatBytes(payload.overall.receivedBytes)}, approx ${(payload.overall.bandwidthBps / 1024).toFixed(2)} KB/s`,
+    `Rooms: ${payload.overall.rooms} | clients ${payload.overall.clients} | room memory ${formatBytes(payload.overall.roomMemoryBytes)}`,
+    `AI: ${payload.ai.totalMoves} move(s), ${payload.ai.totalMs.toFixed(1)} ms total, approx ${payload.overall.aiSharePercent.toFixed(1)}% of measured CPU proxy`
+  ];
+  if (payload.room) {
+    lines.push(
+      `Room ${payload.room.roomCode}: ${payload.room.variant} | ${payload.room.status} | ${payload.room.players.join(" vs ") || "no players"} | spectators ${payload.room.spectators}`,
+      `Room memory ${formatBytes(payload.room.memoryBytes)} | sent ${formatBytes(payload.room.sentBytes)} | received ${formatBytes(payload.room.receivedBytes)} | approx ${(payload.room.bandwidthBps / 1024).toFixed(2)} KB/s`,
+      `Room AI: difficulty ${payload.room.aiDifficulty || "none"} | colors ${(payload.room.aiColors || []).join(",") || "none"} | ${payload.room.aiMoves} move(s), ${payload.room.aiMs.toFixed(1)} ms`
+    );
+  }
+  const difficultyLines = Object.entries(payload.ai.byDifficulty).map(([difficulty, stat]) => `${difficulty}: ${stat.moves} move(s), ${stat.ms.toFixed(1)} ms`);
+  lines.push(`AI by difficulty: ${difficultyLines.join(" | ")}`);
+  if (payload.server.maxBandwidthBps) lines.push(`Configured max bandwidth: ${formatBytes(payload.server.maxBandwidthBps)}/s`);
+  else lines.push("Configured max bandwidth: not available from host env. Set MAX_SERVER_BANDWIDTH_BPS to display it.");
+  return lines;
+}
+
+function getAIAvailabilityPayload() {
+  return { ...aiDifficultyAvailability };
+}
+
+function setAIDifficultyAvailability(difficulty, enabled) {
+  const diff = normaliseDevDifficulty(difficulty);
+  aiDifficultyAvailability[diff] = Boolean(enabled);
+  return getAIAvailabilityPayload();
+}
+
+function isAIDifficultyEnabled(difficulty) {
+  return aiDifficultyAvailability[normaliseDevDifficulty(difficulty)] !== false;
 }
 
 const app = express();
@@ -146,7 +400,9 @@ function sanitiseGameForViewer(game, socketId) {
 }
 
 function emitGameStateToSocket(socket, game) {
-  socket.emit("gameState", sanitiseGameForViewer(game, socket.id));
+  const payload = sanitiseGameForViewer(game, socket.id);
+  recordOutgoing("gameState", payload, game?.roomCode, 1);
+  socket.emit("gameState", payload);
 }
 
 function emitGameStateToRoom(io, game) {
@@ -160,9 +416,24 @@ function emitGameStateToRoom(io, game) {
 
 io.on("connection", (socket) => {
   connectedClients.set(socket.id, { id: socket.id, name: "Guest", connectedAt: Date.now(), lastRoomCode: null });
+  socket.emit("aiAvailability", getAIAvailabilityPayload());
+  recordOutgoing("aiAvailability", getAIAvailabilityPayload(), "GLOBAL", 1);
+  socket.onAny((eventName, payload = {}) => {
+    recordIncoming(eventName, payload, payload?.roomCode || connectedClients.get(socket.id)?.lastRoomCode || "GLOBAL");
+  });
+
+  socket.on("requestAIAvailability", () => {
+    const payload = getAIAvailabilityPayload();
+    recordOutgoing("aiAvailability", payload, "GLOBAL", 1);
+    socket.emit("aiAvailability", payload);
+  });
 
   socket.on("createRoom", ({ name, variant, timeControl, gameMode, aiDifficulty } = {}) => {
     updateConnectedClient(socket.id, name, null);
+    if (gameMode === "ai" && !isAIDifficultyEnabled(aiDifficulty)) {
+      socket.emit("joinError", `${capitalise(normaliseDevDifficulty(aiDifficulty))} AI is currently disabled by the server.`);
+      return;
+    }
     const game = createRoom(socket, name, { variant, timeControl, gameMode, aiDifficulty });
     updateConnectedClient(socket.id, name, game.roomCode);
     socket.emit("roomCreated", { roomCode: game.roomCode, color: "white", role: "player", game: sanitiseGameForViewer(game, socket.id) });
@@ -352,6 +623,14 @@ io.on("connection", (socket) => {
     emitGameStateToRoom(io, result.game);
   });
 
+  socket.on("devNetworkMetrics", (payload = {}) => {
+    if (!devAuthenticatedSockets.has(socket.id)) return;
+    const roomCode = payload.roomCode ? String(payload.roomCode).toUpperCase() : null;
+    const metrics = getNetworkMetricsPayload({ scope: payload.scope || "overall", roomCode });
+    recordOutgoing("networkMetrics", metrics, roomCode || "GLOBAL", 1);
+    socket.emit("networkMetrics", metrics);
+  });
+
 
   socket.on("devCommand", (payload = {}) => {
     const result = handleDevCommand(socket, payload);
@@ -372,7 +651,30 @@ io.on("connection", (socket) => {
     }
     if (Array.isArray(result?.forcedVisualTargets) && result?.forcedVisualPayload) {
       for (const targetId of result.forcedVisualTargets) {
+        recordOutgoing("devForcedVisual", result.forcedVisualPayload, "GLOBAL", 1);
         io.to(targetId).emit("devForcedVisual", result.forcedVisualPayload);
+      }
+    }
+    if (result?.aiAvailability) {
+      io.emit("aiAvailability", result.aiAvailability);
+      recordOutgoing("aiAvailability", result.aiAvailability, "GLOBAL", io.sockets.sockets.size);
+    }
+    if (Array.isArray(result?.closedRoomTargets) && result?.closedRoomPayload) {
+      const roomCode = result.closedRoomCode;
+      for (const targetId of result.closedRoomTargets) {
+        const targetSocket = io.sockets.sockets.get(targetId);
+        if (targetSocket) {
+          recordOutgoing("devRoomClosed", result.closedRoomPayload, roomCode, 1);
+          targetSocket.emit("devRoomClosed", result.closedRoomPayload);
+          targetSocket.leave(roomCode);
+          updateConnectedClient(targetId, connectedClients.get(targetId)?.name || "Guest", null);
+        }
+      }
+      if (roomCode) {
+        const pendingTimer = pendingAITimers.get(roomCode);
+        if (pendingTimer) clearTimeout(pendingTimer);
+        pendingAITimers.delete(roomCode);
+        rooms.delete(roomCode);
       }
     }
     if (result?.scheduleRoomCode) {
@@ -441,6 +743,77 @@ function handleDevCommand(socket, payload = {}) {
         target
       }
     };
+  }
+
+  if (action === "closeRoom") {
+    const parsed = parseCloseRoomArgs(args, currentRoomCode);
+    if (!parsed.roomCode) return { response: { ok: false, lines: ["Usage: room close [code=current] [reason]"] } };
+    const game = rooms.get(parsed.roomCode);
+    if (!game) return { response: { ok: false, lines: [`Room not found: ${parsed.roomCode}`] } };
+    const targetIds = getRoomSocketIds(game);
+    const message = parsed.reason ? `Your room was closed for ${parsed.reason}.` : "Your room was closed.";
+    return {
+      response: { ok: true, lines: [`Closed room ${parsed.roomCode}.`, message] },
+      closedRoomCode: parsed.roomCode,
+      closedRoomTargets: targetIds,
+      closedRoomPayload: { reason: message, roomCode: parsed.roomCode }
+    };
+  }
+
+  if (action === "aiAvailability") {
+    const sub = String(args[0] || "status").toLowerCase();
+    if (sub === "status" || sub === "list" || sub === "availability") {
+      const availability = getAIAvailabilityPayload();
+      return {
+        response: {
+          ok: true,
+          lines: Object.entries(availability).map(([difficulty, enabled]) => `${difficulty}: ${enabled ? "enabled" : "disabled"}`)
+        }
+      };
+    }
+    if (["enable", "disable"].includes(sub)) {
+      const difficulty = normaliseDevDifficulty(args[1]);
+      const availability = setAIDifficultyAvailability(difficulty, sub === "enable");
+      return {
+        response: { ok: true, lines: [`${capitalise(difficulty)} AI ${sub === "enable" ? "enabled" : "disabled"}.`] },
+        aiAvailability: availability
+      };
+    }
+    return { response: { ok: false, lines: ["Usage: ai enable|disable [easy|medium|hard] OR ai availability"] } };
+  }
+
+  if (action === "networkCommand") {
+    const sub = String(args[0] || "summary").toLowerCase();
+    let roomCode = null;
+    if (sub === "room") roomCode = String(args[1] || "").trim().toUpperCase();
+    if (sub === "dashboard" && args[1] && args[1] !== "overall" && args[1] !== "all") roomCode = String(args[1]).trim().toUpperCase();
+    if (sub === "ai" && args[1] && args[1] !== "all") roomCode = String(args[1]).trim().toUpperCase();
+    const metrics = getNetworkMetricsPayload({ scope: roomCode ? "room" : "overall", roomCode });
+    const lines = networkSummaryLines(metrics);
+    if (sub === "dashboard") {
+      return {
+        response: {
+          ok: true,
+          lines: [`Opening network dashboard${roomCode ? ` for ${roomCode}` : " for overall server"}.`],
+          networkDashboard: { scope: roomCode ? "room" : "overall", roomCode }
+        }
+      };
+    }
+    if (sub === "rooms") {
+      return {
+        response: {
+          ok: true,
+          lines: Array.from(rooms.values()).map((game) => {
+            const stat = getRoomNetworkStats(game.roomCode);
+            return `${game.roomCode} | ${game.variant} | ${game.status} | mem ${formatBytes(approximateRoomMemoryBytes(game))} | sent ${formatBytes(stat.sentBytes)} | recv ${formatBytes(stat.receivedBytes)} | AI ${stat.aiMoves} move(s), ${stat.aiMs.toFixed(1)} ms`;
+          })
+        }
+      };
+    }
+    if (sub === "server" || sub === "summary" || sub === "room" || sub === "ai" || sub === "overall") {
+      return { response: { ok: true, lines } };
+    }
+    return { response: { ok: false, lines: ["Usage: network summary | network server | network rooms | network room [code] | network ai [code|all] | network dashboard [overall|code]"] } };
   }
 
   if (action === "findOpenMatches") {
@@ -512,6 +885,9 @@ function handleDevCommand(socket, payload = {}) {
     const variant = normaliseDevVariant(args[0] || selectedVariant);
     const botCount = Math.min(2, Math.max(0, Number.parseInt(args[1], 10) || 0));
     const difficulty = normaliseDevDifficulty(args[2] || selectedDifficulty);
+    if (botCount > 0 && !isAIDifficultyEnabled(difficulty)) {
+      return { response: { ok: false, lines: [`${capitalise(difficulty)} AI is currently disabled by the server.`] } };
+    }
     const affected = leaveCurrentRooms(socket, socket.id);
     const result = createDevMatch(socket, name, {
       variant,
@@ -777,7 +1153,13 @@ function handleDevCommand(socket, payload = {}) {
       if (!game.ai) game.ai = {};
       game.ai.enabled = true;
       game.ai.colors = Array.from(new Set([...(game.ai.colors || []), color]));
+      if (!isAIDifficultyEnabled(game.ai?.difficulty)) {
+        game.turn = previousTurn;
+        return { response: { ok: false, lines: [`${capitalise(normaliseDevDifficulty(game.ai?.difficulty))} AI is currently disabled by the server.`] } };
+      }
+      const aiStarted = performance.now();
       const result = runAIMove(game);
+      recordAIMetrics(game, game.ai?.difficulty, performance.now() - aiStarted);
       if (!result.ok) game.turn = previousTurn;
       return { response: { ok: result.ok, lines: [result.ok ? `Forced ${color} AI move.` : result.reason] }, gameStateRoom: currentRoomCode, scheduleRoomCode: currentRoomCode };
     }
@@ -788,7 +1170,12 @@ function handleDevCommand(socket, payload = {}) {
     if (!utility.ok) return { response: { ok: false, lines: [utility.reason || "Command failed."] } };
     if (utility.kickedSocketId) {
       const targetSocket = io.sockets.sockets.get(utility.kickedSocketId);
-      if (targetSocket) targetSocket.emit("devKickedHome", { reason: utility.lines?.[0] || "You were kicked by a developer." });
+      if (targetSocket) {
+        const reason = utility.kickedMessage || utility.lines?.[0] || "You've been kicked.";
+        recordOutgoing("devKickedHome", { reason }, currentRoomCode, 1);
+        targetSocket.emit("devKickedHome", { reason });
+        updateConnectedClient(utility.kickedSocketId, connectedClients.get(utility.kickedSocketId)?.name || "Guest", null);
+      }
     }
     return { response: { ok: true, lines: utility.lines || ["OK"] }, gameStateRoom: currentRoomCode, scheduleRoomCode: currentRoomCode };
   }
@@ -818,6 +1205,7 @@ function routeStructuredDevCommand(action, args = []) {
     if (first === "botbattle") return { action: "startMatch", args: [args[1], "2", args[2] || "medium"] };
     if (first === "exit") return { action: "exitMatch", args: [] };
     if (first === "info") return { action: "roomInfo", args: args.slice(1) };
+    if (first === "close") return { action: "closeRoom", args: args.slice(1) };
     if (first === "kick") return { action: "kickPlayer", args: args.slice(1) };
     if (first === "lock") return { action: "lockRoom", args: [] };
     if (first === "unlock") return { action: "unlockRoom", args: [] };
@@ -875,6 +1263,8 @@ function routeStructuredDevCommand(action, args = []) {
   }
 
   if (action === "ai") {
+    if (["availability", "limits", "status"].includes(first)) return { action: "aiAvailability", args: args.slice(1) };
+    if (["disable", "enable"].includes(first)) return { action: "aiAvailability", args };
     if (first === "think") return { action: "aiThink", args: args.slice(1) };
     if (first === "move") return { action: "forceAIMove", args: args.slice(1) };
     if (first === "difficulty") return { action: "setAIDifficulty", args: args.slice(1) };
@@ -882,6 +1272,10 @@ function routeStructuredDevCommand(action, args = []) {
     if (first === "resume") return { action: "resumeBots", args: [] };
     if (first === "eval") return { action: "evalPosition", args: args.slice(1) };
     if (first === "top") return { action: "topMoves", args: args.slice(1) };
+  }
+
+  if (action === "network") {
+    return { action: "networkCommand", args };
   }
 
   if (action === "clock") {
@@ -1084,7 +1478,15 @@ function scheduleAIMoveIfNeeded(game) {
       return;
     }
 
+    if (!isAIDifficultyEnabled(currentGame.ai?.difficulty)) {
+      currentGame.message = `${capitalise(normaliseDevDifficulty(currentGame.ai?.difficulty))} AI is currently disabled by the server.`;
+      emitGameStateToRoom(io, currentGame);
+      return;
+    }
+
+    const aiStarted = performance.now();
     const result = runAIMove(currentGame);
+    recordAIMetrics(currentGame, currentGame.ai?.difficulty, performance.now() - aiStarted);
     if (!result.ok) {
       currentGame.message = result.reason || "AI could not move.";
     }

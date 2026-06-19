@@ -16,6 +16,7 @@ export const DEV_COMMANDS = [
   { name: "mark", action: "mark", usage: "mark [square|clear|ghost|checks|attacks|spotlight|ping] ...", summary: "Local square markers and debug highlights." },
   { name: "ai", action: "ai", usage: "ai [think|move|difficulty|pause|resume|eval|top] ...", summary: "AI testing commands." },
   { name: "clock", action: "clock", usage: "clock [set|pause|resume|add|preset|flag] ...", summary: "Timer commands." },
+  { name: "network", action: "network", aliases: ["net"], usage: "network [summary|server|rooms|room|ai|dashboard] ...", summary: "Server/network diagnostics and live graphs." },
   { name: "fx", action: "fx", usage: "fx [effect] ...", summary: "Visual-only troll effects and board chaos." },
   { name: "cosmetic", action: "cosmetic", usage: "cosmetic [piece|player|icon|curse|clear] ...", summary: "Visual-only piece/player cosmetics." },
   { name: "chaos", action: "chaos", usage: "chaos [move|swap|shuffle|yeet|clone|mutate|promote|downgrade|king|pawnstorm|civilwar|tax|blessing] ...", summary: "Dangerous state-changing chaos commands." },
@@ -42,7 +43,8 @@ const GROUPS = {
       ["exit", "room exit", "Return to home/lobby."],
       ["info", "room info [room=current]", "Show room metadata."],
       ["copy", "room copy", "Copy current room code."],
-      ["kick", "room kick [name]", "Kick a player/spectator back to home screen."],
+      ["close", "room close [code=current] [reason]", "Close a room and send players home with a reason."],
+      ["kick", "room kick [name] [reason]", "Kick a player/spectator back to home screen with optional reason."],
       ["lock", "room lock", "Prevent additional spectators."],
       ["unlock", "room unlock", "Allow spectators."],
       ["rename", "room rename [name]", "Set room display name."]
@@ -143,6 +145,8 @@ const GROUPS = {
       ["think", "ai think [white|black] [difficulty]", "AI candidates."],
       ["move", "ai move [white|black] [difficulty]", "Force AI move."],
       ["difficulty", "ai difficulty [white|black] [easy|medium|hard]", "Set bot difficulty."],
+      ["availability", "ai availability", "Show which AI difficulties are enabled."],
+      ["enable/disable", "ai enable|disable [easy|medium|hard]", "Enable or disable a difficulty button for online players."],
       ["pause", "ai pause", "Pause bots."],
       ["resume", "ai resume", "Resume bots."],
       ["eval", "ai eval [white|black]", "Evaluate position."],
@@ -159,6 +163,18 @@ const GROUPS = {
       ["add", "clock add [white|black] [seconds|mm:ss]", "Add time."],
       ["preset", "clock preset [classical|rapid|blitz|bullet]", "Reset time control."],
       ["flag", "clock flag [white|black]", "Force timeout."]
+    ]
+  },
+  network: {
+    page: 3,
+    summary: "Server/network diagnostics and live graphs.",
+    subcommands: [
+      ["summary", "network summary", "Overall CPU, memory, bandwidth, and AI share."],
+      ["server", "network server", "Server process and host metrics."],
+      ["rooms", "network rooms", "One-line metrics for every room."],
+      ["room", "network room [code]", "Detailed metrics for a room without joining it."],
+      ["ai", "network ai [all|code]", "AI CPU proxy and move timings."],
+      ["dashboard", "network dashboard [overall|code]", "Open real-time graph dashboard."]
     ]
   },
   fx: {
@@ -310,7 +326,7 @@ const LEGACY = {
   joincode: ["room", "join"], join: ["room", "join"], joinroom: ["room", "join"],
   startmatch: ["room", "start"], newmatch: ["room", "start"], spawnmatch: ["room", "start"], botbattle: ["room", "botbattle"],
   exitmatch: ["room", "exit"], exit: ["room", "exit"], leave: ["room", "exit"], home: ["room", "exit"],
-  roominfo: ["room", "info"], copyroom: ["room", "copy"], kickplayer: ["room", "kick"], lockroom: ["room", "lock"], unlockroom: ["room", "unlock"], renameroom: ["room", "rename"],
+  roominfo: ["room", "info"], copyroom: ["room", "copy"], closeroom: ["room", "close"], kickplayer: ["room", "kick"], lockroom: ["room", "lock"], unlockroom: ["room", "unlock"], renameroom: ["room", "rename"],
   replacewithbot: ["player", "bot"], replaceplayer: ["player", "takeover"], findplayer: ["player", "find"], playercount: ["player", "count"], spectatoroverride: ["player", "override", "self", "on"], clearoverride: ["player", "override", "self", "off"], setplayercolour: ["player", "colour"], rename: ["player", "rename"],
   endmatch: ["match", "end"], setturn: ["match", "turn"], resetmatch: ["match", "reset"], validateboard: ["match", "validate"],
   shout: ["chat", "shout"], announce: ["chat", "announce"], broadcast: ["chat", "system"], systemchat: ["chat", "system"], sudo: ["chat", "sudo"], whisper: ["chat", "whisper"], blunderquote: ["chat", "quote", "blunder"],
@@ -379,7 +395,7 @@ export function getDevCommandListLines(page = null) {
       "Pages:",
       "1 room / player / match / chat",
       "2 board / piece / view / mark / ai / clock",
-      "3 fx / cosmetic",
+      "3 network / fx / cosmetic",
       "4 chaos / predict",
       "5 scooby / tycoon",
       "6 nuke / crazyhouse / atomic / hill"

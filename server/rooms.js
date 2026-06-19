@@ -1184,12 +1184,16 @@ export function runDevUtilityCommand(roomCodeRaw, action, args = [], requesterSo
   if (action === "resumeBots") { ensureAIConfig(game); game.ai.paused = false; return { ok: true, game, lines: ["Bots resumed."] }; }
 
   if (action === "kickPlayer") {
-    const target = findParticipantInGame(game, args.join(" "), requesterSocketId);
+    const targetQuery = String(args[0] || "").trim();
+    const reason = args.slice(1).join(" ").trim();
+    if (!targetQuery) return { ok: false, reason: "Usage: room kick [player] [reason]" };
+    const target = findParticipantInGame(game, targetQuery, requesterSocketId);
     if (!target) return { ok: false, reason: "Player not found." };
     if (target.role === "player") game.players[target.color] = null;
     else game.spectators = (game.spectators || []).filter((s) => s.id !== target.id);
-    game.message = `${target.name} was kicked by developer.`;
-    return { ok: true, game, lines: [game.message], kickedSocketId: target.id };
+    const kickedMessage = reason ? `You've been kicked for ${reason}.` : "You've been kicked.";
+    game.message = reason ? `${target.name} was kicked: ${reason}.` : `${target.name} was kicked by developer.`;
+    return { ok: true, game, lines: [game.message], kickedSocketId: target.id, kickedMessage };
   }
 
   if (action === "lockRoom") { game.locked = true; return { ok: true, game, lines: ["Room locked to new spectators."] }; }

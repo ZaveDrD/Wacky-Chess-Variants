@@ -32,6 +32,9 @@ export default function App() {
   const [selectedTimeControl, setSelectedTimeControl] = useState(localStorage.getItem("selectedTimeControl") || "rapid");
   const [selectedGameMode, setSelectedGameMode] = useState(localStorage.getItem("selectedGameMode") || "online");
   const [selectedAIDifficulty, setSelectedAIDifficulty] = useState(localStorage.getItem("selectedAIDifficulty") || "medium");
+  const [aiAvailability, setAIAvailability] = useState({ easy: true, medium: true, hard: true });
+  const [networkDashboard, setNetworkDashboard] = useState(null);
+  const [networkMetrics, setNetworkMetrics] = useState(null);
   const [matchmakingScope, setMatchmakingScope] = useState(localStorage.getItem("matchmakingScope") || "selected");
   const [matchmakingSearching, setMatchmakingSearching] = useState(false);
   const [game, setGame] = useState(null);
@@ -76,7 +79,10 @@ export default function App() {
   const previousClockWarningRef = useRef(null);
 
   useEffect(() => {
-    socket.on("connect", () => setNotice(UI_TEXT.notices.connected));
+    socket.on("connect", () => {
+      setNotice(UI_TEXT.notices.connected);
+      socket.emit("requestAIAvailability");
+    });
     socket.on("disconnect", () => setNotice(UI_TEXT.notices.disconnected));
 
     socket.on("roomCreated", ({ roomCode: newRoomCode, color: playerColor, role: playerRole, game: newGame }) => {
@@ -152,13 +158,30 @@ export default function App() {
     socket.on("chatError", (message) => { setNotice(message || UI_TEXT.notices.chatFailed); playSoundEffect("illegal", { enabled: soundEnabled, volume: soundVolume }); });
     socket.on("devCommandResult", (result = {}) => {
       if (result.unlocked) setDevConsoleUnlocked(true);
+      if (result.networkDashboard) {
+        setNetworkDashboard(result.networkDashboard);
+        socket.emit("devNetworkMetrics", result.networkDashboard);
+      }
       const lines = result.lines || [result.ok ? "OK" : "Command failed."];
       if (lines.length) appendDevLines(lines.map((line) => result.ok === false ? `! ${line}` : String(line)));
     });
 
     socket.on("devKickedHome", ({ reason } = {}) => {
-      setNotice(reason || "You were kicked from the room.");
       returnHome();
+      setNotice(reason || "You've been kicked.");
+    });
+
+    socket.on("devRoomClosed", ({ reason } = {}) => {
+      returnHome();
+      setNotice(reason || "Your room was closed.");
+    });
+
+    socket.on("aiAvailability", (availability = {}) => {
+      setAIAvailability((current) => ({ ...current, ...availability }));
+    });
+
+    socket.on("networkMetrics", (metrics = {}) => {
+      setNetworkMetrics(metrics);
     });
 
     socket.on("devForcedVisual", ({ kind, args = [], from } = {}) => {
@@ -178,6 +201,8 @@ export default function App() {
       playSoundEffect("shout", { enabled: soundEnabled, volume: soundVolume });
       window.setTimeout(() => setShoutOverlay((current) => current?.message === body ? null : current), 4200);
     });
+
+    socket.emit("requestAIAvailability");
 
     socket.on("legalMoves", ({ pieceId, legalMoves: moves, reason }) => {
       if (reason) {
@@ -201,6 +226,9 @@ export default function App() {
       socket.off("chatError");
       socket.off("devCommandResult");
       socket.off("devKickedHome");
+      socket.off("devRoomClosed");
+      socket.off("aiAvailability");
+      socket.off("networkMetrics");
       socket.off("devForcedVisual");
       socket.off("shoutMessage");
       socket.off("legalMoves");
@@ -219,6 +247,19 @@ export default function App() {
     const id = window.setInterval(() => setClockTick(Date.now()), 250);
     return () => window.clearInterval(id);
   }, []);
+
+  useEffect(() => {
+    if (!networkDashboard) return undefined;
+    socket.emit("devNetworkMetrics", networkDashboard);
+    const id = window.setInterval(() => socket.emit("devNetworkMetrics", networkDashboard), 1000);
+    return () => window.clearInterval(id);
+  }, [networkDashboard]);
+
+  useEffect(() => {
+    if (aiAvailability[selectedAIDifficulty] !== false) return;
+    const fallback = AI_DIFFICULTY_OPTIONS.find((difficulty) => aiAvailability[difficulty.id] !== false)?.id || "easy";
+    setSelectedAIDifficulty(fallback);
+  }, [aiAvailability, selectedAIDifficulty]);
 
   useEffect(() => {
     function openDevConsoleFromHiddenInput(event) {
@@ -1055,12 +1096,19 @@ export default function App() {
 
   function createRoom(override = {}) {
     unlockAudio();
+    const nextGameMode = override.gameMode || selectedGameMode;
+    const nextDifficulty = override.aiDifficulty || selectedAIDifficulty;
+    if (nextGameMode === "ai" && aiAvailability[nextDifficulty] === false) {
+      setNotice(`${getAIDifficultyLabel(nextDifficulty)} AI is currently disabled by the server.`);
+      playUiSound("illegal");
+      return;
+    }
     socket.emit("createRoom", {
       name: saveName(),
       variant: override.variant || selectedVariant,
       timeControl: override.timeControl || selectedTimeControl,
-      gameMode: override.gameMode || selectedGameMode,
-      aiDifficulty: override.aiDifficulty || selectedAIDifficulty
+      gameMode: nextGameMode,
+      aiDifficulty: nextDifficulty
     });
   }
 
@@ -1333,16 +1381,21 @@ export default function App() {
               <div className="selection-block compact-selection">
                 <span className="selection-label">{UI_TEXT.lobby.aiDifficultyLabel}</span>
                 <div className="time-control-group ai-difficulty-group compact-toggle-group" aria-label={UI_TEXT.lobby.aiDifficultyLabel}>
-                  {AI_DIFFICULTY_OPTIONS.map((difficulty) => (
-                    <button
-                      key={difficulty.id}
-                      className={selectedAIDifficulty === difficulty.id ? "active" : ""}
-                      type="button"
-                      onClick={() => setSelectedAIDifficulty(difficulty.id)}
-                    >
-                      {difficulty.label}
-                    </button>
-                  ))}
+                  {AI_DIFFICULTY_OPTIONS.map((difficulty) => {
+                    const disabled = aiAvailability[difficulty.id] === false;
+                    return (
+                      <button
+                        key={difficulty.id}
+                        className={`${selectedAIDifficulty === difficulty.id ? "active" : ""} ${disabled ? "ai-disabled" : ""}`}
+                        type="button"
+                        disabled={disabled}
+                        title={disabled ? `${difficulty.label} AI is disabled by the server` : difficulty.label}
+                        onClick={() => !disabled && setSelectedAIDifficulty(difficulty.id)}
+                      >
+                        {difficulty.label}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             ) : (
@@ -1412,6 +1465,12 @@ export default function App() {
         {shoutOverlay && <ShoutOverlay message={shoutOverlay.message} from={shoutOverlay.from} />}
         {feedbackOverlay && <FeedbackOverlay text={feedbackOverlay.text} type={feedbackOverlay.type} />}
         <DevFxLayer items={devFxItems} />
+        <NetworkDashboardModal
+          open={Boolean(networkDashboard)}
+          config={networkDashboard}
+          metrics={networkMetrics}
+          onClose={() => { setNetworkDashboard(null); setNetworkMetrics(null); }}
+        />
         <DevConsole
           open={devConsoleOpen}
           input={devConsoleInput}
@@ -1660,6 +1719,12 @@ export default function App() {
       {shoutOverlay && <ShoutOverlay message={shoutOverlay.message} from={shoutOverlay.from} />}
       {feedbackOverlay && <FeedbackOverlay text={feedbackOverlay.text} type={feedbackOverlay.type} />}
       <DevFxLayer items={devFxItems} />
+      <NetworkDashboardModal
+        open={Boolean(networkDashboard)}
+        config={networkDashboard}
+        metrics={networkMetrics}
+        onClose={() => { setNetworkDashboard(null); setNetworkMetrics(null); }}
+      />
 
       <DevConsole
         open={devConsoleOpen}
@@ -1719,6 +1784,112 @@ function FeedbackOverlay({ text, type }) {
   );
 }
 
+
+
+function NetworkDashboardModal({ open, config, metrics, onClose }) {
+  if (!open) return null;
+  const title = config?.roomCode ? `Network dashboard · ${config.roomCode}` : "Network dashboard · overall";
+  const latest = metrics || {};
+  const history = latest.history || [];
+  return (
+    <div className="network-dashboard-backdrop">
+      <section className="network-dashboard" role="dialog" aria-modal="true" aria-label={title}>
+        <header className="network-dashboard-header">
+          <div>
+            <span className="eyebrow">Developer network monitor</span>
+            <h2>{title}</h2>
+          </div>
+          <button type="button" onClick={onClose}>Close</button>
+        </header>
+
+        <div className="network-stat-grid">
+          <NetworkStat label="Server CPU" value={`${formatMetricNumber(latest.server?.cpuPercent)}%`} />
+          <NetworkStat label="Heap" value={formatBytesClient(latest.server?.memoryHeapUsed)} />
+          <NetworkStat label="RSS" value={formatBytesClient(latest.server?.memoryRss)} />
+          <NetworkStat label="Clients" value={latest.overall?.clients ?? "—"} />
+          <NetworkStat label="Rooms" value={latest.overall?.rooms ?? "—"} />
+          <NetworkStat label="Bandwidth" value={`${formatMetricNumber((latest.overall?.bandwidthBps || 0) / 1024)} KB/s`} />
+          <NetworkStat label="AI CPU proxy" value={`${formatMetricNumber(latest.overall?.aiSharePercent)}%`} />
+          <NetworkStat label="AI moves" value={latest.ai?.totalMoves ?? "—"} />
+        </div>
+
+        {latest.room && (
+          <div className="network-room-panel">
+            <h3>Room detail</h3>
+            <div className="network-stat-grid compact">
+              <NetworkStat label="Variant" value={latest.room.variant} />
+              <NetworkStat label="Status" value={latest.room.status} />
+              <NetworkStat label="Room memory" value={formatBytesClient(latest.room.memoryBytes)} />
+              <NetworkStat label="Room bandwidth" value={`${formatMetricNumber((latest.room.bandwidthBps || 0) / 1024)} KB/s`} />
+              <NetworkStat label="Room AI ms" value={formatMetricNumber(latest.room.aiMs)} />
+              <NetworkStat label="AI difficulty" value={latest.room.aiDifficulty || "none"} />
+            </div>
+          </div>
+        )}
+
+        <div className="network-chart-grid">
+          <NetworkChart title="CPU %" history={history} field="cpuPercent" suffix="%" />
+          <NetworkChart title="Heap MB" history={history} field="heapMb" suffix=" MB" />
+          <NetworkChart title="Bandwidth KB/s" history={history} field="bandwidthKbps" suffix=" KB/s" />
+          <NetworkChart title="Room bandwidth KB/s" history={history} field="roomBandwidthKbps" suffix=" KB/s" />
+        </div>
+
+        <div className="network-ai-breakdown">
+          <h3>AI by difficulty</h3>
+          {Object.entries(latest.ai?.byDifficulty || {}).map(([difficulty, stat]) => (
+            <p key={difficulty}><strong>{difficulty}</strong>: {stat.moves} move(s), {formatMetricNumber(stat.ms)} ms</p>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function NetworkStat({ label, value }) {
+  return (
+    <div className="network-stat">
+      <span>{label}</span>
+      <strong>{value ?? "—"}</strong>
+    </div>
+  );
+}
+
+function NetworkChart({ title, history, field, suffix }) {
+  const values = (history || []).map((item) => Number(item[field]) || 0);
+  const max = Math.max(1, ...values);
+  const points = values.map((value, index) => {
+    const x = values.length <= 1 ? 0 : (index / (values.length - 1)) * 100;
+    const y = 42 - (value / max) * 38;
+    return `${x},${y}`;
+  }).join(" ");
+  const latest = values.length ? values[values.length - 1] : 0;
+  return (
+    <div className="network-chart">
+      <div className="network-chart-title">
+        <strong>{title}</strong>
+        <span>{formatMetricNumber(latest)}{suffix}</span>
+      </div>
+      <svg viewBox="0 0 100 44" preserveAspectRatio="none">
+        <polyline points={points} />
+      </svg>
+    </div>
+  );
+}
+
+function formatMetricNumber(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "0";
+  if (Math.abs(number) >= 100) return number.toFixed(0);
+  if (Math.abs(number) >= 10) return number.toFixed(1);
+  return number.toFixed(2);
+}
+
+function formatBytesClient(value) {
+  const bytes = Number(value) || 0;
+  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${Math.round(bytes)} B`;
+}
 
 function getViewportDevTouchZone(clientX, clientY) {
   const width = window.innerWidth || document.documentElement.clientWidth || 0;

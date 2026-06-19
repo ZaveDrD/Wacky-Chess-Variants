@@ -260,3 +260,74 @@ Notes:
 - You do not need to scroll to reach the bottom corners.
 - The sequence must be completed within about 5 seconds.
 - It only opens the locked console; the dev password is still required.
+
+
+## Room closure and reason messages
+
+```text
+room close [code=current] [reason]
+room kick [player] [reason]
+kickplayer [player] [reason]
+```
+
+Examples:
+
+```text
+room close ABC123 server load test
+room close too much lag
+room kick black inactive
+kickplayer Sam network abuse
+```
+
+Players are returned to the home screen and see either:
+
+```text
+Your room was closed.
+Your room was closed for [reason].
+You've been kicked.
+You've been kicked for [reason].
+```
+
+## AI availability controls
+
+Use these to disable expensive AI levels for online players:
+
+```text
+ai availability
+ai disable hard
+ai enable hard
+ai disable medium
+ai enable medium
+```
+
+When disabled, the matching AI button on the home screen is crossed out and cannot be selected.
+
+## Network diagnostics
+
+```text
+network summary
+network server
+network rooms
+network room [code]
+network ai [all|code]
+network dashboard [overall|code]
+```
+
+Examples:
+
+```text
+network summary
+network rooms
+network room ABC123
+network ai ABC123
+network dashboard overall
+network dashboard ABC123
+```
+
+The dashboard opens a live modal with real-time graphs for CPU, heap memory, bandwidth, room bandwidth, room memory, and AI timing.
+
+Notes:
+- Bandwidth is approximate and based on Socket.IO payload byte estimates.
+- Per-room memory is approximate and based on serialised room state size.
+- Per-room CPU is not directly available from Node/Render, so AI CPU is tracked with measured AI move wall time and reported as an AI CPU proxy.
+- Host max bandwidth is shown only if `MAX_SERVER_BANDWIDTH_BPS` is set in the server environment.

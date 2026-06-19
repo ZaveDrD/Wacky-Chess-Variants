@@ -5286,3 +5286,152 @@ select {
   from { transform: scale(0.62) rotate(0deg); }
   to { transform: scale(0.62) rotate(360deg); }
 }
+
+
+/* AI availability controls */
+.ai-difficulty-group button.ai-disabled,
+.compact-toggle-group button.ai-disabled {
+  opacity: 0.42;
+  text-decoration: line-through;
+  cursor: not-allowed;
+  filter: grayscale(1);
+  position: relative;
+}
+
+.ai-difficulty-group button.ai-disabled::after {
+  content: "disabled";
+  display: block;
+  font-size: 0.58rem;
+  line-height: 1;
+  margin-top: 0.1rem;
+  opacity: 0.8;
+}
+
+/* Developer network dashboard */
+.network-dashboard-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 95;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgba(0,0,0,0.62);
+  backdrop-filter: blur(4px);
+}
+
+.network-dashboard {
+  width: min(1120px, 96vw);
+  max-height: 92vh;
+  overflow: auto;
+  border-radius: 20px;
+  border: 1px solid rgba(238,238,210,0.18);
+  background: #171614;
+  color: #eeeed2;
+  box-shadow: 0 24px 80px rgba(0,0,0,0.55);
+  padding: 1rem;
+}
+
+.network-dashboard-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.network-dashboard-header h2 {
+  margin: 0.15rem 0 0;
+}
+
+.network-dashboard-header button {
+  border: 1px solid rgba(238,238,210,0.2);
+  background: rgba(255,255,255,0.08);
+  color: #eeeed2;
+  border-radius: 999px;
+  padding: 0.5rem 0.8rem;
+  cursor: pointer;
+}
+
+.network-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 0.65rem;
+}
+
+.network-stat-grid.compact {
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+}
+
+.network-stat {
+  padding: 0.65rem;
+  border-radius: 14px;
+  background: rgba(255,255,255,0.055);
+  border: 1px solid rgba(238,238,210,0.08);
+}
+
+.network-stat span {
+  display: block;
+  font-size: 0.72rem;
+  color: #b8b8b8;
+  margin-bottom: 0.25rem;
+}
+
+.network-stat strong {
+  font-size: 1rem;
+}
+
+.network-room-panel,
+.network-ai-breakdown {
+  margin-top: 1rem;
+  padding: 0.8rem;
+  border-radius: 16px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(238,238,210,0.08);
+}
+
+.network-room-panel h3,
+.network-ai-breakdown h3 {
+  margin: 0 0 0.65rem;
+}
+
+.network-ai-breakdown p {
+  margin: 0.25rem 0;
+  color: #d8d8c8;
+}
+
+.network-chart-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 0.8rem;
+  margin-top: 1rem;
+}
+
+.network-chart {
+  min-height: 150px;
+  padding: 0.75rem;
+  border-radius: 16px;
+  background: rgba(0,0,0,0.18);
+  border: 1px solid rgba(238,238,210,0.08);
+}
+
+.network-chart-title {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.5rem;
+  color: #d8d8c8;
+}
+
+.network-chart svg {
+  width: 100%;
+  height: 96px;
+  border-radius: 10px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.015));
+}
+
+.network-chart polyline {
+  fill: none;
+  stroke: #eeeed2;
+  stroke-width: 2.4;
+  vector-effect: non-scaling-stroke;
+}
