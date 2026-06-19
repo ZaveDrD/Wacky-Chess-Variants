@@ -3646,3 +3646,206 @@ select {
     font-family: "Apple Symbols", "Noto Sans Symbols 2", "Segoe UI Symbol", "DejaVu Sans", serif !important;
   }
 }
+
+
+/* New 2D variants: Crazyhouse reserve panel and infographics. */
+.reserve-panel {
+  margin-top: 0.85rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid #3a3834;
+}
+
+.reserve-panel h2 {
+  margin-bottom: 0.55rem;
+}
+
+.reserve-buttons {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.42rem;
+}
+
+.reserve-buttons button {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.28rem;
+  padding: 0.35rem;
+  border-radius: 10px;
+}
+
+.reserve-buttons button.active {
+  background: #eeeed2;
+  color: #171614;
+  border-color: #eeeed2;
+}
+
+.reserve-buttons span {
+  font-family: "Segoe UI Symbol", "Noto Sans Symbols 2", "DejaVu Sans", "Apple Symbols", serif;
+  font-size: 1.35rem;
+  line-height: 1;
+}
+
+.reserve-buttons strong {
+  font-size: 0.75rem;
+}
+
+.variant-art {
+  height: 240px;
+  display: grid;
+  place-items: center;
+  border-radius: 22px;
+  background: radial-gradient(circle at top, rgba(238,238,210,0.15), rgba(23,22,20,0.9));
+  border: 1px solid rgba(238,238,210,0.12);
+  overflow: hidden;
+}
+
+.variant-art-board {
+  grid-template-columns: repeat(8, 1fr);
+  gap: 0;
+  padding: 1rem;
+}
+
+.variant-art-board span {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  font-size: clamp(1.5rem, 4vw, 2.5rem);
+  background: #eeeed2;
+  color: #171614;
+}
+
+.variant-art-board span:nth-child(even) {
+  background: #769656;
+}
+
+.crazyhouse-art,
+.drop-art,
+.atomic-art,
+.normal-goal-art {
+  gap: 1rem;
+  font-size: 1.1rem;
+}
+
+.mini-board-piece,
+.drop-target {
+  width: 88px;
+  height: 88px;
+  border-radius: 18px;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(135deg, #eeeed2 0 50%, #769656 50%);
+  color: #171614;
+  font-size: 3rem;
+  box-shadow: 0 18px 36px rgba(0,0,0,0.28);
+}
+
+.reserve-tray {
+  display: flex;
+  gap: 0.45rem;
+  padding: 0.55rem 0.7rem;
+  border-radius: 999px;
+  background: rgba(17,16,14,0.72);
+  border: 1px solid rgba(238,238,210,0.18);
+}
+
+.reserve-tray span {
+  font-size: 2rem;
+}
+
+.reserve-tray.large span {
+  font-size: 2.4rem;
+}
+
+.hill-art {
+  grid-template-columns: repeat(4, 1fr);
+  width: min(260px, 75vw);
+  height: auto;
+  aspect-ratio: 1 / 1;
+  padding: 1rem;
+}
+
+.hill-art span {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1 / 1;
+  background: #eeeed2;
+  color: #171614;
+  font-size: 2rem;
+}
+
+.hill-art span:nth-child(even) {
+  background: #769656;
+}
+
+.hill-art .hill-centre {
+  background: #f6f669;
+  box-shadow: inset 0 0 0 4px rgba(23,22,20,0.55);
+}
+
+.atomic-art {
+  position: relative;
+}
+
+.atomic-piece {
+  position: absolute;
+  font-size: 3rem;
+  z-index: 2;
+}
+
+.atomic-piece:first-child {
+  left: 28%;
+}
+
+.atomic-piece.black {
+  right: 28%;
+  color: #111;
+}
+
+.atomic-blast {
+  font-size: 7rem;
+  color: #f97316;
+  text-shadow: 0 0 28px rgba(249,115,22,0.65);
+  animation: atomicPulse 1.5s ease-in-out infinite;
+}
+
+.atomic-art strong,
+.normal-goal-art strong,
+.crazyhouse-art strong,
+.drop-art strong {
+  position: absolute;
+  bottom: 1.1rem;
+  color: #eeeed2;
+}
+
+.normal-goal-art {
+  grid-template-columns: auto auto auto;
+  color: #eeeed2;
+  font-size: 3rem;
+}
+
+.normal-goal-art strong {
+  grid-column: 1 / -1;
+  font-size: 1rem;
+}
+
+.mate-arrow {
+  opacity: 0.75;
+}
+
+@keyframes atomicPulse {
+  0%, 100% { transform: scale(0.9); opacity: 0.75; }
+  50% { transform: scale(1.08); opacity: 1; }
+}
+
+@media (max-width: 700px) {
+  .reserve-buttons {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .variant-art {
+    height: 220px;
+  }
+}

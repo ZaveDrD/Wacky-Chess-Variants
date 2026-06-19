@@ -38,15 +38,18 @@ export function cloneGame(game) {
       black: game.players.black ? { ...game.players.black } : null
     },
     pieces: game.pieces.map((piece) => ({ ...piece })),
-    moveHistory: (game.moveHistory || []).map((move) => ({ ...move, from: { ...move.from }, to: { ...move.to } })),
+    initialPieces: Array.isArray(game.initialPieces) ? game.initialPieces.map((piece) => ({ ...piece })) : undefined,
+    reserves: game.reserves ? { white: [...(game.reserves.white || [])], black: [...(game.reserves.black || [])] } : null,
+    moveHistory: (game.moveHistory || []).map((move) => ({ ...move, from: move.from ? { ...move.from } : null, to: move.to ? { ...move.to } : null, captured: move.captured ? { ...move.captured } : null, atomicRemoved: Array.isArray(move.atomicRemoved) ? move.atomicRemoved.map((piece) => ({ ...piece })) : undefined })),
     positionHistory: Array.isArray(game.positionHistory) ? [...game.positionHistory] : [],
     positionCounts: game.positionCounts ? { ...game.positionCounts } : {},
     lastMove: game.lastMove
       ? {
           ...game.lastMove,
-          from: { ...game.lastMove.from },
-          to: { ...game.lastMove.to },
-          captured: game.lastMove.captured ? { ...game.lastMove.captured } : null
+          from: game.lastMove.from ? { ...game.lastMove.from } : null,
+          to: game.lastMove.to ? { ...game.lastMove.to } : null,
+          captured: game.lastMove.captured ? { ...game.lastMove.captured } : null,
+          atomicRemoved: Array.isArray(game.lastMove.atomicRemoved) ? game.lastMove.atomicRemoved.map((piece) => ({ ...piece })) : undefined
         }
       : null
   };
@@ -70,9 +73,9 @@ export function pawnStartRank(color) {
 
 export function isPromotionSquare(piece, to, game = null) {
   if (piece.type !== "pawn") return false;
-  const isNormalChess = game?.variant === "normal";
-  if (piece.color === "white") return to.z === 7 || (!isNormalChess && to.y === 7);
-  return to.z === 0 || (!isNormalChess && to.y === 7);
+  const is2D = game?.variant !== "threeD";
+  if (piece.color === "white") return to.z === 7 || (!is2D && to.y === 7);
+  return to.z === 0 || (!is2D && to.y === 7);
 }
 
 export function removePieceAt(game, pos) {

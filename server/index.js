@@ -4,7 +4,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { Server } from "socket.io";
 import { addPieceToRoom, appendChatMessage, cancelQuickMatch, cleanupExpiredRooms, createDevMatch, createRoom, createRoomShout, endMatchByDev, findPlayersByName, forfeitGame, getDetailedRoomLines, getLegalMovesForSocket, getOpenMatches, getPlayerCountSnapshot, getRoomSnapshot, hasDeveloperMoveOverride, joinRoom, leaveCurrentRooms, listPiecesInRoom, removePieceFromRoom, removeSocketFromRooms, replacePlayerWithBotInRoom, quickMatch, replacePlayerWithRequesterInRoom, ROOM_CLEANUP_INTERVAL_MS, rooms, runDevUtilityCommand, setPlayerColourInRoom, setSpectatorOverride, setTimerForRoom, setTurnInRoom, spectateRoom, tickAllRoomClocks, tickGameClock } from "./rooms.js";
-import { attemptLegalMove } from "./rules/check.js";
+import { attemptLegalMove, attemptLegalDrop } from "./rules/check.js";
 import { chooseAIMove, evaluateAIPosition, isAITurn, runAIMove, scoreAICandidates } from "./rules/ai.js";
 import { createHash, pbkdf2Sync, timingSafeEqual } from "crypto";
 
@@ -114,6 +114,26 @@ io.on("connection", (socket) => {
     tickGameClock(game);
     const result = attemptLegalMove(game, socket.id, pieceId, to, {
       promotion,
+      devOverride: hasDeveloperMoveOverride(socket.id, game.roomCode)
+    });
+    if (!result.ok) {
+      socket.emit("invalidMove", result.reason);
+      return;
+    }
+
+    io.to(game.roomCode).emit("gameState", game);
+    scheduleAIMoveIfNeeded(game);
+  });
+
+  socket.on("attemptDrop", ({ roomCode, pieceType, to } = {}) => {
+    const game = rooms.get(String(roomCode ?? "").trim().toUpperCase());
+    if (!game) {
+      socket.emit("invalidMove", "Room not found.");
+      return;
+    }
+
+    tickGameClock(game);
+    const result = attemptLegalDrop(game, socket.id, pieceType, to, {
       devOverride: hasDeveloperMoveOverride(socket.id, game.roomCode)
     });
     if (!result.ok) {
@@ -550,6 +570,10 @@ function parseChessSquare(value) {
 function normaliseDevVariant(value) {
   const text = String(value || "").trim().toLowerCase().replace(/[\s_-]+/g, "");
   if (["normal", "normalchess", "2d", "standard", "standardchess"].includes(text)) return "normal";
+  if (["chess960", "fischerrandom", "fischerandom", "960"].includes(text)) return "chess960";
+  if (["crazyhouse", "crazy", "house"].includes(text)) return "crazyhouse";
+  if (["kingofthehill", "koth", "hill", "kinghill"].includes(text)) return "kingOfTheHill";
+  if (["atomic", "atomicchess"].includes(text)) return "atomic";
   if (["threed", "3d", "3dchess", "three", "threechess"].includes(text)) return "threeD";
   return "threeD";
 }

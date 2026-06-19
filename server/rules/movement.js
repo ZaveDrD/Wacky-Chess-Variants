@@ -51,7 +51,7 @@ const KNIGHT_DELTAS_2D = [
 ];
 
 function isNormalChess(game) {
-  return game?.variant === "normal";
+  return game?.variant !== "threeD";
 }
 
 function buildKnightDeltas3D() {

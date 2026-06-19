@@ -17,7 +17,9 @@ export function buildReviewTimeline(game) {
   if (!game) return [];
 
   const moves = game.moveHistory || [];
-  let pieces = createInitialPiecesForReplay();
+  let pieces = Array.isArray(game.initialPieces) && game.initialPieces.length
+    ? clonePieces(game.initialPieces)
+    : createInitialPiecesForReplay();
   const timeline = [makeReviewGame(game, pieces, [], 0, null)];
 
   for (let i = 0; i < moves.length; i += 1) {
@@ -59,6 +61,20 @@ function makeReviewGame(sourceGame, pieces, moveHistory, reviewIndex, lastReview
 }
 
 function applyRecordedMove(pieces, move) {
+  if (move.drop) {
+    pieces.push({
+      id: move.pieceId,
+      type: move.pieceType,
+      color: move.pieceColor,
+      x: move.to.x,
+      y: move.to.y,
+      z: move.to.z,
+      hasMoved: true,
+      dropped: true
+    });
+    return;
+  }
+
   if (move.captured?.id) {
     pieces = removePieceByIdInPlace(pieces, move.captured.id);
   }
@@ -70,6 +86,10 @@ function applyRecordedMove(pieces, move) {
   piece.y = move.to.y;
   piece.z = move.to.z;
   piece.hasMoved = true;
+
+  if (Array.isArray(move.atomicRemoved) && move.atomicRemoved.length) {
+    for (const removed of move.atomicRemoved) pieces = removePieceByIdInPlace(pieces, removed.id);
+  }
 
   if (move.promotedTo) {
     piece.type = move.promotedTo;

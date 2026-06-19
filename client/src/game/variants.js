@@ -1,6 +1,10 @@
 export const VARIANT_OPTIONS = [
   { id: "threeD", label: "3D Chess" },
-  { id: "normal", label: "Normal Chess" }
+  { id: "normal", label: "Normal Chess" },
+  { id: "chess960", label: "Chess960" },
+  { id: "crazyhouse", label: "Crazyhouse" },
+  { id: "kingOfTheHill", label: "King of the Hill" },
+  { id: "atomic", label: "Atomic Chess" }
 ];
 
 export const TIME_CONTROL_OPTIONS = [

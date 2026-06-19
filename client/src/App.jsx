@@ -37,6 +37,7 @@ export default function App() {
   const [view, setView] = useState("XZ");
   const [layer, setLayer] = useState(0);
   const [selectedPieceId, setSelectedPieceId] = useState(null);
+  const [selectedDropType, setSelectedDropType] = useState(null);
   const [legalMoves, setLegalMoves] = useState([]);
   const [notice, setNotice] = useState("");
   const [isoGizmoAxes, setIsoGizmoAxes] = useState(null);
@@ -293,6 +294,7 @@ export default function App() {
   useEffect(() => {
     if (!reviewMode) return;
     setSelectedPieceId(null);
+    setSelectedDropType(null);
     setLegalMoves([]);
     setReviewIndex((current) => Math.min(current, maxReviewIndex));
   }, [reviewMode, maxReviewIndex]);
@@ -527,6 +529,7 @@ export default function App() {
     setColor(null);
     setRole(null);
     setSelectedPieceId(null);
+    setSelectedDropType(null);
     setLegalMoves([]);
     setNotice("");
     setReviewMode(false);
@@ -602,6 +605,7 @@ export default function App() {
       setNotice(UI_TEXT.notices.notYourTurn);
       return;
     }
+    setSelectedDropType(null);
     socket.emit("selectPiece", { roomCode, pieceId: piece.id });
   }
 
@@ -616,6 +620,18 @@ export default function App() {
     });
   }
 
+  function attemptDrop(to) {
+    if (reviewMode || game?.variant !== "crazyhouse") return;
+    if ((role === "spectator" || color === "spectator") && !hasDevMoveOverride) return;
+    if (!selectedDropType) return;
+    socket.emit("attemptDrop", {
+      roomCode,
+      pieceType: selectedDropType,
+      to
+    });
+    setSelectedDropType(null);
+  }
+
   function handleSquareClick(coord) {
     unlockAudio();
     if (reviewMode || !game) return;
@@ -624,6 +640,11 @@ export default function App() {
       return;
     }
     const piece = game.pieces.find((candidate) => sameCoord(candidate, coord));
+
+    if (selectedDropType && !piece) {
+      attemptDrop(coord);
+      return;
+    }
 
     if (piece && ((piece.color === color && game.turn === color) || hasDevMoveOverride)) {
       selectPiece(piece);
@@ -836,6 +857,20 @@ export default function App() {
             <p className="subtle">{UI_TEXT.emptyStates.noPieceSelected}</p>
           )}
 
+          {game.variant === "crazyhouse" && (
+            <ReservePanel
+              reserves={game.reserves}
+              color={color}
+              selectedDropType={selectedDropType}
+              disabled={reviewMode || gameIsOver || role === "spectator" || game.turn !== color}
+              onSelect={(type) => {
+                setSelectedPieceId(null);
+                setLegalMoves([]);
+                setSelectedDropType((current) => current === type ? null : type);
+              }}
+            />
+          )}
+
           <h2>{UI_TEXT.headings.rules}</h2>
           <ul className="rules-list">
             {currentVariantText.rules.map((rule) => <li key={rule}>{rule}</li>)}
@@ -912,11 +947,12 @@ export default function App() {
               {(displayGame.moveHistory || []).slice(-24).map((move, index) => (
                 <li key={`${move.pieceId}-${move.time}-${index}`}>
                   <strong>{move.pieceColor} {move.promotedTo ? "pawn" : move.pieceType}</strong>{" "}
-                  ({move.from.x},{move.from.y},{move.from.z}) → ({move.to.x},{move.to.y},{move.to.z})
+                  {move.drop ? "drop" : `(${move.from.x},${move.from.y},${move.from.z}) →`} ({move.to.x},{move.to.y},{move.to.z})
                   {move.captured ? ` × ${move.captured.type}` : ""}
                   {move.castle ? " castle" : ""}
                   {move.enPassant ? " en passant" : ""}
                   {move.promotedTo ? ` = ${move.promotedTo}` : ""}
+                  {Array.isArray(move.atomicRemoved) && move.atomicRemoved.length ? ` explosion ${move.atomicRemoved.length}` : ""}
                 </li>
               ))}
             </ol>
@@ -978,6 +1014,7 @@ export default function App() {
 
       {showVariantGuide && game.variant !== "normal" && (
         <VariantGuideModal
+          variant={game.variant}
           step={guideStep}
           onStep={setGuideStep}
           onClose={() => setShowVariantGuide(false)}
@@ -1089,13 +1126,44 @@ function DevConsole({ open, input, lines, unlocked, history, historyIndex, onHis
 }
 
 
-function VariantGuideModal({ step, onStep, onClose }) {
-  const steps = [
-    { title: "1. Choose a slice", body: "Pick XZ, XY, or YZ. Each button shows a different 2D board slice through the 3D cube.", art: "planes" },
-    { title: "2. Scroll layers", body: "Use the scroll wheel to flick through the stacked layers like sheets of paper.", art: "layers" },
-    { title: "3. Check ISO", body: "Use ISO when you need to see the whole cube and understand where pieces sit in 3D.", art: "iso" },
-    { title: "4. Move in one plane", body: "Pieces move on one board plane at a time. A bishop can move diagonally across a slice, not through the cube.", art: "move" }
-  ];
+function ReservePanel({ reserves, color, selectedDropType, disabled, onSelect }) {
+  const pieces = (reserves?.[color] || []);
+  const counts = pieces.reduce((acc, type) => {
+    acc[type] = (acc[type] || 0) + 1;
+    return acc;
+  }, {});
+  const order = ["queen", "rook", "bishop", "knight", "pawn"];
+  const entries = order.filter((type) => counts[type]);
+
+  return (
+    <section className="reserve-panel">
+      <h2>Reserve</h2>
+      {entries.length === 0 ? (
+        <p className="subtle">No captured pieces to drop.</p>
+      ) : (
+        <div className="reserve-buttons">
+          {entries.map((type) => (
+            <button
+              key={type}
+              type="button"
+              className={selectedDropType === type ? "active" : ""}
+              disabled={disabled}
+              onClick={() => onSelect(type)}
+              title={`Drop ${type}`}
+            >
+              <span>{PIECE_SYMBOLS[color]?.[type]}</span>
+              <strong>×{counts[type]}</strong>
+            </button>
+          ))}
+        </div>
+      )}
+      {selectedDropType && <p className="subtle">Click an empty square to drop a {selectedDropType}.</p>}
+    </section>
+  );
+}
+
+function VariantGuideModal({ variant, step, onStep, onClose }) {
+  const steps = getVariantGuideSteps(variant);
   const current = steps[Math.min(step, steps.length - 1)];
   return (
     <div className="modal-backdrop tutorial-backdrop">
@@ -1120,7 +1188,59 @@ function VariantGuideModal({ step, onStep, onClose }) {
   );
 }
 
+function getVariantGuideSteps(variant) {
+  if (variant === "chess960") {
+    return [
+      { title: "Chess960: shuffled back rank", body: "The major pieces start in a legal random order. Bishops are on opposite colours and the king starts between the rooks.", art: "chess960" },
+      { title: "Normal goal", body: "After the opening position is generated, play normal chess and checkmate your opponent.", art: "normalGoal" }
+    ];
+  }
+  if (variant === "crazyhouse") {
+    return [
+      { title: "Crazyhouse: captures become drops", body: "Captured pieces enter your reserve. On your turn you can move normally or drop a reserve piece onto an empty square.", art: "crazyhouse" },
+      { title: "Drop rules", body: "Pawns cannot be dropped on the first or last rank. Drops cannot leave your own king in check.", art: "dropRules" }
+    ];
+  }
+  if (variant === "kingOfTheHill") {
+    return [
+      { title: "King of the Hill", body: "You can still win by checkmate, but you also win immediately by moving your king to one of the four centre squares.", art: "kingHill" },
+      { title: "The hill", body: "The hill is d4, e4, d5, and e5. Control the centre while keeping your king safe.", art: "hillSquares" }
+    ];
+  }
+  if (variant === "atomic") {
+    return [
+      { title: "Atomic Chess: captures explode", body: "Every capture removes the captured piece, the capturing piece, and nearby non-pawn pieces around the capture square.", art: "atomic" },
+      { title: "Destroy the king", body: "If an explosion destroys the enemy king, you win. Checkmate can still win normally.", art: "atomicKing" }
+    ];
+  }
+  return [
+    { title: "1. Choose a slice", body: "Pick XZ, XY, or YZ. Each button shows a different 2D board slice through the 3D cube.", art: "planes" },
+    { title: "2. Scroll layers", body: "Use the scroll wheel to flick through the stacked layers like sheets of paper.", art: "layers" },
+    { title: "3. Check ISO", body: "Use ISO when you need to see the whole cube and understand where pieces sit in 3D.", art: "iso" },
+    { title: "4. Move in one plane", body: "Pieces move on one board plane at a time. A bishop can move diagonally across a slice, not through the cube.", art: "move" }
+  ];
+}
+
 function TutorialArt({ art }) {
+  if (art === "chess960") {
+    const row = ["♗", "♞", "♕", "♜", "♔", "♝", "♞", "♖"];
+    return <div className="tutorial-art variant-art variant-art-board">{row.map((piece, i) => <span key={i}>{piece}</span>)}</div>;
+  }
+  if (art === "crazyhouse") {
+    return <div className="tutorial-art variant-art crazyhouse-art"><div className="mini-board-piece">♘</div><div className="reserve-tray"><span>♞</span><span>♟</span><span>♜</span></div><strong>Capture → Reserve</strong></div>;
+  }
+  if (art === "dropRules") {
+    return <div className="tutorial-art variant-art drop-art"><div className="reserve-tray large"><span>♟</span><span>♞</span></div><div className="drop-target">Empty square</div><strong>Drop instead of moving</strong></div>;
+  }
+  if (art === "kingHill" || art === "hillSquares") {
+    return <div className="tutorial-art variant-art hill-art">{Array.from({ length: 16 }).map((_, i) => <span key={i} className={[5,6,9,10].includes(i) ? "hill-centre" : ""}>{[5,6,9,10].includes(i) ? "♔" : ""}</span>)}</div>;
+  }
+  if (art === "atomic" || art === "atomicKing") {
+    return <div className="tutorial-art variant-art atomic-art"><span className="atomic-piece">♕</span><span className="atomic-blast">✹</span><span className="atomic-piece black">♟</span><strong>Capture = explosion</strong></div>;
+  }
+  if (art === "normalGoal") {
+    return <div className="tutorial-art variant-art normal-goal-art"><span>♔</span><span className="mate-arrow">→</span><span>♚</span><strong>Checkmate wins</strong></div>;
+  }
   if (art === "planes") {
     return (
       <div className="tutorial-art tutorial-art--planes" data-art={art}>

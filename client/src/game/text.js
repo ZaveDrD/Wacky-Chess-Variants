@@ -33,7 +33,45 @@ export const UI_TEXT = {
       rules: [
         "Pieces use standard chess movement.",
         "Checkmate your opponent to win."
-
+      ]
+    },
+    chess960: {
+      label: "Chess960",
+      subtitle: "Normal chess, but the back-rank pieces start shuffled.",
+      rules: [
+        "The back rank is randomised using Chess960 rules.",
+        "Bishops start on opposite-coloured squares.",
+        "The king starts between the two rooks.",
+        "Checkmate your opponent to win."
+      ]
+    },
+    crazyhouse: {
+      label: "Crazyhouse",
+      subtitle: "Captured pieces become drops you can place back onto the board.",
+      rules: [
+        "When you capture a piece, it enters your reserve.",
+        "On your turn, you may drop a reserve piece onto an empty square.",
+        "Pawns cannot be dropped on the first or last rank.",
+        "Checkmate your opponent to win."
+      ]
+    },
+    kingOfTheHill: {
+      label: "King of the Hill",
+      subtitle: "Win by checkmate or by moving your king to the centre.",
+      rules: [
+        "The four centre squares are the hill.",
+        "Move your king to d4, e4, d5, or e5 to win immediately.",
+        "Checkmate still wins normally."
+      ]
+    },
+    atomic: {
+      label: "Atomic Chess",
+      subtitle: "Captures explode nearby non-pawn pieces.",
+      rules: [
+        "Any capture creates an explosion on the capture square.",
+        "The capturing piece, captured piece, and nearby non-pawn pieces are removed.",
+        "Destroying the enemy king wins.",
+        "Checkmate can still win normally."
       ]
     }
   },
