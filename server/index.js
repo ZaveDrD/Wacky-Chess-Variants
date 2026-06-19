@@ -55,20 +55,61 @@ function getViewerColor(game, socketId) {
 function visibleScoobyTraps(game, viewerColor) {
   const traps = game.scooby?.traps || [];
   if (!viewerColor) return [];
-  const own = traps.filter((trap) => trap.owner === viewerColor).map((trap) => ({ ...trap }));
+  const own = traps
+    .filter((trap) => trap.owner === viewerColor)
+    .map((trap) => ({ ...trap, viewerOwned: true, detected: false }));
   const pawns = (game.pieces || []).filter((piece) => piece.color === viewerColor && piece.type === "pawn" && piece.y === 0);
   const detected = [];
   for (const trap of traps) {
     if (trap.owner === viewerColor) continue;
     const detectedByPawn = pawns.some((pawn) => (Math.abs(pawn.x - trap.pos.x) === 1 && pawn.z === trap.pos.z) || (Math.abs(pawn.z - trap.pos.z) === 1 && pawn.x === trap.pos.x));
     if (!detectedByPawn) continue;
-    detected.push({ ...trap, displayType: trap.type === "decoy" ? trap.apparentType : trap.type, detected: true });
+    detected.push({
+      id: trap.id,
+      owner: trap.owner,
+      pos: trap.pos ? { ...trap.pos } : null,
+      type: trap.type === "decoy" ? trap.apparentType : trap.type,
+      displayType: trap.type === "decoy" ? trap.apparentType : trap.type,
+      detected: true,
+      viewerOwned: false
+    });
   }
   return [...own, ...detected];
 }
 
 function isInsideScoobySmoke(game, pos) {
   return (game.scooby?.smokes || []).some((smoke) => (Number(game.turnToken) || 0) < (Number(smoke.expiresAtTurn) || 0) && pos.y === 0 && Math.abs(pos.x - smoke.centre.x) <= 2 && Math.abs(pos.z - smoke.centre.z) <= 2);
+}
+
+
+function sanitiseScoobyMoveForViewer(move, viewerColor) {
+  if (!move || !move.scooby) return move;
+  const copy = {
+    ...move,
+    from: move.from ? { ...move.from } : null,
+    to: move.to ? { ...move.to } : null,
+    captured: move.captured ? { ...move.captured } : null
+  };
+  const isTrapPlacement = typeof copy.scoobyAction === "string" && copy.scoobyAction.startsWith("place ");
+  const ownsAction = viewerColor && copy.pieceColor === viewerColor;
+
+  if (isTrapPlacement && !ownsAction) {
+    copy.scoobyAction = "place hidden trap";
+    copy.trapType = null;
+    copy.pieceType = "trap";
+    copy.to = null;
+  }
+
+  return copy;
+}
+
+function sanitiseScoobyHistoryForViewer(copy, viewerColor) {
+  if (copy.variant !== "scooby") return;
+  copy.moveHistory = (copy.moveHistory || []).map((move) => sanitiseScoobyMoveForViewer(move, viewerColor));
+  copy.lastMove = copy.lastMove ? sanitiseScoobyMoveForViewer(copy.lastMove, viewerColor) : null;
+  if (copy.lastMove?.scooby && String(copy.lastMove.scoobyAction || "").startsWith("place hidden trap")) {
+    copy.message = `${copy.lastMove.pieceColor} placed a hidden trap.`;
+  }
 }
 
 function sanitiseGameForViewer(game, socketId) {
@@ -97,6 +138,7 @@ function sanitiseGameForViewer(game, socketId) {
   if (copy.variant === "scooby" && copy.scooby) {
     copy.scooby.traps = visibleScoobyTraps(game, viewerColor);
     copy.pieces = copy.pieces.filter((piece) => !isInsideScoobySmoke(game, piece));
+    sanitiseScoobyHistoryForViewer(copy, viewerColor);
   }
   return copy;
 }

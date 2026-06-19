@@ -1715,7 +1715,7 @@ function buildVariantHighlights(game) {
     const iconMap = { mine: "✹", pitfall: "◌", smoke: "☁", decoy: "◇", mindControl: "◈" };
     for (const trap of game.scooby?.traps || []) {
       const type = trap.displayType || trap.type;
-      const isOwnTrap = trap.owner === "white" || trap.owner === "black" ? trap.owner === game.turn : false;
+      const isOwnTrap = Boolean(trap.viewerOwned);
       add(trap.pos, isOwnTrap ? "scooby-trap-own" : "scooby-trap-detected", iconMap[type] || "?", "scooby-trap-marker");
     }
     for (const smoke of game.scooby?.smokes || []) {
