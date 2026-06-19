@@ -65,7 +65,8 @@ export default function App() {
   const [shoutOverlay, setShoutOverlay] = useState(null);
   const [feedbackOverlay, setFeedbackOverlay] = useState(null);
   const [devFxClass, setDevFxClass] = useState("");
-  const [devCosmetics, setDevCosmetics] = useState({ pieces: {}, icons: {}, curses: {} });
+  const [devFxItems, setDevFxItems] = useState([]);
+  const [devCosmetics, setDevCosmetics] = useState({ pieces: {}, icons: {}, curses: {}, players: {} });
   const devSequenceIndexRef = useRef(0);
   const previousGameRef = useRef(null);
   const previousChatLengthRef = useRef(0);
@@ -261,6 +262,164 @@ export default function App() {
     window.setTimeout(() => {
       setDevFxClass((current) => current === className ? "" : current);
     }, duration);
+  }
+
+  function spawnFxItem(type, payload = {}, duration = 2600) {
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const item = { id, type, ...payload };
+    setDevFxItems((current) => [...current, item].slice(-24));
+    window.setTimeout(() => {
+      setDevFxItems((current) => current.filter((candidate) => candidate.id !== id));
+    }, duration);
+    return id;
+  }
+
+  function clearFxItems() {
+    setDevFxItems([]);
+    setDevFxClass("");
+    setFeedbackOverlay(null);
+    setDevVisuals((current) => ({
+      ...current,
+      fakeTraps: [],
+      fakeSmoke: [],
+      pings: [],
+      spotlight: null,
+      lasers: []
+    }));
+  }
+
+  function triggerDevFx(args) {
+    const sub = String(args[0] || "").toLowerCase();
+    if (sub === "clear") {
+      clearFxItems();
+      appendDevLines("visual effects cleared.");
+      return;
+    }
+
+    const boardEffect = sub === "board" ? String(args[1] || "").toLowerCase() : sub;
+    const boardClassMap = {
+      earthquake: "fx-earthquake",
+      flashboard: "fx-flash",
+      flash: "fx-flash",
+      invertboard: "fx-invert",
+      invert: "fx-invert",
+      drunkboard: "fx-drunk",
+      drunk: "fx-drunk",
+      disco: "fx-disco",
+      bloodmoon: "fx-bloodmoon",
+      night: "fx-night",
+      nightmode: "fx-night",
+      fog: "fx-fog",
+      snow: "fx-snow",
+      rainbow: "fx-rainbow",
+      rainbowboard: "fx-rainbow",
+      tilt: "fx-tilt",
+      tiltboard: "fx-tilt",
+      squish: "fx-squish",
+      squishboard: "fx-squish",
+      lava: "fx-theme-lava",
+      ice: "fx-theme-ice",
+      graveyard: "fx-theme-graveyard",
+      scooby: "fx-theme-scooby",
+      nuke: "fx-theme-nuke",
+      gold: "fx-theme-gold",
+      void: "fx-theme-void"
+    };
+
+    const boardClass = boardClassMap[boardEffect] || "";
+    if (boardClass) triggerBoardFx(boardClass, 3600, formatFxMessage(args));
+
+    if (sub === "confetti") {
+      spawnFxItem("confetti", {}, 3400);
+      playUiSound("income");
+    } else if (sub === "fireworks") {
+      spawnFxItem("fireworks", {}, 3600);
+      playUiSound("explosion");
+    } else if (sub === "emoji") {
+      spawnFxItem("emoji", { icon: args[1] || "✨" }, 2600);
+      playUiSound("ping");
+    } else if (sub === "rain") {
+      spawnFxItem("rain", { icon: args.slice(1).join(" ") || "♟" }, 4200);
+      playUiSound("ping");
+    } else if (sub === "freeze") {
+      spawnFxItem("freeze", {}, 2200);
+      triggerBoardFx("fx-freeze", 2200, "Frozen.");
+      playUiSound("timer");
+    } else if (sub === "fakecheck") {
+      spawnFxItem("warning", { text: "CHECK?" }, 1900);
+      playUiSound("check");
+    } else if (sub === "fakewin") {
+      spawnFxItem("victory", { text: `${args[1] || "Someone"} wins!` }, 2600);
+      playUiSound("gameOver");
+    } else if (sub === "pause") {
+      spawnFxItem("countdown", { text: "Dramatic pause..." }, 2600);
+      playUiSound("timer");
+    } else if (sub === "bonk") {
+      spawnFxItem("bonk", { target: args[1] || "" }, 2000);
+      playUiSound("illegal");
+    } else if (sub === "jumpscare") {
+      spawnFxItem("jumpscare", { target: args[1] || "all" }, 1500);
+      playUiSound("shout");
+    } else if (sub === "toasty") {
+      spawnFxItem("toasty", {}, 3200);
+      playUiSound("chat");
+    } else if (sub === "laser") {
+      const from = parseDevLocation(args, 1);
+      const to = from ? parseDevLocation(args, from.nextIndex) : null;
+      if (from && to) {
+        setDevVisuals((current) => ({
+          ...current,
+          lasers: [...(current.lasers || []), { from: from.location, to: to.location, id: Date.now() }].slice(-6),
+          highlights: [...(current.highlights || []), from.location, to.location].slice(-64)
+        }));
+        spawnFxItem("laser", { from: coordText(from.location), to: coordText(to.location) }, 1800);
+      } else {
+        spawnFxItem("laser", { from: "A", to: "B" }, 1800);
+      }
+      playUiSound("explosion");
+    } else if (sub === "scooby") {
+      const mode = String(args[1] || "zoinks").toLowerCase();
+      const parsed = parseDevLocation(args, 2);
+      const loc = parsed?.location;
+      if (mode === "mysterymachine") {
+        spawnFxItem("mysterymachine", {}, 4200);
+      } else if (mode === "traproulette") {
+        const traps = Array.from({ length: 10 }, (_, index) => ({ x: Math.floor(Math.random() * 8), y: 0, z: Math.floor(Math.random() * 8), id: Date.now() + index }));
+        setDevVisuals((current) => ({ ...current, fakeTraps: [...(current.fakeTraps || []), ...traps].slice(-24) }));
+        spawnFxItem("scoobyText", { text: "Trap roulette!" }, 2600);
+      } else if (mode === "ghosttrap" && loc) {
+        setDevVisuals((current) => ({ ...current, fakeTraps: [...(current.fakeTraps || []), { ...loc, id: Date.now() }].slice(-16) }));
+        spawnFxItem("scoobyText", { text: "Ghost trap clue!" }, 2400);
+      } else if (mode === "smoke" && loc) {
+        setDevVisuals((current) => ({ ...current, fakeSmoke: [...(current.fakeSmoke || []), { ...loc, id: Date.now() }].slice(-16) }));
+        spawnFxItem("scoobyText", { text: "Fake smoke!" }, 2400);
+      } else if (["jinkies", "footprints", "haunt", "boo", "magnify"].includes(mode) && loc) {
+        setDevVisuals((current) => ({
+          ...current,
+          pings: [...(current.pings || []), { ...loc, id: Date.now(), scooby: true, mode }].slice(-10),
+          spotlight: mode === "magnify" ? loc : current.spotlight
+        }));
+        spawnFxItem(mode === "haunt" || mode === "boo" ? "ghost" : "scoobyText", { text: `${mode}!` }, 2300);
+      } else if (mode === "owners") {
+        spawnFxItem("scoobyText", { text: "Trap owners flashed." }, 2200);
+      } else if (mode === "panicpawns") {
+        triggerBoardFx("fx-drunk", 1800, "Pawns panic!");
+        spawnFxItem("scoobyText", { text: "Panic pawns!" }, 2200);
+      } else {
+        spawnFxItem("scoobyText", { text: mode === "zoinks" ? "ZOINKS!" : mode.toUpperCase() }, 2300);
+      }
+      playUiSound("trap");
+    } else if (sub === "board" && String(args[1] || "").toLowerCase() === "theme") {
+      const theme = String(args[2] || "lava").toLowerCase();
+      triggerBoardFx(boardClassMap[theme] || "fx-theme-lava", 4200, `Theme: ${theme}`);
+    } else if (boardClass) {
+      playUiSound(sub === "earthquake" ? "explosion" : "ping");
+    } else {
+      spawnFxItem("generic", { text: formatFxMessage(args) }, 2400);
+      playUiSound("ping");
+    }
+
+    appendDevLines(`fx: ${args.join(" ") || "effect"}`);
   }
 
   useEffect(() => {
@@ -626,80 +785,88 @@ export default function App() {
     }
 
     if (action === "fx") {
-      const sub = String(args[0] || "").toLowerCase();
-      if (sub === "clear") {
-        setDevFxClass("");
-        setFeedbackOverlay(null);
-        setDevVisuals((current) => ({ ...current, fakeTraps: [], fakeSmoke: [], pings: [], spotlight: null }));
-        appendDevLines("visual effects cleared.");
-        return true;
-      }
-      const text = formatFxMessage(args);
-      const classMap = {
-        earthquake: "fx-earthquake",
-        flashboard: "fx-flash",
-        invertboard: "fx-invert",
-        drunkboard: "fx-drunk",
-        disco: "fx-disco",
-        bloodmoon: "fx-bloodmoon",
-        night: "fx-night",
-        fog: "fx-fog",
-        snow: "fx-snow",
-        rainbow: "fx-rainbow",
-        tilt: "fx-tilt",
-        squish: "fx-squish"
-      };
-      let className = classMap[sub] || "";
-      if (sub === "board") className = classMap[String(args[1] || "").toLowerCase()] || "fx-board";
-      triggerBoardFx(className, 2200, text);
-      if (sub === "scooby" && ["ghosttrap", "smoke", "footprints", "jinkies", "haunt", "boo", "magnify"].includes(String(args[1] || "").toLowerCase())) {
-        const loc = parseDevLocation(args, 2)?.location;
-        if (loc) {
-          setDevVisuals((current) => ({
-            ...current,
-            fakeTraps: String(args[1]).toLowerCase() === "ghosttrap" ? [...(current.fakeTraps || []), { ...loc, id: Date.now() }].slice(-16) : current.fakeTraps,
-            fakeSmoke: String(args[1]).toLowerCase() === "smoke" ? [...(current.fakeSmoke || []), { ...loc, id: Date.now() }].slice(-16) : current.fakeSmoke,
-            pings: ["jinkies", "footprints", "haunt", "boo", "magnify"].includes(String(args[1]).toLowerCase()) ? [...(current.pings || []), { ...loc, id: Date.now(), scooby: true }].slice(-8) : current.pings
-          }));
-        }
-      }
-      playUiSound(["earthquake", "jumpscare", "fakecheck", "fakewin"].includes(sub) ? "shout" : "ping");
-      appendDevLines(`fx: ${args.join(" ") || "effect"}`);
+      triggerDevFx(args);
       return true;
     }
 
     if (action === "cosmetic") {
       const sub = String(args[0] || "").toLowerCase();
       if (sub === "clear") {
-        setDevCosmetics({ pieces: {}, icons: {}, curses: {} });
+        setDevCosmetics({ pieces: {}, icons: {}, curses: {}, players: {} });
         appendDevLines("cosmetics cleared.");
         return true;
       }
+
       if (sub === "piece") {
         const parsed = parseDevLocation(args, 1);
         if (!parsed) { appendDevLines("! usage: cosmetic piece [square] [effect] ..."); return true; }
-        const effect = args[parsed.nextIndex] || "glow";
-        const value = args.slice(parsed.nextIndex + 1).join(" ");
         const key = coordText(parsed.location);
-        setDevCosmetics((current) => ({
-          ...current,
-          pieces: { ...(current.pieces || {}), [key]: { effect, value } }
-        }));
-        appendDevLines(`cosmetic piece ${key}: ${effect} ${value}`.trim());
+        const effect = String(args[parsed.nextIndex] || "glow").toLowerCase();
+        const rest = args.slice(parsed.nextIndex + 1);
+        setDevCosmetics((current) => {
+          const pieces = { ...(current.pieces || {}) };
+          const existing = { ...(pieces[key] || {}) };
+
+          if (effect === "clear" || effect === "remove") {
+            delete pieces[key];
+          } else if (effect === "size") {
+            existing.size = ["tiny", "small"].includes(String(rest[0] || "").toLowerCase()) ? "tiny" : "big";
+            pieces[key] = existing;
+          } else if (["big", "giant"].includes(effect)) {
+            existing.size = "big";
+            pieces[key] = existing;
+          } else if (["tiny", "small"].includes(effect)) {
+            existing.size = "tiny";
+            pieces[key] = existing;
+          } else if (effect === "spin") {
+            existing.spin = true;
+            pieces[key] = existing;
+          } else if (effect === "jiggle") {
+            existing.jiggle = true;
+            pieces[key] = existing;
+          } else if (effect === "glow") {
+            existing.glow = rest[0] || "gold";
+            pieces[key] = existing;
+          } else if (effect === "hat") {
+            existing.hat = rest.join(" ") || "♕";
+            pieces[key] = existing;
+          } else if (effect === "mustache" || effect === "moustache") {
+            existing.mustache = true;
+            pieces[key] = existing;
+          } else if (effect === "name" || effect === "rename") {
+            existing.name = rest.join(" ") || "Gary";
+            pieces[key] = existing;
+          } else if (effect === "clown") {
+            existing.clown = true;
+            pieces[key] = existing;
+          } else if (effect === "ghost") {
+            existing.ghost = true;
+            pieces[key] = existing;
+          } else {
+            existing.glow = effect;
+            pieces[key] = existing;
+          }
+
+          return { ...current, pieces };
+        });
+        appendDevLines(`cosmetic piece ${key}: ${effect} ${rest.join(" ")}`.trim());
         return true;
       }
+
       if (sub === "curse") {
         const target = String(args[1] || "").toLowerCase();
         const curse = String(args[2] || "clear").toLowerCase();
+        if (!target) { appendDevLines("! usage: cosmetic curse [player] [curse|clear]"); return true; }
         setDevCosmetics((current) => {
           const curses = { ...(current.curses || {}) };
-          if (curse === "clear") delete curses[target];
+          if (curse === "clear" || curse === "off" || curse === "remove") delete curses[target];
           else curses[target] = curse;
           return { ...current, curses };
         });
         appendDevLines(curse === "clear" ? `curse cleared for ${target}` : `${target} cursed: ${curse}`);
         return true;
       }
+
       if (sub === "icon") {
         const [colour, piece, icon] = args.slice(1);
         if (!colour || !piece || !icon) { appendDevLines("! usage: cosmetic icon [colour] [piece] [emoji]"); return true; }
@@ -707,9 +874,32 @@ export default function App() {
         appendDevLines(`icon override ${colour} ${piece}=${icon}`);
         return true;
       }
+
       if (sub === "player") {
-        triggerFeedback(`Cosmetic player effect: ${args.slice(1).join(" ")}`, "cosmetic");
-        appendDevLines(`player cosmetic: ${args.slice(1).join(" ")}`);
+        const target = String(args[1] || "").toLowerCase();
+        const effect = String(args[2] || "").toLowerCase();
+        if (!target || !effect) { appendDevLines("! usage: cosmetic player [white|black] [duckify|scoobydoo|clear]"); return true; }
+        setDevCosmetics((current) => {
+          const players = { ...(current.players || {}) };
+          const existing = { ...(players[target] || {}) };
+          if (effect === "clear" || effect === "off" || effect === "remove") {
+            delete players[target];
+          } else if (effect === "duckify") {
+            existing.duckify = true;
+            existing.scoobydoo = false;
+            players[target] = existing;
+          } else if (effect === "scoobydoo") {
+            existing.scoobydoo = true;
+            existing.duckify = false;
+            players[target] = existing;
+          } else {
+            existing[effect] = true;
+            players[target] = existing;
+          }
+          return { ...current, players };
+        });
+        triggerFeedback(`Cosmetic player effect: ${target} ${effect}`, "cosmetic");
+        appendDevLines(`player cosmetic: ${target} ${effect}`);
         return true;
       }
     }
@@ -1109,8 +1299,8 @@ export default function App() {
           </div>
         </section>
         {shoutOverlay && <ShoutOverlay message={shoutOverlay.message} from={shoutOverlay.from} />}
-      {feedbackOverlay && <FeedbackOverlay text={feedbackOverlay.text} type={feedbackOverlay.type} />}
         {feedbackOverlay && <FeedbackOverlay text={feedbackOverlay.text} type={feedbackOverlay.type} />}
+        <DevFxLayer items={devFxItems} />
         <DevConsole
           open={devConsoleOpen}
           input={devConsoleInput}
@@ -1357,6 +1547,8 @@ export default function App() {
       )}
 
       {shoutOverlay && <ShoutOverlay message={shoutOverlay.message} from={shoutOverlay.from} />}
+      {feedbackOverlay && <FeedbackOverlay text={feedbackOverlay.text} type={feedbackOverlay.type} />}
+      <DevFxLayer items={devFxItems} />
 
       <DevConsole
         open={devConsoleOpen}
@@ -1412,6 +1604,52 @@ function FeedbackOverlay({ text, type }) {
   return (
     <div className={`feedback-overlay ${type || "info"}`} aria-live="polite">
       <strong>{text}</strong>
+    </div>
+  );
+}
+
+
+function DevFxLayer({ items }) {
+  if (!items?.length) return null;
+  const particleCount = 28;
+  return (
+    <div className="dev-fx-layer" aria-hidden="true">
+      {items.map((item) => {
+        if (item.type === "confetti") {
+          return (
+            <div key={item.id} className="fx-confetti">
+              {Array.from({ length: particleCount }).map((_, index) => <span key={index} style={{ "--i": index }} />)}
+            </div>
+          );
+        }
+        if (item.type === "fireworks") {
+          return (
+            <div key={item.id} className="fx-fireworks">
+              {Array.from({ length: 18 }).map((_, index) => <span key={index} style={{ "--i": index }} />)}
+            </div>
+          );
+        }
+        if (item.type === "rain") {
+          return (
+            <div key={item.id} className="fx-rain-items">
+              {Array.from({ length: 26 }).map((_, index) => <span key={index} style={{ "--i": index }}>{item.icon}</span>)}
+            </div>
+          );
+        }
+        if (item.type === "emoji") return <div key={item.id} className="fx-emoji-big">{item.icon}</div>;
+        if (item.type === "freeze") return <div key={item.id} className="fx-freeze-pane">❄</div>;
+        if (item.type === "warning") return <div key={item.id} className="fx-warning">{item.text}</div>;
+        if (item.type === "victory") return <div key={item.id} className="fx-victory">{item.text}</div>;
+        if (item.type === "countdown") return <div key={item.id} className="fx-countdown">{item.text}</div>;
+        if (item.type === "bonk") return <div key={item.id} className="fx-bonk">BONK{item.target ? ` ${item.target}` : ""}</div>;
+        if (item.type === "jumpscare") return <div key={item.id} className="fx-jumpscare">BOO!</div>;
+        if (item.type === "toasty") return <div key={item.id} className="fx-toasty">Toasty!</div>;
+        if (item.type === "laser") return <div key={item.id} className="fx-laser"><span>{item.from}</span><i /><span>{item.to}</span></div>;
+        if (item.type === "mysterymachine") return <div key={item.id} className="fx-mystery-machine">🚐</div>;
+        if (item.type === "ghost") return <div key={item.id} className="fx-ghost">👻</div>;
+        if (item.type === "scoobyText") return <div key={item.id} className="fx-scooby-text">{item.text}</div>;
+        return <div key={item.id} className="fx-generic">{item.text || item.type}</div>;
+      })}
     </div>
   );
 }

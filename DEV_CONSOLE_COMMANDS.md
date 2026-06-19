@@ -111,3 +111,77 @@ atomic chainreaction
 - `[DANGEROUS]` commands such as `chaos`, `tycoon bomb party`, `scooby trap storm`, and `atomic explode` modify actual game state.
 - `room kick [name]` now sends the kicked client back to the home screen.
 - `piece god [square] on` makes a piece unkillable by normal captures/explosions.
+
+
+## FX completion update
+
+The previously placeholder FX commands are now implemented with visible overlays/animations:
+
+```text
+fx confetti
+fx fireworks
+fx emoji 🤡
+fx rain pawns
+fx freeze 2
+fx fakecheck
+fx fakewin black
+fx pause dramatic
+fx bonk white
+fx jumpscare all
+fx toasty
+fx laser a1 h8
+fx board theme lava
+fx board theme ice
+fx board theme graveyard
+fx board theme scooby
+fx board theme nuke
+fx board theme gold
+fx board theme void
+fx scooby mysterymachine
+fx scooby traproulette
+fx scooby ghosttrap e4
+fx scooby smoke e4
+fx scooby jinkies e4
+fx scooby haunt e4
+fx scooby boo e4
+```
+
+## Cosmetics completion update
+
+The cosmetic commands are now implemented as persistent local visual changes:
+
+```text
+cosmetic piece e4 size big
+cosmetic piece e4 size tiny
+cosmetic piece e4 spin
+cosmetic piece e4 jiggle
+cosmetic piece e4 glow red
+cosmetic piece e4 hat crown
+cosmetic piece e4 mustache
+cosmetic piece e4 name Gary
+cosmetic piece e4 clown
+cosmetic piece e4 ghost
+cosmetic piece e4 clear
+
+cosmetic icon white queen 🦆
+cosmetic player black duckify
+cosmetic player white scoobydoo
+cosmetic curse black haunted
+cosmetic clear
+```
+
+Legacy aliases also work:
+
+```text
+bigpiece e4
+tinypiece e4
+spinpiece e4
+jigglepiece e4
+glowpiece e4 red
+hat e4 crown
+mustache e4
+renamepiece e4 Gary
+duckify black
+scoobydoo white
+clearcosmetics
+```

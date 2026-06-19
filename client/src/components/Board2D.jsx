@@ -155,16 +155,31 @@ function LayerCard({
           {ping && <span className="variant-marker ping-marker">{ping.scooby ? "!" : "•"}</span>}
           {piece && (
             <span
-              className={`piece ${piece.type === "wall" ? `${piece.owner || "white"} wall-piece` : piece.color} ${piece.shielded ? "shielded-piece" : ""} ${piece.god ? "god-piece" : ""} ${cosmetic ? `cosmetic-${cosmetic.effect}` : ""}`}
-              style={{ color: piece.type === "wall" ? (piece.owner === "black" ? COLORS.blackPiece : COLORS.whitePiece) : piece.color === "white" ? COLORS.whitePiece : COLORS.blackPiece }}
-              title={cosmetic?.value ? String(cosmetic.value) : undefined}
+              className={[
+                "piece",
+                piece.type === "wall" ? `${piece.owner || "white"} wall-piece` : piece.color,
+                piece.shielded ? "shielded-piece" : "",
+                piece.god ? "god-piece" : "",
+                cosmetic?.size === "big" ? "cosmetic-size-big" : "",
+                cosmetic?.size === "tiny" ? "cosmetic-size-tiny" : "",
+                cosmetic?.spin ? "cosmetic-spin" : "",
+                cosmetic?.jiggle ? "cosmetic-jiggle" : "",
+                cosmetic?.glow ? "cosmetic-glow" : "",
+                cosmetic?.ghost ? "cosmetic-ghost" : "",
+                cosmetic?.clown ? "cosmetic-clown" : ""
+              ].filter(Boolean).join(" ")}
+              style={{
+                color: piece.type === "wall" ? (piece.owner === "black" ? COLORS.blackPiece : COLORS.whitePiece) : piece.color === "white" ? COLORS.whitePiece : COLORS.blackPiece,
+                "--cosmetic-glow": cosmetic?.glow || "currentColor"
+              }}
+              title={cosmetic?.name || cosmetic?.hat || cosmetic?.glow || undefined}
             >
               {getPieceSymbol(piece, devVisuals.cosmetics)}
               {piece.shielded && <span className="shield-marker">◆</span>}
               {piece.god && <span className="god-marker">✦</span>}
-              {cosmetic?.effect === "hat" && <span className="cosmetic-hat">{cosmetic.value || "♕"}</span>}
-              {cosmetic?.effect === "mustache" && <span className="cosmetic-mustache">〰</span>}
-              {cosmetic?.effect === "name" && <span className="cosmetic-name">{cosmetic.value}</span>}
+              {cosmetic?.hat && <span className="cosmetic-hat">{cosmetic.hat}</span>}
+              {cosmetic?.mustache && <span className="cosmetic-mustache">〰</span>}
+              {cosmetic?.name && <span className="cosmetic-name">{cosmetic.name}</span>}
             </span>
           )}
         </button>
@@ -199,6 +214,9 @@ function coordText(coord) {
 
 function getPieceSymbol(piece, cosmetics = {}) {
   if (piece.type === "wall") return "⛨";
+  const playerCosmetic = cosmetics?.players?.[piece.color] || {};
+  if (playerCosmetic.duckify) return "🦆";
+  if (playerCosmetic.scoobydoo && piece.type === "pawn") return "🐕";
   const override = cosmetics?.icons?.[`${piece.color}:${piece.type}`];
   return override || PIECE_SYMBOLS[piece.color]?.[piece.type] || "?";
 }
