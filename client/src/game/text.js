@@ -37,17 +37,15 @@ export const UI_TEXT = {
     },
     chess960: {
       label: "Chess960",
-      subtitle: "Normal chess, but the back-rank pieces start shuffled.",
+      subtitle: "Play with a shuffled back rank.",
       rules: [
-        "The back rank is randomised using Chess960 rules.",
-        "Bishops start on opposite-coloured squares.",
-        "The king starts between the two rooks.",
+        "Back rank is randomised.",
         "Checkmate your opponent to win."
       ]
     },
     crazyhouse: {
       label: "Crazyhouse",
-      subtitle: "Captured pieces become drops you can place back onto the board.",
+      subtitle: "Drop captured pieces back onto the board.",
       rules: [
         "When you capture a piece, it enters your reserve.",
         "On your turn, you may drop a reserve piece onto an empty square.",
@@ -59,8 +57,7 @@ export const UI_TEXT = {
       label: "King of the Hill",
       subtitle: "Win by checkmate or by moving your king to the centre.",
       rules: [
-        "The four centre squares are the hill.",
-        "Move your king to d4, e4, d5, or e5 to win immediately.",
+        "If your king reaches the centre squares, you win.",
         "Checkmate still wins normally."
       ]
     },
@@ -68,41 +65,38 @@ export const UI_TEXT = {
       label: "Atomic Chess",
       subtitle: "Captures explode nearby non-pawn pieces.",
       rules: [
-        "Any capture creates an explosion on the capture square.",
-        "The capturing piece, captured piece, and nearby non-pawn pieces are removed.",
-        "Destroying the enemy king wins.",
-        "Checkmate can still win normally."
+        "Any capture creates an explosion, blowing up non-pawn pieces.",
+        "Destroy or checkmate the enemy king to win."
       ]
     },
     nuke: {
       label: "Nuke",
-      subtitle: "Charge a delayed circular nuke by capturing pieces.",
+      subtitle: "Charge a nuke by capturing pieces.",
       rules: [
         "Captures charge your nuke up to radius 3.",
-        "Launching a nuke uses your turn and explodes after the opponent gets three moves.",
-        "The blast is circular, and rooks block blast lines along ranks and files.",
-        "If both kings are destroyed, the launcher loses."
+        "Launching a nuke uses your turn and detonates after 3 turns.",
+        "Rooks block the blast along ranks and files.",
+        "If a nuke destroys both kings, the launcher loses.",
+        "Checkmate or blow up the opponent's king to win."
       ]
     },
     tycoon: {
       label: "Tycoon",
-      subtitle: "Earn money from silos and buy pieces, walls, shields, bombs, and economy upgrades.",
+      subtitle: "Earn money from silos to buy upgrades.",
       rules: [
-        "Pieces in silo squares generate money at the start of your turn after both players have moved once.",
-        "Bought pieces must spawn within one square of your king and cannot move immediately.",
-        "Walls block movement and check lines; bombs destroy walls and pieces after a warning countdown.",
-        "Buy as many upgrades as you can afford; moving a piece is what ends your turn.",
-        "Storage and production upgrades scale your economy."
+        "Pieces in silo squares generate money each turn.",
+        "Bought pieces are placedwithin one square of your king and cannot move immediately.",
+        "Walls block movement and check; bombs destroy walls and pieces.",
+        "Checkmate your opponent to win."
       ]
     },
     predict: {
       label: "Predict",
-      subtitle: "Both players lock a move, then the pair resolves with White first.",
+      subtitle: "Play with only a guess of your opponent's next move.",
       rules: [
         "Both players secretly submit one legal move each round.",
-        "When both are locked in, White resolves first and Black resolves second.",
-        "If White checkmates Black, Black's queued move is cancelled.",
-        "If a queued move becomes illegal or its piece is gone, that move fails."
+        "When both are locked in, the moves resolve.",
+        "Checkmate the opponent to win."
       ]
     },
     scooby: {
