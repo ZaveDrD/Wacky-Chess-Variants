@@ -3619,3 +3619,30 @@ select {
     padding: 0.18rem 0.36rem;
   }
 }
+
+
+/* Mobile piece consistency: keep original Unicode chess symbols, but force text glyph rendering. */
+.piece,
+.piece-preview {
+  font-family: "Segoe UI Symbol", "Noto Sans Symbols 2", "DejaVu Sans", "Apple Symbols", "Arial Unicode MS", serif !important;
+  font-variant-emoji: text !important;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: geometricPrecision;
+}
+
+.piece.white {
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+}
+
+.piece.black {
+  color: #1f2933 !important;
+  -webkit-text-fill-color: #1f2933 !important;
+}
+
+@supports (-webkit-touch-callout: none) {
+  .piece,
+  .piece-preview {
+    font-family: "Apple Symbols", "Noto Sans Symbols 2", "Segoe UI Symbol", "DejaVu Sans", serif !important;
+  }
+}

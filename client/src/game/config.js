@@ -15,19 +15,19 @@ export const COLORS = {
 
 export const PIECE_SYMBOLS = {
   white: {
-    king: "♔",
-    queen: "♕",
-    rook: "♖",
-    bishop: "♗",
-    knight: "♘",
-    pawn: "♙"
+    king: "♔\ufe0e",
+    queen: "♕\ufe0e",
+    rook: "♖\ufe0e",
+    bishop: "♗\ufe0e",
+    knight: "♘\ufe0e",
+    pawn: "♙\ufe0e"
   },
   black: {
-    king: "♚",
-    queen: "♛",
-    rook: "♜",
-    bishop: "♝",
-    knight: "♞",
-    pawn: "♟"
+    king: "♚\ufe0e",
+    queen: "♛\ufe0e",
+    rook: "♜\ufe0e",
+    bishop: "♝\ufe0e",
+    knight: "♞\ufe0e",
+    pawn: "♟\ufe0e"
   }
 };
