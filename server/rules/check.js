@@ -54,7 +54,8 @@ export function isKingInCheck(game, color) {
 }
 
 export function getLegalMoves(game, piece) {
-  if (!piece) return [];
+  if (!piece || piece.type === "wall") return [];
+  if (piece.purchasedTurnToken != null && piece.purchasedTurnToken === game.turnToken) return [];
 
   const pseudoMoves = getPseudoLegalMoves(game, piece);
   const withCastling = piece.type === "king" ? [...pseudoMoves, ...getCastleMoves(game, piece)] : pseudoMoves;
@@ -266,7 +267,7 @@ function rangeInclusive(a, b) {
 
 export function applyMoveUnchecked(game, pieceId, move, options = {}) {
   const piece = getPieceById(game, pieceId);
-  if (!piece) return { ok: false, reason: "Piece not found." };
+  if (!piece || piece.type === "wall") return { ok: false, reason: "Piece not found." };
 
   const originalType = piece.type;
   const from = { x: piece.x, y: piece.y, z: piece.z };
@@ -274,8 +275,15 @@ export function applyMoveUnchecked(game, pieceId, move, options = {}) {
   if (!inBounds(to)) return { ok: false, reason: "Target out of bounds." };
 
   let captured = null;
+  let shieldBlocked = false;
+  const targetBefore = move.enPassant
+    ? getPieceAt(game, { x: to.x, y: to.y, z: to.z - pawnZDir(piece.color) })
+    : getPieceAt(game, to);
 
-  if (move.enPassant) {
+  if (targetBefore?.shielded) {
+    targetBefore.shielded = false;
+    shieldBlocked = true;
+  } else if (move.enPassant) {
     const zDir = pawnZDir(piece.color);
     const captureSquare = { x: to.x, y: to.y, z: to.z - zDir };
     captured = removePieceAt(game, captureSquare);
@@ -283,11 +291,35 @@ export function applyMoveUnchecked(game, pieceId, move, options = {}) {
     captured = removePieceAt(game, to);
   }
 
+  if (shieldBlocked) {
+    const moveRecord = {
+      pieceId,
+      pieceColor: piece.color,
+      pieceType: originalType,
+      from,
+      to,
+      captured: targetBefore ? { id: targetBefore.id, type: targetBefore.type, color: targetBefore.color, shieldBlocked: true } : null,
+      shieldBlocked: true,
+      wasDoubleStep: false,
+      castle: false,
+      enPassant: false,
+      promotedTo: null,
+      atomicRemoved: [],
+      time: Date.now()
+    };
+    game.lastMove = moveRecord;
+    game.moveHistory.push(moveRecord);
+    game.halfmoveClock = 0;
+    return { ok: true, moveRecord };
+  }
+
   if (captured && game.variant === "crazyhouse") {
     if (!game.reserves) game.reserves = { white: [], black: [] };
     if (!Array.isArray(game.reserves[piece.color])) game.reserves[piece.color] = [];
-    game.reserves[piece.color].push(captured.type === "king" ? "queen" : captured.type);
+    if (!["king", "wall"].includes(captured.type)) game.reserves[piece.color].push(captured.type);
   }
+
+  if (captured && game.variant === "nuke") addNukeCharge(game, piece.color, 1);
 
   piece.x = to.x;
   piece.y = to.y;
@@ -337,6 +369,7 @@ export function applyMoveUnchecked(game, pieceId, move, options = {}) {
 
   game.lastMove = moveRecord;
   game.moveHistory.push(moveRecord);
+  if (atomicRemoved.length) addExplosionEffect(game, to, 1, "atomic");
 
   return { ok: true, moveRecord };
 }
@@ -351,12 +384,7 @@ function resolveAtomicExplosion(game, centre, movingPieceId, captured) {
     if (directlyInvolved || (adjacent && piece.type !== "pawn")) removeIds.add(piece.id);
   }
 
-  game.pieces = game.pieces.filter((piece) => {
-    if (!removeIds.has(piece.id)) return true;
-    removed.push({ id: piece.id, type: piece.type, color: piece.color, x: piece.x, y: piece.y, z: piece.z });
-    return false;
-  });
-
+  removePiecesByIds(game, removeIds, removed);
   return removed;
 }
 
@@ -386,10 +414,7 @@ export function attemptLegalDrop(game, playerId, pieceType, to, options = {}) {
   const result = applyDropUnchecked(game, color, type, to, { consumeReserve: !devOverride || reserveIndex >= 0 });
   if (!result.ok) return result;
 
-  game.turn = opponent(color);
-  Object.assign(game, getGameEndState(game, game.turn));
-  applyAutomaticDrawRules(game);
-  game.lastTurnStartedAt = game.status === "playing" ? Date.now() : null;
+  advanceTurn(game, color);
   return { ok: true, game };
 }
 
@@ -438,6 +463,342 @@ function normaliseDropPiece(value) {
   return ["pawn", "knight", "bishop", "rook", "queen"].includes(type) ? type : null;
 }
 
+export function attemptLaunchNuke(game, playerId, to, options = {}) {
+  if (game.status !== "playing") return { ok: false, reason: "Game is not currently playing." };
+  if (game.variant !== "nuke") return { ok: false, reason: "Nukes are only available in Nuke." };
+  const color = game.turn;
+  const devOverride = Boolean(options.devOverride);
+  const player = game.players[color];
+  if ((!player || player.id !== playerId) && !devOverride) return { ok: false, reason: "You do not control this turn." };
+  ensureNukeState(game);
+  const state = game.nuke[color];
+  if (state.active) return { ok: false, reason: "Your nuke is already active." };
+  if ((Number(state.charge) || 0) <= 0) return { ok: false, reason: "Your nuke has no charge." };
+  if (!inBounds(to) || to.y !== 0) return { ok: false, reason: "Nukes must be launched onto the 2D board." };
+  if (getPieceAt(game, to)) return { ok: false, reason: "Nuke target square must be empty." };
+  if (!isNearOwnPiece(game, color, to, 2) && !devOverride) return { ok: false, reason: "Nukes must be launched within 2 squares of one of your pieces." };
+
+  const radius = Math.min(3, Math.max(1, Number(state.charge) || 1));
+  state.active = {
+    id: `${color}_nuke_${Date.now()}`,
+    owner: color,
+    centre: { x: to.x, y: 0, z: to.z },
+    radius,
+    targetTurn: (Number(game.turnToken) || 0) + 6,
+    placedAtTurn: Number(game.turnToken) || 0
+  };
+  state.charge = 0;
+  game.lastMove = { nukeLaunch: true, pieceColor: color, pieceType: "nuke", from: null, to: { ...to }, time: Date.now(), radius };
+  game.moveHistory.push(game.lastMove);
+  game.message = `${color} launched a radius ${radius} nuke.`;
+  advanceTurn(game, color);
+  return { ok: true, game };
+}
+
+export function attemptTycoonAction(game, playerId, actionRaw, to = null, options = {}) {
+  if (game.status !== "playing") return { ok: false, reason: "Game is not currently playing." };
+  if (game.variant !== "tycoon") return { ok: false, reason: "Tycoon actions are only available in Tycoon." };
+  const color = game.turn;
+  const devOverride = Boolean(options.devOverride);
+  const player = game.players[color];
+  if ((!player || player.id !== playerId) && !devOverride) return { ok: false, reason: "You do not control this turn." };
+  ensureTycoonState(game);
+
+  const action = String(actionRaw || "").trim();
+  const costs = getTycoonCosts(game, color);
+  let record = null;
+
+  if (["pawn", "knight", "bishop", "rook", "queen"].includes(action)) {
+    if (!to || !inBounds(to) || to.y !== 0) return { ok: false, reason: "Choose a 2D board square for the purchased piece." };
+    if (getPieceAt(game, to)) return { ok: false, reason: "Purchase square is occupied." };
+    if (!isNearKing(game, color, to, 1)) return { ok: false, reason: "Bought pieces must be placed within one open square of your king." };
+    const cost = costs.pieces[action];
+    if (!spendTycoonMoney(game, color, cost, devOverride)) return { ok: false, reason: `Not enough money for ${action}.` };
+    const piece = { id: `${color}_buy_${action}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, type: action, color, x: to.x, y: 0, z: to.z, hasMoved: true, purchasedTurnToken: Number(game.turnToken) || 0 };
+    game.pieces.push(piece);
+    record = { tycoon: true, tycoonAction: `buy ${action}`, pieceId: piece.id, pieceColor: color, pieceType: action, from: null, to: { ...to }, cost, time: Date.now() };
+  } else if (action === "wall") {
+    if (!to || !inBounds(to) || to.y !== 0) return { ok: false, reason: "Choose a 2D board square for the wall." };
+    if (getPieceAt(game, to)) return { ok: false, reason: "Wall square is occupied." };
+    if (isSiloSquare(to)) return { ok: false, reason: "Walls cannot be placed inside silos." };
+    if ((game.tycoon.walls[color] || 0) >= 3 && !devOverride) return { ok: false, reason: "You can only have 3 active walls." };
+    const cost = costs.wall;
+    if (!spendTycoonMoney(game, color, cost, devOverride)) return { ok: false, reason: "Not enough money for wall." };
+    const wall = { id: `${color}_wall_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, type: "wall", color: "wall", owner: color, x: to.x, y: 0, z: to.z, hasMoved: true };
+    game.pieces.push(wall);
+    game.tycoon.walls[color] = (game.tycoon.walls[color] || 0) + 1;
+    record = { tycoon: true, tycoonAction: "wall", pieceId: wall.id, pieceColor: color, pieceType: "wall", from: null, to: { ...to }, cost, time: Date.now() };
+  } else if (action === "shield") {
+    if (!to || !inBounds(to)) return { ok: false, reason: "Choose one of your pieces to shield." };
+    const target = getPieceAt(game, to);
+    if (!target || target.color !== color || target.type === "king" || target.type === "wall") return { ok: false, reason: "Shield must be placed on one of your non-king pieces." };
+    if (target.shielded) return { ok: false, reason: "That piece already has a shield." };
+    const cost = costs.shield;
+    if (!spendTycoonMoney(game, color, cost, devOverride)) return { ok: false, reason: "Not enough money for shield." };
+    target.shielded = true;
+    record = { tycoon: true, tycoonAction: "shield", pieceId: target.id, pieceColor: color, pieceType: target.type, from: null, to: { ...to }, cost, time: Date.now() };
+  } else if (action === "bomb") {
+    if (!to || !inBounds(to) || to.y !== 0) return { ok: false, reason: "Choose a 2D board square for the bomb." };
+    if (getPieceAt(game, to)) return { ok: false, reason: "Bomb target square must be empty." };
+    const cost = costs.bomb;
+    if (!spendTycoonMoney(game, color, cost, devOverride)) return { ok: false, reason: "Not enough money for bomb." };
+    const bomb = { id: `${color}_bomb_${Date.now()}`, owner: color, centre: { x: to.x, y: 0, z: to.z }, radius: 1, targetTurn: (Number(game.turnToken) || 0) + 6, placedAtTurn: Number(game.turnToken) || 0 };
+    game.tycoon.bombs.push(bomb);
+    record = { tycoon: true, tycoonAction: "bomb", pieceColor: color, pieceType: "bomb", from: null, to: { ...to }, cost, time: Date.now() };
+  } else if (action === "storage") {
+    const cost = costs.storage;
+    if (!spendTycoonMoney(game, color, cost, devOverride)) return { ok: false, reason: "Not enough money for storage upgrade." };
+    game.tycoon.storageLevel[color] = (game.tycoon.storageLevel[color] || 0) + 1;
+    game.tycoon.maxMoney[color] = 15 + game.tycoon.storageLevel[color] * 5;
+    record = { tycoon: true, tycoonAction: "storage", pieceColor: color, pieceType: "storage", from: null, to: null, cost, time: Date.now() };
+  } else if (action === "production") {
+    const level = game.tycoon.productionLevel[color] || 0;
+    if (level >= 3) return { ok: false, reason: "Production is already maxed." };
+    const cost = costs.production;
+    if (!spendTycoonMoney(game, color, cost, devOverride)) return { ok: false, reason: "Not enough money for production upgrade." };
+    game.tycoon.productionLevel[color] = level + 1;
+    game.tycoon.production[color] = level + 1;
+    record = { tycoon: true, tycoonAction: "production", pieceColor: color, pieceType: "production", from: null, to: null, cost, time: Date.now() };
+  } else {
+    return { ok: false, reason: "Unknown Tycoon action." };
+  }
+
+  game.lastMove = record;
+  game.moveHistory.push(record);
+  game.message = `${color} bought ${record.tycoonAction}.`;
+  advanceTurn(game, color);
+  return { ok: true, game };
+}
+
+export function advanceTurn(game, movingColor) {
+  game.turn = opponent(movingColor);
+  game.turnToken = (Number(game.turnToken) || 0) + 1;
+  resolveStartOfTurnEffects(game, game.turn);
+  if (game.status !== "finished") {
+    Object.assign(game, getGameEndState(game, game.turn));
+    applyAutomaticDrawRules(game);
+  }
+  game.lastTurnStartedAt = game.status === "playing" ? Date.now() : null;
+}
+
+function resolveStartOfTurnEffects(game, color) {
+  if (!game.effects) game.effects = { explosions: [], income: [] };
+  game.effects.explosions = [];
+  game.effects.income = [];
+  resolvePendingNukes(game);
+  resolveTycoonBombs(game);
+  awardTycoonIncome(game, color);
+}
+
+function addNukeCharge(game, color, amount) {
+  ensureNukeState(game);
+  const state = game.nuke[color];
+  if (state.active) return;
+  state.charge = Math.min(3, (Number(state.charge) || 0) + amount);
+}
+
+function ensureNukeState(game) {
+  if (!game.nuke) game.nuke = { white: { charge: 0, active: null }, black: { charge: 0, active: null } };
+  for (const color of ["white", "black"]) {
+    if (!game.nuke[color]) game.nuke[color] = { charge: 0, active: null };
+  }
+}
+
+function resolvePendingNukes(game) {
+  if (game.variant !== "nuke" || !game.nuke) return;
+  for (const color of ["white", "black"]) {
+    const active = game.nuke[color]?.active;
+    if (!active || (Number(game.turnToken) || 0) < active.targetTurn) continue;
+    const removed = explodeNuke(game, active, color);
+    game.nuke[color].active = null;
+    addExplosionEffect(game, active.centre, active.radius, "nuke");
+    const whiteKingDead = removed.some((piece) => piece.type === "king" && piece.color === "white") || !getKing(game, "white");
+    const blackKingDead = removed.some((piece) => piece.type === "king" && piece.color === "black") || !getKing(game, "black");
+    if (whiteKingDead && blackKingDead) {
+      game.status = "finished";
+      game.winner = opponent(color);
+      game.message = `${opponent(color)} wins because ${color}'s nuke destroyed both kings.`;
+      game.lastTurnStartedAt = null;
+    } else if (whiteKingDead || blackKingDead) {
+      const winner = whiteKingDead ? "black" : "white";
+      game.status = "finished";
+      game.winner = winner;
+      game.message = `${winner} wins by nuke explosion.`;
+      game.lastTurnStartedAt = null;
+    }
+  }
+}
+
+function explodeNuke(game, active, owner) {
+  const affected = getNukeAffectedSquares(game, active.centre, active.radius);
+  const affectedKeys = new Set(affected.map((pos) => `${pos.x},${pos.y},${pos.z}`));
+  const removed = [];
+  game.pieces = game.pieces.filter((piece) => {
+    if (!affectedKeys.has(`${piece.x},${piece.y},${piece.z}`)) return true;
+    if (piece.shielded) {
+      piece.shielded = false;
+      return true;
+    }
+    removed.push({ id: piece.id, type: piece.type, color: piece.color, x: piece.x, y: piece.y, z: piece.z });
+    return false;
+  });
+  game.lastMove = { nukeExplosion: true, pieceColor: owner, pieceType: "nuke", from: null, to: { ...active.centre }, radius: active.radius, nukeRemoved: removed, time: Date.now() };
+  game.moveHistory.push(game.lastMove);
+  return removed;
+}
+
+function getNukeAffectedSquares(game, centre, radius) {
+  const squares = [];
+  for (let x = 0; x < 8; x += 1) {
+    for (let z = 0; z < 8; z += 1) {
+      const dx = x - centre.x;
+      const dz = z - centre.z;
+      if (dx * dx + dz * dz > radius * radius) continue;
+      const target = { x, y: 0, z };
+      if (!isNukeBlockedByRook(game, centre, target)) squares.push(target);
+    }
+  }
+  return squares;
+}
+
+function isNukeBlockedByRook(game, centre, target) {
+  const sameFile = centre.x === target.x && centre.z !== target.z;
+  const sameRank = centre.z === target.z && centre.x !== target.x;
+  if (!sameFile && !sameRank) return false;
+  const stepX = Math.sign(target.x - centre.x);
+  const stepZ = Math.sign(target.z - centre.z);
+  let x = centre.x + stepX;
+  let z = centre.z + stepZ;
+  while (x !== target.x || z !== target.z) {
+    const blocker = getPieceAt(game, { x, y: 0, z });
+    if (blocker?.type === "rook") return true;
+    x += stepX;
+    z += stepZ;
+  }
+  return false;
+}
+
+function ensureTycoonState(game) {
+  if (!game.tycoon) game.tycoon = { money: { white: 0, black: 0 }, maxMoney: { white: 15, black: 15 }, production: { white: 0, black: 0 }, storageLevel: { white: 0, black: 0 }, productionLevel: { white: 0, black: 0 }, walls: { white: 0, black: 0 }, bombs: [], lastIncome: { white: 0, black: 0 } };
+  if (!Array.isArray(game.tycoon.bombs)) game.tycoon.bombs = [];
+}
+
+function awardTycoonIncome(game, color) {
+  if (game.variant !== "tycoon") return;
+  ensureTycoonState(game);
+  if ((Number(game.turnToken) || 0) < 2) return;
+  const productionBonus = Number(game.tycoon.production[color]) || 0;
+  let income = 0;
+  for (const piece of game.pieces || []) {
+    if (piece.color !== color || piece.type === "wall") continue;
+    if (!isSiloSquare(piece)) continue;
+    income += tycoonPieceIncome(piece.type) + productionBonus;
+  }
+  game.tycoon.lastIncome[color] = income;
+  if (income > 0) {
+    game.tycoon.money[color] = Math.min(game.tycoon.maxMoney[color] || 15, (game.tycoon.money[color] || 0) + income);
+    game.effects.income.push({ color, amount: income, time: Date.now() });
+  }
+}
+
+function resolveTycoonBombs(game) {
+  if (game.variant !== "tycoon" || !game.tycoon?.bombs?.length) return;
+  const remaining = [];
+  for (const bomb of game.tycoon.bombs) {
+    if ((Number(game.turnToken) || 0) >= bomb.targetTurn) {
+      const removed = explodeTycoonBomb(game, bomb);
+      addExplosionEffect(game, bomb.centre, 1, "tycoonBomb");
+      game.lastMove = { tycoonExplosion: true, pieceColor: bomb.owner, pieceType: "bomb", from: null, to: { ...bomb.centre }, tycoonRemoved: removed, time: Date.now() };
+      game.moveHistory.push(game.lastMove);
+    } else {
+      remaining.push(bomb);
+    }
+  }
+  game.tycoon.bombs = remaining;
+}
+
+function explodeTycoonBomb(game, bomb) {
+  const removed = [];
+  const keys = new Set();
+  for (let dx = -1; dx <= 1; dx += 1) {
+    for (let dz = -1; dz <= 1; dz += 1) {
+      const pos = { x: bomb.centre.x + dx, y: 0, z: bomb.centre.z + dz };
+      if (inBounds(pos)) keys.add(`${pos.x},${pos.y},${pos.z}`);
+    }
+  }
+  game.pieces = game.pieces.filter((piece) => {
+    if (!keys.has(`${piece.x},${piece.y},${piece.z}`)) return true;
+    if (piece.shielded) {
+      piece.shielded = false;
+      return true;
+    }
+    removed.push({ id: piece.id, type: piece.type, color: piece.color, owner: piece.owner, x: piece.x, y: piece.y, z: piece.z });
+    if (piece.type === "wall" && piece.owner && game.tycoon?.walls?.[piece.owner] > 0) game.tycoon.walls[piece.owner] -= 1;
+    return false;
+  });
+  return removed;
+}
+
+function getTycoonCosts(game, color) {
+  const storageLevel = game.tycoon?.storageLevel?.[color] || 0;
+  const productionLevel = game.tycoon?.productionLevel?.[color] || 0;
+  return {
+    pieces: { pawn: 3, knight: 7, bishop: 7, rook: 10, queen: 15 },
+    wall: 3,
+    shield: 5,
+    bomb: 5,
+    storage: [5, 8, 12, 16, 22][storageLevel] || 28,
+    production: [8, 14, 22][productionLevel] || Infinity
+  };
+}
+
+function spendTycoonMoney(game, color, cost, devOverride = false) {
+  ensureTycoonState(game);
+  if (devOverride) return true;
+  if ((game.tycoon.money[color] || 0) < cost) return false;
+  game.tycoon.money[color] -= cost;
+  return true;
+}
+
+function tycoonPieceIncome(type) {
+  if (type === "pawn") return 1;
+  if (["rook", "bishop", "knight"].includes(type)) return 2;
+  if (type === "queen") return 3;
+  if (type === "king") return 5;
+  return 0;
+}
+
+function isSiloSquare(pos) {
+  return pos?.y === 0 && (([1, 2].includes(pos.x) && [3, 4].includes(pos.z)) || ([5, 6].includes(pos.x) && [3, 4].includes(pos.z)));
+}
+
+function isNearKing(game, color, to, distance = 1) {
+  const king = getKing(game, color);
+  if (!king) return false;
+  return Math.max(Math.abs(king.x - to.x), Math.abs(king.y - to.y), Math.abs(king.z - to.z)) <= distance;
+}
+
+function isNearOwnPiece(game, color, to, distance = 2) {
+  return (game.pieces || []).some((piece) => piece.color === color && Math.max(Math.abs(piece.x - to.x), Math.abs(piece.y - to.y), Math.abs(piece.z - to.z)) <= distance);
+}
+
+function addExplosionEffect(game, centre, radius, type) {
+  if (!game.effects) game.effects = { explosions: [], income: [] };
+  game.effects.explosions = [{ centre: { ...centre }, radius, type, time: Date.now() }];
+}
+
+function removePiecesByIds(game, ids, removed) {
+  game.pieces = game.pieces.filter((piece) => {
+    if (!ids.has(piece.id)) return true;
+    if (piece.shielded) {
+      piece.shielded = false;
+      return true;
+    }
+    removed.push({ id: piece.id, type: piece.type, color: piece.color, owner: piece.owner, x: piece.x, y: piece.y, z: piece.z });
+    return false;
+  });
+}
+
 export function attemptLegalMove(game, playerId, pieceId, to, options = {}) {
   if (game.status !== "playing") return { ok: false, reason: "Game is not currently playing." };
 
@@ -458,14 +819,6 @@ export function attemptLegalMove(game, playerId, pieceId, to, options = {}) {
   const result = applyMoveUnchecked(game, pieceId, chosen, options);
   if (!result.ok) return result;
 
-  game.turn = opponent(movingColor);
-  Object.assign(game, getGameEndState(game, game.turn));
-  applyAutomaticDrawRules(game);
-  if (game.status === "playing") {
-    game.lastTurnStartedAt = Date.now();
-  } else {
-    game.lastTurnStartedAt = null;
-  }
-
+  advanceTurn(game, movingColor);
   return { ok: true, game };
 }

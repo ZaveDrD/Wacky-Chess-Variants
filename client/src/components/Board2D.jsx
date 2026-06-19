@@ -13,7 +13,8 @@ export default function Board2D({
   onLayerChange,
   stacked = true,
   title,
-  devVisuals = {}
+  devVisuals = {},
+  variantHighlights = []
 }) {
   const [flipDirection, setFlipDirection] = useState("idle");
   const wheelDeltaRef = useRef(0);
@@ -70,6 +71,7 @@ export default function Board2D({
             ghostIndex={index + 1}
             isGhost
             devVisuals={devVisuals}
+            variantHighlights={variantHighlights}
           />
         ))}
 
@@ -83,6 +85,7 @@ export default function Board2D({
           onSquareClick={onSquareClick}
           isActive
           devVisuals={devVisuals}
+          variantHighlights={variantHighlights}
         />
 
         {stacked && <div className="layer-badge">Layer {layer}</div>}
@@ -101,7 +104,8 @@ function LayerCard({
   isActive = false,
   isGhost = false,
   ghostIndex = 0,
-  devVisuals = {}
+  devVisuals = {},
+  variantHighlights = []
 }) {
   const squares = [];
 
@@ -112,6 +116,7 @@ function LayerCard({
       const legalMove = !isGhost ? legalMoveKeys.get(key(coord)) : null;
       const selected = !isGhost && piece?.id === selectedPieceId;
       const highlighted = !isGhost && (devVisuals.highlights || []).some((item) => sameCoord(item, coord));
+      const variantHighlight = !isGhost ? variantHighlights.find((item) => sameCoord(item, coord)) : null;
       const ghostFrom = !isGhost && devVisuals.ghostMove?.from && sameCoord(devVisuals.ghostMove.from, coord);
       const ghostTo = !isGhost && devVisuals.ghostMove?.to && sameCoord(devVisuals.ghostMove.to, coord);
       const light = (row + col) % 2 === 0;
@@ -119,7 +124,7 @@ function LayerCard({
       squares.push(
         <button
           key={`${coord.x}-${coord.y}-${coord.z}`}
-          className={`square ${light ? "light" : "dark"} ${selected ? "selected" : ""} ${legalMove ? "legal" : ""} ${legalMove?.capture ? "capture" : ""} ${highlighted ? "dev-highlight" : ""} ${ghostFrom ? "ghost-from" : ""} ${ghostTo ? "ghost-to" : ""}`}
+          className={`square ${light ? "light" : "dark"} ${selected ? "selected" : ""} ${legalMove ? "legal" : ""} ${legalMove?.capture ? "capture" : ""} ${highlighted ? "dev-highlight" : ""} ${variantHighlight ? `variant-highlight ${variantHighlight.className || ""}` : ""} ${ghostFrom ? "ghost-from" : ""} ${ghostTo ? "ghost-to" : ""}`}
           style={{
             background: selected
               ? COLORS.selected
@@ -139,12 +144,14 @@ function LayerCard({
           {devVisuals.showCoords && <span className="coord-label show">{coord.x},{coord.y},{coord.z}</span>}
           {ghostFrom && <span className="dev-marker from">A</span>}
           {ghostTo && <span className="dev-marker to">B</span>}
+          {variantHighlight?.marker && <span className={`variant-marker ${variantHighlight.markerClass || ""}`}>{variantHighlight.marker}</span>}
           {piece && (
             <span
-              className={`piece ${piece.color}`}
-              style={{ color: piece.color === "white" ? COLORS.whitePiece : COLORS.blackPiece }}
+              className={`piece ${piece.color} ${piece.type === "wall" ? "wall-piece" : ""} ${piece.shielded ? "shielded-piece" : ""}`}
+              style={{ color: piece.type === "wall" ? "#d6c5a2" : piece.color === "white" ? COLORS.whitePiece : COLORS.blackPiece }}
             >
-              {PIECE_SYMBOLS[piece.color][piece.type]}
+              {getPieceSymbol(piece)}
+              {piece.shielded && <span className="shield-marker">◆</span>}
             </span>
           )}
         </button>
@@ -171,6 +178,11 @@ function LayerCard({
       {isGhost && <div className="ghost-layer-label">{axisLayerText(plane, layer)}</div>}
     </div>
   );
+}
+
+function getPieceSymbol(piece) {
+  if (piece.type === "wall") return "▣";
+  return PIECE_SYMBOLS[piece.color]?.[piece.type] || "?";
 }
 
 function PlaneAxisLabels({ plane }) {

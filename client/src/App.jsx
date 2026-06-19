@@ -38,6 +38,8 @@ export default function App() {
   const [layer, setLayer] = useState(0);
   const [selectedPieceId, setSelectedPieceId] = useState(null);
   const [selectedDropType, setSelectedDropType] = useState(null);
+  const [selectedTycoonAction, setSelectedTycoonAction] = useState(null);
+  const [nukeTargeting, setNukeTargeting] = useState(false);
   const [legalMoves, setLegalMoves] = useState([]);
   const [notice, setNotice] = useState("");
   const [isoGizmoAxes, setIsoGizmoAxes] = useState(null);
@@ -227,6 +229,8 @@ export default function App() {
   const activeView = is3DVariant ? view : "XZ";
   const activeLayer = is3DVariant ? layer : 0;
   const hasDevMoveOverride = Boolean(game?.devOverrides?.moveAllPieceSocketIds?.includes(socket.id));
+  const variantHighlights = useMemo(() => buildVariantHighlights(displayGame), [displayGame]);
+  const canUseVariantAction = !reviewMode && !gameIsOver && role !== "spectator" && color !== "spectator" && game?.turn === color;
 
   function playUiSound(type) {
     playSoundEffect(type, { enabled: soundEnabled, volume: soundVolume });
@@ -295,6 +299,8 @@ export default function App() {
     if (!reviewMode) return;
     setSelectedPieceId(null);
     setSelectedDropType(null);
+    setSelectedTycoonAction(null);
+    setNukeTargeting(false);
     setLegalMoves([]);
     setReviewIndex((current) => Math.min(current, maxReviewIndex));
   }, [reviewMode, maxReviewIndex]);
@@ -530,6 +536,8 @@ export default function App() {
     setRole(null);
     setSelectedPieceId(null);
     setSelectedDropType(null);
+    setSelectedTycoonAction(null);
+    setNukeTargeting(false);
     setLegalMoves([]);
     setNotice("");
     setReviewMode(false);
@@ -606,6 +614,8 @@ export default function App() {
       return;
     }
     setSelectedDropType(null);
+    setSelectedTycoonAction(null);
+    setNukeTargeting(false);
     socket.emit("selectPiece", { roomCode, pieceId: piece.id });
   }
 
@@ -632,6 +642,27 @@ export default function App() {
     setSelectedDropType(null);
   }
 
+  function attemptNukeLaunch(to) {
+    if (reviewMode || game?.variant !== "nuke" || !nukeTargeting) return;
+    socket.emit("attemptNukeLaunch", { roomCode, to });
+    setNukeTargeting(false);
+  }
+
+  function attemptTycoonAction(to = null, actionOverride = null) {
+    const action = actionOverride || selectedTycoonAction;
+    if (reviewMode || game?.variant !== "tycoon" || !action) return;
+    socket.emit("attemptTycoonAction", { roomCode, action, to });
+    setSelectedTycoonAction(null);
+  }
+
+  function selectTycoonAction(action) {
+    setSelectedPieceId(null);
+    setLegalMoves([]);
+    setSelectedDropType(null);
+    setNukeTargeting(false);
+    setSelectedTycoonAction((current) => current === action ? null : action);
+  }
+
   function handleSquareClick(coord) {
     unlockAudio();
     if (reviewMode || !game) return;
@@ -640,6 +671,16 @@ export default function App() {
       return;
     }
     const piece = game.pieces.find((candidate) => sameCoord(candidate, coord));
+
+    if (nukeTargeting && !piece) {
+      attemptNukeLaunch(coord);
+      return;
+    }
+
+    if (selectedTycoonAction) {
+      attemptTycoonAction(coord);
+      return;
+    }
 
     if (selectedDropType && !piece) {
       attemptDrop(coord);
@@ -857,20 +898,6 @@ export default function App() {
             <p className="subtle">{UI_TEXT.emptyStates.noPieceSelected}</p>
           )}
 
-          {game.variant === "crazyhouse" && (
-            <ReservePanel
-              reserves={game.reserves}
-              color={color}
-              selectedDropType={selectedDropType}
-              disabled={reviewMode || gameIsOver || role === "spectator" || game.turn !== color}
-              onSelect={(type) => {
-                setSelectedPieceId(null);
-                setLegalMoves([]);
-                setSelectedDropType((current) => current === type ? null : type);
-              }}
-            />
-          )}
-
           <h2>{UI_TEXT.headings.rules}</h2>
           <ul className="rules-list">
             {currentVariantText.rules.map((rule) => <li key={rule}>{rule}</li>)}
@@ -931,6 +958,7 @@ export default function App() {
                 stacked={is3DVariant}
                 title={is3DVariant ? undefined : getVariantLabel(game.variant)}
                 devVisuals={devVisuals}
+                variantHighlights={variantHighlights}
               />
             )}
             {is3DVariant && activeView === "ISO" && <OrientationGizmo view={activeView} layer={activeLayer} isoAxes={isoGizmoAxes} />}
@@ -946,17 +974,36 @@ export default function App() {
               )}
               {(displayGame.moveHistory || []).slice(-24).map((move, index) => (
                 <li key={`${move.pieceId}-${move.time}-${index}`}>
-                  <strong>{move.pieceColor} {move.promotedTo ? "pawn" : move.pieceType}</strong>{" "}
-                  {move.drop ? "drop" : `(${move.from.x},${move.from.y},${move.from.z}) →`} ({move.to.x},{move.to.y},{move.to.z})
-                  {move.captured ? ` × ${move.captured.type}` : ""}
-                  {move.castle ? " castle" : ""}
-                  {move.enPassant ? " en passant" : ""}
-                  {move.promotedTo ? ` = ${move.promotedTo}` : ""}
-                  {Array.isArray(move.atomicRemoved) && move.atomicRemoved.length ? ` explosion ${move.atomicRemoved.length}` : ""}
+                  {formatMoveEntry(move)}
                 </li>
               ))}
             </ol>
           </div>
+
+          <VariantControls
+            game={game}
+            color={color}
+            disabled={!canUseVariantAction}
+            selectedDropType={selectedDropType}
+            selectedTycoonAction={selectedTycoonAction}
+            nukeTargeting={nukeTargeting}
+            onReserveSelect={(type) => {
+              setSelectedPieceId(null);
+              setLegalMoves([]);
+              setSelectedTycoonAction(null);
+              setNukeTargeting(false);
+              setSelectedDropType((current) => current === type ? null : type);
+            }}
+            onNukeTarget={() => {
+              setSelectedPieceId(null);
+              setLegalMoves([]);
+              setSelectedDropType(null);
+              setSelectedTycoonAction(null);
+              setNukeTargeting((value) => !value);
+            }}
+            onTycoonSelect={selectTycoonAction}
+            onTycoonInstant={(action) => attemptTycoonAction(null, action)}
+          />
 
           {is3DVariant && (
             <div className="right-controls">
@@ -1126,6 +1173,131 @@ function DevConsole({ open, input, lines, unlocked, history, historyIndex, onHis
 }
 
 
+function VariantControls({ game, color, disabled, selectedDropType, selectedTycoonAction, nukeTargeting, onReserveSelect, onNukeTarget, onTycoonSelect, onTycoonInstant }) {
+  if (!game || !["crazyhouse", "nuke", "tycoon"].includes(game.variant)) return null;
+  return (
+    <section className="variant-side-panel">
+      {game.variant === "crazyhouse" && (
+        <ReservePanel
+          reserves={game.reserves}
+          color={color}
+          selectedDropType={selectedDropType}
+          disabled={disabled}
+          onSelect={onReserveSelect}
+        />
+      )}
+      {game.variant === "nuke" && (
+        <NukePanel game={game} color={color} disabled={disabled} targeting={nukeTargeting} onTarget={onNukeTarget} />
+      )}
+      {game.variant === "tycoon" && (
+        <TycoonPanel
+          game={game}
+          color={color}
+          disabled={disabled}
+          selectedAction={selectedTycoonAction}
+          onSelect={onTycoonSelect}
+          onInstant={onTycoonInstant}
+        />
+      )}
+    </section>
+  );
+}
+
+function NukePanel({ game, color, disabled, targeting, onTarget }) {
+  const state = game.nuke?.[color] || { charge: 0, active: null };
+  const active = state.active;
+  const charge = Math.min(3, Number(state.charge) || 0);
+  return (
+    <section className="variant-control-card nuke-panel">
+      <h2>Nuke</h2>
+      <div className="nuke-meter" aria-label={`Nuke charge ${charge}`}>
+        {[1, 2, 3].map((level) => <span key={level} className={charge >= level ? "charged" : ""} />)}
+      </div>
+      <p className="subtle">Charge: <strong>{charge}</strong> / 3</p>
+      {active ? (
+        <p className="subtle danger-text">Active radius {active.radius}. About {Math.max(0, Math.ceil((active.targetTurn - (game.turnToken || 0)) / 2))} enemy move(s) left.</p>
+      ) : (
+        <button type="button" className={targeting ? "active" : ""} disabled={disabled || charge <= 0} onClick={onTarget}>
+          {targeting ? "Choose target square" : "Launch Nuke"}
+        </button>
+      )}
+    </section>
+  );
+}
+
+function TycoonPanel({ game, color, disabled, selectedAction, onSelect, onInstant }) {
+  const tycoon = game.tycoon || {};
+  const money = tycoon.money?.[color] || 0;
+  const maxMoney = tycoon.maxMoney?.[color] || 15;
+  const production = tycoon.production?.[color] || 0;
+  const storageLevel = tycoon.storageLevel?.[color] || 0;
+  const productionLevel = tycoon.productionLevel?.[color] || 0;
+  const costs = getTycoonCostsClient(storageLevel, productionLevel);
+  const canBuy = (cost) => !disabled && money >= cost;
+
+  return (
+    <section className="variant-control-card tycoon-panel">
+      <h2>Tycoon</h2>
+      <div className="money-card">
+        <strong>${money}</strong><span>/ ${maxMoney}</span>
+        <small>Production +${production}</small>
+      </div>
+      {tycoon.lastIncome?.[color] > 0 && <p className="income-flash">+${tycoon.lastIncome[color]} silo income</p>}
+
+      <div className="shop-section">
+        <h3>Pieces</h3>
+        <div className="shop-grid">
+          {["pawn", "knight", "bishop", "rook", "queen"].map((type) => (
+            <TycoonActionButton key={type} active={selectedAction === type} disabled={!canBuy(costs.pieces[type])} onClick={() => onSelect(type)} label={type} cost={costs.pieces[type]} />
+          ))}
+        </div>
+      </div>
+
+      <div className="shop-section">
+        <h3>Defence</h3>
+        <div className="shop-grid two">
+          <TycoonActionButton active={selectedAction === "wall"} disabled={!canBuy(costs.wall)} onClick={() => onSelect("wall")} label="Wall" cost={costs.wall} />
+          <TycoonActionButton active={selectedAction === "shield"} disabled={!canBuy(costs.shield)} onClick={() => onSelect("shield")} label="Shield" cost={costs.shield} />
+        </div>
+      </div>
+
+      <div className="shop-section">
+        <h3>Attack</h3>
+        <TycoonActionButton active={selectedAction === "bomb"} disabled={!canBuy(costs.bomb)} onClick={() => onSelect("bomb")} label="Bomb" cost={costs.bomb} wide />
+      </div>
+
+      <div className="shop-section">
+        <h3>Economy</h3>
+        <div className="shop-grid two">
+          <TycoonActionButton disabled={!canBuy(costs.storage)} onClick={() => onInstant("storage")} label={`Storage L${storageLevel + 1}`} cost={costs.storage} />
+          <TycoonActionButton disabled={productionLevel >= 3 || !canBuy(costs.production)} onClick={() => onInstant("production")} label={`Production L${Math.min(3, productionLevel + 1)}`} cost={Number.isFinite(costs.production) ? costs.production : "Max"} />
+        </div>
+      </div>
+      {selectedAction && <p className="subtle action-hint">Click the board to place/use {selectedAction}.</p>}
+    </section>
+  );
+}
+
+function TycoonActionButton({ label, cost, active, disabled, onClick, wide }) {
+  return (
+    <button type="button" className={`${active ? "active" : ""} ${wide ? "wide" : ""}`} disabled={disabled} onClick={onClick}>
+      <span>{label}</span>
+      <strong>{typeof cost === "number" ? `$${cost}` : cost}</strong>
+    </button>
+  );
+}
+
+function getTycoonCostsClient(storageLevel, productionLevel) {
+  return {
+    pieces: { pawn: 3, knight: 7, bishop: 7, rook: 10, queen: 15 },
+    wall: 3,
+    shield: 5,
+    bomb: 5,
+    storage: [5, 8, 12, 16, 22][storageLevel] || 28,
+    production: [8, 14, 22][productionLevel] ?? Infinity
+  };
+}
+
 function ReservePanel({ reserves, color, selectedDropType, disabled, onSelect }) {
   const pieces = (reserves?.[color] || []);
   const counts = pieces.reduce((acc, type) => {
@@ -1213,6 +1385,18 @@ function getVariantGuideSteps(variant) {
       { title: "Destroy the king", body: "If an explosion destroys the enemy king, you win. Checkmate can still win normally.", art: "atomicKing" }
     ];
   }
+  if (variant === "nuke") {
+    return [
+      { title: "Nuke: capture to charge", body: "Every normal capture adds one charge. Charge controls the circular blast radius, up to radius 3.", art: "nukeCharge" },
+      { title: "Launch and survive", body: "Launching uses your turn. The opponent gets three moves before detonation. Rooks block rank/file blast lines.", art: "nukeLaunch" }
+    ];
+  }
+  if (variant === "tycoon") {
+    return [
+      { title: "Tycoon: control the silos", body: "Pieces sitting in the highlighted silo squares generate money at the start of your turn after both players have moved once.", art: "tycoonSilos" },
+      { title: "Buy upgrades", body: "Spend money on pieces, walls, shields, bombs, storage, and production. Variant controls live on the right side.", art: "tycoonShop" }
+    ];
+  }
   return [
     { title: "1. Choose a slice", body: "Pick XZ, XY, or YZ. Each button shows a different 2D board slice through the 3D cube.", art: "planes" },
     { title: "2. Scroll layers", body: "Use the scroll wheel to flick through the stacked layers like sheets of paper.", art: "layers" },
@@ -1240,6 +1424,15 @@ function TutorialArt({ art }) {
   }
   if (art === "normalGoal") {
     return <div className="tutorial-art variant-art normal-goal-art"><span>♔</span><span className="mate-arrow">→</span><span>♚</span><strong>Checkmate wins</strong></div>;
+  }
+  if (art === "nukeCharge" || art === "nukeLaunch") {
+    return <div className="tutorial-art variant-art nuke-art"><span className="nuke-core">☢</span><span className="nuke-ring one" /><span className="nuke-ring two" /><span className="nuke-ring three" /><strong>{art === "nukeCharge" ? "Capture → charge" : "3 enemy moves → boom"}</strong></div>;
+  }
+  if (art === "tycoonSilos") {
+    return <div className="tutorial-art variant-art tycoon-silo-art">{Array.from({ length: 64 }).map((_, i) => <span key={i} className={isTutorialSiloIndex(i) ? "tutorial-silo" : ""}>{isTutorialSiloIndex(i) ? "$" : ""}</span>)}</div>;
+  }
+  if (art === "tycoonShop") {
+    return <div className="tutorial-art variant-art tycoon-shop-art"><div><strong>Pieces</strong><span>♙ ♘ ♖ ♕</span></div><div><strong>Defence</strong><span>▣ ◆</span></div><div><strong>Attack</strong><span>✹</span></div><div><strong>Economy</strong><span>$ +</span></div></div>;
   }
   if (art === "planes") {
     return (
@@ -1318,6 +1511,13 @@ function TutorialArt({ art }) {
   );
 }
 
+function isTutorialSiloIndex(index) {
+  const row = Math.floor(index / 8);
+  const col = index % 8;
+  const z = 7 - row;
+  return (([1, 2].includes(col) && [3, 4].includes(z)) || ([5, 6].includes(col) && [3, 4].includes(z)));
+}
+
 function parseDevLocation(args, startIndex = 0) {
   if (!Array.isArray(args) || args.length <= startIndex) return null;
   const first = String(args[startIndex] || "").trim();
@@ -1334,6 +1534,105 @@ function parseDevLocation(args, startIndex = 0) {
 
 function coordText(coord) {
   return `(${coord.x},${coord.y},${coord.z})`;
+}
+
+function buildVariantHighlights(game) {
+  if (!game) return [];
+  const highlights = [];
+  const add = (pos, className, marker = "", markerClass = "") => {
+    if (!pos || pos.y !== 0) return;
+    highlights.push({ x: pos.x, y: 0, z: pos.z, className, marker, markerClass });
+  };
+
+  if (game.variant === "kingOfTheHill") {
+    for (const pos of hillSquares()) add(pos, "hill-highlight", "", "");
+  }
+
+  if (game.variant === "tycoon") {
+    for (const pos of siloSquares()) add(pos, "silo-highlight", "$", "silo-marker");
+    for (const bomb of game.tycoon?.bombs || []) {
+      const stage = countdownStage(bomb.targetTurn, game.turnToken);
+      for (const pos of squareBlastSquares(bomb.centre, 1)) add(pos, `blast-warning ${stage}`, sameCoord(pos, bomb.centre) ? "✹" : "", "bomb-marker");
+    }
+  }
+
+  if (game.variant === "nuke") {
+    for (const color of ["white", "black"]) {
+      const active = game.nuke?.[color]?.active;
+      if (!active) continue;
+      const stage = countdownStage(active.targetTurn, game.turnToken);
+      for (const pos of circularBlastSquares(active.centre, active.radius, game)) add(pos, `nuke-warning ${stage}`, sameCoord(pos, active.centre) ? "☢" : "", "nuke-marker");
+    }
+  }
+
+  for (const effect of game.effects?.explosions || []) {
+    const squares = effect.type === "nuke" ? circularBlastSquares(effect.centre, effect.radius || 1, game) : squareBlastSquares(effect.centre, effect.radius || 1);
+    for (const pos of squares) add(pos, "explosion-active", "", "");
+  }
+
+  return highlights;
+}
+
+function hillSquares() {
+  return [{ x: 3, y: 0, z: 3 }, { x: 4, y: 0, z: 3 }, { x: 3, y: 0, z: 4 }, { x: 4, y: 0, z: 4 }];
+}
+
+function siloSquares() {
+  return [
+    { x: 1, y: 0, z: 3 }, { x: 1, y: 0, z: 4 }, { x: 2, y: 0, z: 3 }, { x: 2, y: 0, z: 4 },
+    { x: 5, y: 0, z: 3 }, { x: 5, y: 0, z: 4 }, { x: 6, y: 0, z: 3 }, { x: 6, y: 0, z: 4 }
+  ];
+}
+
+function circularBlastSquares(centre, radius, game = null) {
+  const squares = [];
+  if (!centre) return squares;
+  for (let x = 0; x < 8; x += 1) {
+    for (let z = 0; z < 8; z += 1) {
+      const dx = x - centre.x;
+      const dz = z - centre.z;
+      const pos = { x, y: 0, z };
+      if (dx * dx + dz * dz <= radius * radius && !isClientNukeBlockedByRook(game, centre, pos)) squares.push(pos);
+    }
+  }
+  return squares;
+}
+
+function isClientNukeBlockedByRook(game, centre, target) {
+  if (!game) return false;
+  const sameFile = centre.x === target.x && centre.z !== target.z;
+  const sameRank = centre.z === target.z && centre.x !== target.x;
+  if (!sameFile && !sameRank) return false;
+  const stepX = Math.sign(target.x - centre.x);
+  const stepZ = Math.sign(target.z - centre.z);
+  let x = centre.x + stepX;
+  let z = centre.z + stepZ;
+  while (x !== target.x || z !== target.z) {
+    const blocker = (game.pieces || []).find((piece) => piece.x === x && piece.y === 0 && piece.z === z);
+    if (blocker?.type === "rook") return true;
+    x += stepX;
+    z += stepZ;
+  }
+  return false;
+}
+
+function squareBlastSquares(centre, radius) {
+  const squares = [];
+  if (!centre) return squares;
+  for (let dx = -radius; dx <= radius; dx += 1) {
+    for (let dz = -radius; dz <= radius; dz += 1) {
+      const pos = { x: centre.x + dx, y: 0, z: centre.z + dz };
+      if (pos.x >= 0 && pos.x < 8 && pos.z >= 0 && pos.z < 8) squares.push(pos);
+    }
+  }
+  return squares;
+}
+
+function countdownStage(targetTurn, turnToken) {
+  const remaining = Math.max(0, Number(targetTurn || 0) - Number(turnToken || 0));
+  if (remaining > 4) return "yellow";
+  if (remaining > 2) return "orange";
+  return "red";
 }
 
 class ErrorBoundary extends React.Component {
@@ -1391,6 +1690,14 @@ function formatClock(ms) {
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+function formatMoveEntry(move) {
+  if (move.nukeLaunch) return <><strong>{move.pieceColor} nuke</strong> launch radius {move.radius} at ({move.to.x},{move.to.y},{move.to.z})</>;
+  if (move.nukeExplosion) return <><strong>{move.pieceColor} nuke</strong> explosion radius {move.radius} at ({move.to.x},{move.to.y},{move.to.z})</>;
+  if (move.tycoon) return <><strong>{move.pieceColor} tycoon</strong> {move.tycoonAction}{move.to ? ` at (${move.to.x},${move.to.y},${move.to.z})` : ""}</>;
+  if (move.tycoonExplosion) return <><strong>{move.pieceColor} bomb</strong> explosion at ({move.to.x},{move.to.y},{move.to.z})</>;
+  return <><strong>{move.pieceColor} {move.promotedTo ? "pawn" : move.pieceType}</strong> {move.drop ? "drop" : `(${move.from.x},${move.from.y},${move.from.z}) →`} ({move.to.x},{move.to.y},{move.to.z}){move.captured ? ` × ${move.captured.type}${move.shieldBlocked ? " shield" : ""}` : ""}{move.castle ? " castle" : ""}{move.enPassant ? " en passant" : ""}{move.promotedTo ? ` = ${move.promotedTo}` : ""}{Array.isArray(move.atomicRemoved) && move.atomicRemoved.length ? ` explosion ${move.atomicRemoved.length}` : ""}</>;
 }
 
 function GameChat({ chat, draft, onDraftChange, onSend, onForfeit, canForfeit }) {

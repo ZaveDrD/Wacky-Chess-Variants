@@ -61,6 +61,34 @@ function makeReviewGame(sourceGame, pieces, moveHistory, reviewIndex, lastReview
 }
 
 function applyRecordedMove(pieces, move) {
+  if (move.nukeLaunch) return;
+  if (move.nukeExplosion && Array.isArray(move.nukeRemoved)) {
+    for (const removed of move.nukeRemoved) pieces = removePieceByIdInPlace(pieces, removed.id);
+    return;
+  }
+  if (move.tycoonExplosion && Array.isArray(move.tycoonRemoved)) {
+    for (const removed of move.tycoonRemoved) pieces = removePieceByIdInPlace(pieces, removed.id);
+    return;
+  }
+  if (move.tycoon) {
+    if (["pawn", "knight", "bishop", "rook", "queen", "wall"].includes(move.pieceType) && move.to) {
+      pieces.push({
+        id: move.pieceId,
+        type: move.pieceType,
+        color: move.pieceType === "wall" ? "wall" : move.pieceColor,
+        owner: move.pieceColor,
+        x: move.to.x,
+        y: move.to.y,
+        z: move.to.z,
+        hasMoved: true
+      });
+    }
+    if (move.tycoonAction === "shield" && move.pieceId) {
+      const target = pieces.find((candidate) => candidate.id === move.pieceId);
+      if (target) target.shielded = true;
+    }
+    return;
+  }
   if (move.drop) {
     pieces.push({
       id: move.pieceId,
@@ -72,6 +100,12 @@ function applyRecordedMove(pieces, move) {
       hasMoved: true,
       dropped: true
     });
+    return;
+  }
+
+  if (move.shieldBlocked && move.captured?.id) {
+    const target = pieces.find((candidate) => candidate.id === move.captured.id);
+    if (target) target.shielded = false;
     return;
   }
 

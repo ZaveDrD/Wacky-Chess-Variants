@@ -6,7 +6,9 @@ export const VARIANTS = {
   chess960: { id: "chess960", label: "Chess960", boardMode: "2d" },
   crazyhouse: { id: "crazyhouse", label: "Crazyhouse", boardMode: "2d" },
   kingOfTheHill: { id: "kingOfTheHill", label: "King of the Hill", boardMode: "2d" },
-  atomic: { id: "atomic", label: "Atomic Chess", boardMode: "2d" }
+  atomic: { id: "atomic", label: "Atomic Chess", boardMode: "2d" },
+  nuke: { id: "nuke", label: "Nuke", boardMode: "2d" },
+  tycoon: { id: "tycoon", label: "Tycoon", boardMode: "2d" }
 };
 
 export const TIME_CONTROLS = {
@@ -110,6 +112,21 @@ export function createGame(roomCode, options = {}) {
     pieces,
     initialPieces: pieces.map((piece) => ({ ...piece })),
     reserves: variant === "crazyhouse" ? { white: [], black: [] } : null,
+    nuke: variant === "nuke" ? {
+      white: { charge: 0, active: null },
+      black: { charge: 0, active: null }
+    } : null,
+    tycoon: variant === "tycoon" ? {
+      money: { white: 0, black: 0 },
+      maxMoney: { white: 15, black: 15 },
+      production: { white: 0, black: 0 },
+      storageLevel: { white: 0, black: 0 },
+      productionLevel: { white: 0, black: 0 },
+      walls: { white: 0, black: 0 },
+      bombs: [],
+      lastIncome: { white: 0, black: 0 }
+    } : null,
+    effects: { explosions: [], income: [] },
     turnToken: 0,
     moveHistory: [],
     positionHistory: [],

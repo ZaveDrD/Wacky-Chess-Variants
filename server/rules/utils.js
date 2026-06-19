@@ -40,6 +40,24 @@ export function cloneGame(game) {
     pieces: game.pieces.map((piece) => ({ ...piece })),
     initialPieces: Array.isArray(game.initialPieces) ? game.initialPieces.map((piece) => ({ ...piece })) : undefined,
     reserves: game.reserves ? { white: [...(game.reserves.white || [])], black: [...(game.reserves.black || [])] } : null,
+    nuke: game.nuke ? {
+      white: { ...game.nuke.white, active: game.nuke.white?.active ? { ...game.nuke.white.active, centre: { ...game.nuke.white.active.centre } } : null },
+      black: { ...game.nuke.black, active: game.nuke.black?.active ? { ...game.nuke.black.active, centre: { ...game.nuke.black.active.centre } } : null }
+    } : null,
+    tycoon: game.tycoon ? {
+      money: { ...game.tycoon.money },
+      maxMoney: { ...game.tycoon.maxMoney },
+      production: { ...game.tycoon.production },
+      storageLevel: { ...game.tycoon.storageLevel },
+      productionLevel: { ...game.tycoon.productionLevel },
+      walls: { ...game.tycoon.walls },
+      bombs: (game.tycoon.bombs || []).map((bomb) => ({ ...bomb, centre: { ...bomb.centre } })),
+      lastIncome: { ...game.tycoon.lastIncome }
+    } : null,
+    effects: game.effects ? {
+      explosions: (game.effects.explosions || []).map((effect) => ({ ...effect, centre: effect.centre ? { ...effect.centre } : undefined })),
+      income: (game.effects.income || []).map((effect) => ({ ...effect }))
+    } : { explosions: [], income: [] },
     moveHistory: (game.moveHistory || []).map((move) => ({ ...move, from: move.from ? { ...move.from } : null, to: move.to ? { ...move.to } : null, captured: move.captured ? { ...move.captured } : null, atomicRemoved: Array.isArray(move.atomicRemoved) ? move.atomicRemoved.map((piece) => ({ ...piece })) : undefined })),
     positionHistory: Array.isArray(game.positionHistory) ? [...game.positionHistory] : [],
     positionCounts: game.positionCounts ? { ...game.positionCounts } : {},

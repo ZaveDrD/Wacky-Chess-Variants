@@ -99,6 +99,7 @@ function addStepMove(game, piece, moves, to, opts = {}) {
   if (!inBounds(to)) return;
   if (isNormalChess(game) && to.y !== 0) return;
   const target = getPieceAt(game, to);
+  if (target?.type === "wall") return;
   if (target?.color === piece.color) return;
   if (target?.type === "king") return;
   moves.push(makeMoveDescriptor(to, { ...opts, capture: Boolean(target) || opts.capture }));
@@ -113,7 +114,7 @@ function slidingMoves(game, piece, directions) {
       if (isNormalChess(game) && to.y !== 0) break;
       const target = getPieceAt(game, to);
       if (target) {
-        if (target.color !== piece.color && target.type !== "king") {
+        if (target.type !== "wall" && target.color !== piece.color && target.type !== "king") {
           moves.push(makeMoveDescriptor(to, { capture: true }));
         }
         break;
@@ -223,7 +224,7 @@ function pawnMoves(game, piece) {
     if (!inBounds(attack)) continue;
     if (normalChess && attack.y !== 0) continue;
     const target = getPieceAt(game, attack);
-    if (target && target.color !== piece.color && target.type !== "king") {
+    if (target && target.type !== "wall" && target.color !== piece.color && target.type !== "king") {
       moves.push(makeMoveDescriptor(attack, { capture: true }));
     }
   }
@@ -253,6 +254,7 @@ function addEnPassantMoves(game, piece, moves) {
 }
 
 export function getPseudoLegalMoves(game, piece) {
+  if (["wall"].includes(piece?.type)) return [];
   const axisDirs = isNormalChess(game) ? AXIS_DIRS_2D : AXIS_DIRS_3D;
   const diagonalDirs = isNormalChess(game) ? PLANE_DIAGONAL_DIRS_2D : PLANE_DIAGONAL_DIRS_3D;
   const knightDeltas = isNormalChess(game) ? KNIGHT_DELTAS_2D : KNIGHT_DELTAS_3D;

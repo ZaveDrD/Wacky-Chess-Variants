@@ -73,6 +73,26 @@ export const UI_TEXT = {
         "Destroying the enemy king wins.",
         "Checkmate can still win normally."
       ]
+    },
+    nuke: {
+      label: "Nuke",
+      subtitle: "Charge a delayed circular nuke by capturing pieces.",
+      rules: [
+        "Captures charge your nuke up to radius 3.",
+        "Launching a nuke uses your turn and explodes after the opponent gets three moves.",
+        "The blast is circular, and rooks block blast lines along ranks and files.",
+        "If both kings are destroyed, the launcher loses."
+      ]
+    },
+    tycoon: {
+      label: "Tycoon",
+      subtitle: "Earn money from silos and buy pieces, walls, shields, bombs, and economy upgrades.",
+      rules: [
+        "Pieces in silo squares generate money at the start of your turn after both players have moved once.",
+        "Bought pieces must spawn within one square of your king and cannot move immediately.",
+        "Walls block movement and check lines; bombs destroy walls and pieces after a warning countdown.",
+        "Storage and production upgrades scale your economy."
+      ]
     }
   },
   timeControls: {

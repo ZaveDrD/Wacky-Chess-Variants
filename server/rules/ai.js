@@ -1,4 +1,4 @@
-import { getLegalMoves, applyMoveUnchecked, getGameEndState, applyAutomaticDrawRules } from "./check.js";
+import { getLegalMoves, applyMoveUnchecked, getGameEndState, applyAutomaticDrawRules, advanceTurn } from "./check.js";
 import { cloneGame, getPieceAt, getPositionRepeatCount, opponent, pawnZDir, positionSignature, samePos } from "./utils.js";
 
 const PIECE_VALUES = {
@@ -60,10 +60,7 @@ export function runAIMove(game) {
     result.moveRecord.aiDifficulty = getAIDifficultyForTurn(game);
   }
 
-  game.turn = opponent(game.turn);
-  Object.assign(game, getGameEndState(game, game.turn));
-  applyAutomaticDrawRules(game);
-  game.lastTurnStartedAt = game.status === "playing" ? Date.now() : null;
+  advanceTurn(game, moveChoice.piece.color);
 
   return { ok: true, game, moveRecord: result.moveRecord };
 }
