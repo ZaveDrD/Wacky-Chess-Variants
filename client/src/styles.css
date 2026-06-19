@@ -4231,3 +4231,142 @@ select {
   text-align: center;
   padding: 0.45rem;
 }
+
+.predict-panel,
+.scooby-panel {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.predict-status-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.locked-pill,
+.waiting-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.45rem 0.6rem;
+  border-radius: 999px;
+  font-weight: 800;
+  font-size: 0.84rem;
+}
+
+.locked-pill {
+  background: rgba(74, 222, 128, 0.16);
+  border: 1px solid rgba(74, 222, 128, 0.38);
+  color: #dcfce7;
+}
+
+.waiting-pill {
+  background: rgba(148, 163, 184, 0.14);
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  color: #e5e7eb;
+}
+
+.scooby-action-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.scooby-action-grid button {
+  display: grid;
+  gap: 0.2rem;
+  justify-items: center;
+  padding: 0.7rem 0.45rem;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.04);
+  color: inherit;
+}
+
+.scooby-action-grid button.active {
+  border-color: rgba(246, 246, 105, 0.7);
+  box-shadow: 0 0 0 1px rgba(246,246,105,0.35) inset;
+  background: rgba(246,246,105,0.1);
+}
+
+.scooby-action-grid button:disabled {
+  opacity: 0.5;
+}
+
+.trap-icon-preview {
+  display: inline-grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  font-size: 1.1rem;
+  font-weight: 900;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.18);
+}
+
+.trap-icon-preview.white {
+  color: #ffffff;
+}
+
+.trap-icon-preview.black {
+  color: #111827;
+  background: rgba(255,255,255,0.9);
+}
+
+.scooby-trap-marker,
+.scooby-smoke-marker {
+  left: 50%;
+  top: 50%;
+  right: auto;
+  transform: translate(-50%, -50%);
+  font-size: 1rem;
+}
+
+.square.scooby-trap-own::before {
+  background: radial-gradient(circle, rgba(34,197,94,0.2), rgba(34,197,94,0.05));
+  box-shadow: inset 0 0 0 1px rgba(34,197,94,0.35);
+}
+
+.square.scooby-trap-detected::before {
+  background: radial-gradient(circle, rgba(251,191,36,0.2), rgba(251,191,36,0.05));
+  box-shadow: inset 0 0 0 1px rgba(251,191,36,0.38);
+}
+
+.square.scooby-smoke-zone::before {
+  background: rgba(148, 163, 184, 0.26);
+  box-shadow: inset 0 0 0 1px rgba(203,213,225,0.18);
+}
+
+.wall-piece {
+  letter-spacing: -0.08em;
+  transform: scaleX(1.15);
+}
+
+.predict-art {
+  gap: 0.75rem;
+}
+
+.predict-card {
+  padding: 0.8rem 1rem;
+  border-radius: 16px;
+  font-size: 1.25rem;
+  font-weight: 900;
+  background: rgba(255,255,255,0.08);
+}
+
+.predict-card.white { color: #fff; }
+.predict-card.black { color: #111827; background: rgba(255,255,255,0.85); }
+
+.scooby-art {
+  gap: 0.8rem;
+}
+
+.scooby-icons {
+  display: flex;
+  gap: 0.55rem;
+  font-size: 1.3rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}

@@ -54,6 +54,18 @@ export function cloneGame(game) {
       bombs: (game.tycoon.bombs || []).map((bomb) => ({ ...bomb, centre: { ...bomb.centre } })),
       lastIncome: { ...game.tycoon.lastIncome }
     } : null,
+    predict: game.predict ? {
+      round: game.predict.round,
+      pending: {
+        white: game.predict.pending?.white ? { ...game.predict.pending.white, to: game.predict.pending.white.to ? { ...game.predict.pending.white.to } : null } : null,
+        black: game.predict.pending?.black ? { ...game.predict.pending.black, to: game.predict.pending.black.to ? { ...game.predict.pending.black.to } : null } : null
+      }
+    } : null,
+    scooby: game.scooby ? {
+      traps: (game.scooby.traps || []).map((trap) => ({ ...trap, pos: trap.pos ? { ...trap.pos } : null })),
+      smokes: (game.scooby.smokes || []).map((smoke) => ({ ...smoke, centre: smoke.centre ? { ...smoke.centre } : null })),
+      trapLimits: { ...(game.scooby.trapLimits || {}) }
+    } : null,
     effects: game.effects ? {
       explosions: (game.effects.explosions || []).map((effect) => ({ ...effect, centre: effect.centre ? { ...effect.centre } : undefined })),
       income: (game.effects.income || []).map((effect) => ({ ...effect }))

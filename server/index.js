@@ -4,8 +4,9 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { Server } from "socket.io";
 import { addPieceToRoom, appendChatMessage, cancelQuickMatch, cleanupExpiredRooms, createDevMatch, createRoom, createRoomShout, endMatchByDev, findPlayersByName, forfeitGame, getDetailedRoomLines, getLegalMovesForSocket, getOpenMatches, getPlayerCountSnapshot, getRoomSnapshot, hasDeveloperMoveOverride, joinRoom, leaveCurrentRooms, listPiecesInRoom, removePieceFromRoom, removeSocketFromRooms, replacePlayerWithBotInRoom, quickMatch, replacePlayerWithRequesterInRoom, ROOM_CLEANUP_INTERVAL_MS, rooms, runDevUtilityCommand, setPlayerColourInRoom, setSpectatorOverride, setTimerForRoom, setTurnInRoom, spectateRoom, tickAllRoomClocks, tickGameClock } from "./rooms.js";
-import { attemptLegalMove, attemptLegalDrop, attemptLaunchNuke, attemptTycoonAction } from "./rules/check.js";
+import { attemptLegalMove, attemptLegalDrop, attemptLaunchNuke, attemptTycoonAction, attemptScoobyAction } from "./rules/check.js";
 import { chooseAIMove, evaluateAIPosition, isAITurn, runAIMove, scoreAICandidates } from "./rules/ai.js";
+import { cloneGame } from "./rules/utils.js";
 import { createHash, pbkdf2Sync, timingSafeEqual } from "crypto";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -45,11 +46,68 @@ app.get(/.*/, (_req, res) => {
   res.sendFile(path.join(clientDist, "index.html"));
 });
 
+function getViewerColor(game, socketId) {
+  if (game.players?.white?.id === socketId) return "white";
+  if (game.players?.black?.id === socketId) return "black";
+  return null;
+}
+
+function visibleScoobyTraps(game, viewerColor) {
+  const traps = game.scooby?.traps || [];
+  if (!viewerColor) return [];
+  const own = traps.filter((trap) => trap.owner === viewerColor).map((trap) => ({ ...trap }));
+  const pawns = (game.pieces || []).filter((piece) => piece.color === viewerColor && piece.type === "pawn" && piece.y === 0);
+  const detected = [];
+  for (const trap of traps) {
+    if (trap.owner === viewerColor) continue;
+    const detectedByPawn = pawns.some((pawn) => (Math.abs(pawn.x - trap.pos.x) === 1 && pawn.z === trap.pos.z) || (Math.abs(pawn.z - trap.pos.z) === 1 && pawn.x === trap.pos.x));
+    if (!detectedByPawn) continue;
+    detected.push({ ...trap, displayType: trap.type === "decoy" ? trap.apparentType : trap.type, detected: true });
+  }
+  return [...own, ...detected];
+}
+
+function isInsideScoobySmoke(game, pos) {
+  return (game.scooby?.smokes || []).some((smoke) => (Number(game.turnToken) || 0) < (Number(smoke.expiresAtTurn) || 0) && pos.y === 0 && Math.abs(pos.x - smoke.centre.x) <= 2 && Math.abs(pos.z - smoke.centre.z) <= 2);
+}
+
+function sanitiseGameForViewer(game, socketId) {
+  const copy = cloneGame(game);
+  const viewerColor = getViewerColor(game, socketId);
+  if (copy.variant === "predict" && copy.predict) {
+    copy.predict = {
+      round: copy.predict.round || 1,
+      pending: {
+        white: viewerColor === "white" && copy.predict.pending?.white ? { locked: true } : (copy.predict.pending?.white ? { locked: true } : null),
+        black: viewerColor === "black" && copy.predict.pending?.black ? { locked: true } : (copy.predict.pending?.black ? { locked: true } : null)
+      }
+    };
+  }
+  if (copy.variant === "scooby" && copy.scooby) {
+    copy.scooby.traps = visibleScoobyTraps(game, viewerColor);
+    copy.pieces = copy.pieces.filter((piece) => !isInsideScoobySmoke(game, piece));
+  }
+  return copy;
+}
+
+function emitGameStateToSocket(socket, game) {
+  socket.emit("gameState", sanitiseGameForViewer(game, socket.id));
+}
+
+function emitGameStateToRoom(io, game) {
+  if (!game) return;
+  const targets = new Set([game.players?.white?.id, game.players?.black?.id, ...(game.spectators || []).map((spectator) => spectator.id)].filter(Boolean));
+  for (const socketId of targets) {
+    const targetSocket = io.sockets.sockets.get(socketId);
+    if (targetSocket) emitGameStateToSocket(targetSocket, game);
+  }
+}
+
 io.on("connection", (socket) => {
   socket.on("createRoom", ({ name, variant, timeControl, gameMode, aiDifficulty } = {}) => {
     const game = createRoom(socket, name, { variant, timeControl, gameMode, aiDifficulty });
-    socket.emit("roomCreated", { roomCode: game.roomCode, color: "white", role: "player", game });
-    io.to(game.roomCode).emit("gameState", game);
+    socket.emit("roomCreated", { roomCode: game.roomCode, color: "white", role: "player", game: sanitiseGameForViewer(game, socket.id) });
+    emitGameStateToRoom(io, game);
     scheduleAIMoveIfNeeded(game);
   });
 
@@ -60,8 +118,8 @@ io.on("connection", (socket) => {
       return;
     }
 
-    socket.emit("roomJoined", { roomCode: result.game.roomCode, color: result.color, role: result.role, game: result.game });
-    io.to(result.game.roomCode).emit("gameState", result.game);
+    socket.emit("roomJoined", { roomCode: result.game.roomCode, color: result.color, role: result.role, game: sanitiseGameForViewer(result.game, socket.id) });
+    emitGameStateToRoom(io, result.game);
     scheduleAIMoveIfNeeded(result.game);
   });
 
@@ -77,7 +135,7 @@ io.on("connection", (socket) => {
       roomCode: result.roomCode || result.game.roomCode,
       color: result.color,
       role: result.role,
-      game: result.game
+      game: sanitiseGameForViewer(result.game, socket.id)
     });
     socket.emit("matchmakingStatus", {
       searching: result.created && !result.matched,
@@ -85,7 +143,7 @@ io.on("connection", (socket) => {
       roomCode: result.roomCode || result.game.roomCode,
       scope: result.scope
     });
-    io.to(result.game.roomCode).emit("gameState", result.game);
+    emitGameStateToRoom(io, result.game);
     scheduleAIMoveIfNeeded(result.game);
   });
 
@@ -100,7 +158,7 @@ io.on("connection", (socket) => {
       socket.emit("legalMoves", { pieceId, legalMoves: [], reason: result.reason });
       return;
     }
-    if (result.game) io.to(result.game.roomCode).emit("gameState", result.game);
+    if (result.game) emitGameStateToRoom(io, result.game);
     socket.emit("legalMoves", { pieceId, legalMoves: result.legalMoves });
   });
 
@@ -121,7 +179,7 @@ io.on("connection", (socket) => {
       return;
     }
 
-    io.to(game.roomCode).emit("gameState", game);
+    emitGameStateToRoom(io, game);
     scheduleAIMoveIfNeeded(game);
   });
 
@@ -141,7 +199,7 @@ io.on("connection", (socket) => {
       return;
     }
 
-    io.to(game.roomCode).emit("gameState", game);
+    emitGameStateToRoom(io, game);
     scheduleAIMoveIfNeeded(game);
   });
 
@@ -163,7 +221,7 @@ io.on("connection", (socket) => {
       return;
     }
 
-    io.to(game.roomCode).emit("gameState", game);
+    emitGameStateToRoom(io, game);
     scheduleAIMoveIfNeeded(game);
   });
 
@@ -183,7 +241,27 @@ io.on("connection", (socket) => {
       return;
     }
 
-    io.to(game.roomCode).emit("gameState", game);
+    emitGameStateToRoom(io, game);
+    scheduleAIMoveIfNeeded(game);
+  });
+
+  socket.on("attemptScoobyAction", ({ roomCode, action, to } = {}) => {
+    const game = rooms.get(String(roomCode ?? "").trim().toUpperCase());
+    if (!game) {
+      socket.emit("invalidMove", "Room not found.");
+      return;
+    }
+
+    tickGameClock(game);
+    const result = attemptScoobyAction(game, socket.id, action, to, {
+      devOverride: hasDeveloperMoveOverride(socket.id, game.roomCode)
+    });
+    if (!result.ok) {
+      socket.emit("invalidMove", result.reason);
+      return;
+    }
+
+    emitGameStateToRoom(io, game);
     scheduleAIMoveIfNeeded(game);
   });
 
@@ -194,7 +272,7 @@ io.on("connection", (socket) => {
       socket.emit("invalidMove", result.reason);
       return;
     }
-    io.to(result.game.roomCode).emit("gameState", result.game);
+    emitGameStateToRoom(io, result.game);
   });
 
   socket.on("sendChatMessage", ({ roomCode, body } = {}) => {
@@ -203,19 +281,19 @@ io.on("connection", (socket) => {
       socket.emit("chatError", result.reason);
       return;
     }
-    io.to(result.game.roomCode).emit("gameState", result.game);
+    emitGameStateToRoom(io, result.game);
   });
 
 
   socket.on("devCommand", (payload = {}) => {
     const result = handleDevCommand(socket, payload);
     if (result?.gameStateRoom) {
-      io.to(result.gameStateRoom).emit("gameState", rooms.get(result.gameStateRoom));
+      emitGameStateToRoom(io, rooms.get(result.gameStateRoom));
     }
     if (Array.isArray(result?.affectedRooms)) {
       for (const roomCode of result.affectedRooms) {
         const game = rooms.get(roomCode);
-        if (game) io.to(roomCode).emit("gameState", game);
+        if (game) emitGameStateToRoom(io, game);
       }
     }
     socket.emit("devCommandResult", result?.response || { ok: false, lines: ["Command failed."] });
@@ -227,7 +305,7 @@ io.on("connection", (socket) => {
     if (result?.scheduleRoomCode) {
       const game = rooms.get(result.scheduleRoomCode);
       if (game) {
-        io.to(game.roomCode).emit("gameState", game);
+        emitGameStateToRoom(io, game);
         scheduleAIMoveIfNeeded(game);
       }
     }
@@ -237,7 +315,7 @@ io.on("connection", (socket) => {
     devAuthenticatedSockets.delete(socket.id);
     const affectedGames = removeSocketFromRooms(socket.id);
     for (const game of affectedGames) {
-      io.to(game.roomCode).emit("gameState", game);
+      emitGameStateToRoom(io, game);
     }
   });
 });
@@ -306,7 +384,7 @@ function handleDevCommand(socket, payload = {}) {
     return {
       response: { ok: true, lines: [`Spectating ${result.game.roomCode}.`] },
       roomEvent: "roomJoined",
-      roomPayload: { roomCode: result.game.roomCode, color: result.color, role: result.role, game: result.game },
+      roomPayload: { roomCode: result.game.roomCode, color: result.color, role: result.role, game: sanitiseGameForViewer(result.game, socket.id) },
       gameStateRoom: result.game.roomCode,
       affectedRooms: affected.map((game) => game.roomCode),
       scheduleRoomCode: result.game.roomCode
@@ -322,7 +400,7 @@ function handleDevCommand(socket, payload = {}) {
     return {
       response: { ok: true, lines: [`Joined ${result.game.roomCode} as ${result.role === "spectator" ? "spectator" : result.color}.`] },
       roomEvent: "roomJoined",
-      roomPayload: { roomCode: result.game.roomCode, color: result.color, role: result.role, game: result.game },
+      roomPayload: { roomCode: result.game.roomCode, color: result.color, role: result.role, game: sanitiseGameForViewer(result.game, socket.id) },
       gameStateRoom: result.game.roomCode,
       affectedRooms: affected.map((game) => game.roomCode),
       scheduleRoomCode: result.game.roomCode
@@ -344,7 +422,7 @@ function handleDevCommand(socket, payload = {}) {
     return {
       response: { ok: true, lines: [`Started ${result.game.variantName} in room ${result.game.roomCode} with ${botCount} bot${botCount === 1 ? "" : "s"}.`] },
       roomEvent: result.role === "spectator" ? "roomJoined" : "roomCreated",
-      roomPayload: { roomCode: result.game.roomCode, color: result.color, role: result.role, game: result.game },
+      roomPayload: { roomCode: result.game.roomCode, color: result.color, role: result.role, game: sanitiseGameForViewer(result.game, socket.id) },
       affectedRooms: affected.map((game) => game.roomCode),
       scheduleRoomCode: result.game.roomCode
     };
@@ -405,7 +483,7 @@ function handleDevCommand(socket, payload = {}) {
     return {
       response: { ok: true, lines: result.lines || ["Player replaced."] },
       roomEvent: "roomJoined",
-      roomPayload: { roomCode: result.game.roomCode, color: result.color, role: "player", game: result.game },
+      roomPayload: { roomCode: result.game.roomCode, color: result.color, role: "player", game: sanitiseGameForViewer(result.game, socket.id) },
       gameStateRoom: currentRoomCode,
       scheduleRoomCode: currentRoomCode
     };
@@ -657,7 +735,7 @@ function scheduleAIMoveIfNeeded(game) {
 
     tickGameClock(currentGame);
     if (!isAITurn(currentGame)) {
-      io.to(currentGame.roomCode).emit("gameState", currentGame);
+      emitGameStateToRoom(io, currentGame);
       return;
     }
 
@@ -666,7 +744,7 @@ function scheduleAIMoveIfNeeded(game) {
       currentGame.message = result.reason || "AI could not move.";
     }
 
-    io.to(currentGame.roomCode).emit("gameState", currentGame);
+    emitGameStateToRoom(io, currentGame);
     scheduleAIMoveIfNeeded(currentGame);
   }, delayMs);
 
@@ -689,7 +767,7 @@ server.listen(PORT, "0.0.0.0", () => {
 setInterval(() => {
   const affectedGames = tickAllRoomClocks();
   for (const game of affectedGames) {
-    io.to(game.roomCode).emit("gameState", game);
+    emitGameStateToRoom(io, game);
     scheduleAIMoveIfNeeded(game);
   }
 }, 1000);

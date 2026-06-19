@@ -56,6 +56,7 @@ export function isKingInCheck(game, color) {
 export function getLegalMoves(game, piece) {
   if (!piece || piece.type === "wall") return [];
   if (piece.purchasedTurnToken != null && piece.purchasedTurnToken === game.turnToken) return [];
+  if (isPieceFrozenBySmoke(game, piece)) return [];
 
   const pseudoMoves = getPseudoLegalMoves(game, piece);
   const withCastling = piece.type === "king" ? [...pseudoMoves, ...getCastleMoves(game, piece)] : pseudoMoves;
@@ -367,6 +368,11 @@ export function applyMoveUnchecked(game, pieceId, move, options = {}) {
     time: Date.now()
   };
 
+  if (game.variant === "scooby") {
+    const scoobyResult = triggerScoobyTrapIfNeeded(game, piece, to);
+    if (scoobyResult) moveRecord.scoobyTrap = scoobyResult;
+  }
+
   game.lastMove = moveRecord;
   game.moveHistory.push(moveRecord);
   if (atomicRemoved.length) addExplosionEffect(game, to, 1, "atomic");
@@ -586,6 +592,7 @@ function resolveStartOfTurnEffects(game, color) {
   game.effects.income = [];
   resolvePendingNukes(game);
   resolveTycoonBombs(game);
+  resolveScoobyStartOfTurn(game, color);
   awardTycoonIncome(game, color);
 }
 
@@ -798,6 +805,209 @@ function removePiecesByIds(game, ids, removed) {
   });
 }
 
+
+function ensurePredictState(game) {
+  if (!game.predict) game.predict = { round: 1, pending: { white: null, black: null } };
+  if (!game.predict.pending) game.predict.pending = { white: null, black: null };
+}
+
+function resolvePredictRound(game) {
+  ensurePredictState(game);
+  const pendingWhite = game.predict.pending.white;
+  const pendingBlack = game.predict.pending.black;
+  if (!pendingWhite || !pendingBlack) return;
+
+  const applyPending = (entry) => {
+    const piece = getPieceById(game, entry.pieceId);
+    if (!piece || piece.color !== entry.color) return false;
+    const move = getLegalMoves(game, piece).find((candidate) => candidate.x === entry.to.x && candidate.y === entry.to.y && candidate.z === entry.to.z);
+    if (!move) return false;
+    const result = applyMoveUnchecked(game, entry.pieceId, move, { promotion: entry.promotion || "queen" });
+    return Boolean(result?.ok);
+  };
+
+  applyPending(pendingWhite);
+  if (game.status !== "finished") {
+    const afterWhite = getGameEndState(game, "black");
+    if (afterWhite.checkmate && afterWhite.winner === "white") {
+      Object.assign(game, afterWhite);
+    }
+  }
+
+  if (game.status !== "finished") {
+    applyPending(pendingBlack);
+  }
+
+  game.predict.pending.white = null;
+  game.predict.pending.black = null;
+  game.predict.round = (Number(game.predict.round) || 1) + 1;
+  game.turn = "white";
+  game.turnToken = (Number(game.turnToken) || 0) + 1;
+  resolveStartOfTurnEffects(game, "white");
+  if (game.status !== "finished") {
+    Object.assign(game, getGameEndState(game, "white"));
+    applyAutomaticDrawRules(game);
+  }
+  game.message = game.status === "playing" ? `Predict round ${game.predict.round}: white to lock a move.` : game.message;
+  game.lastTurnStartedAt = game.status === "playing" ? Date.now() : null;
+}
+
+function ensureScoobyState(game) {
+  if (!game.scooby) game.scooby = { traps: [], smokes: [], trapLimits: { mine: 1, pitfall: 2, smoke: 1, decoy: 2, mindControl: 1 } };
+  if (!Array.isArray(game.scooby.traps)) game.scooby.traps = [];
+  if (!Array.isArray(game.scooby.smokes)) game.scooby.smokes = [];
+  if (!game.scooby.trapLimits) game.scooby.trapLimits = { mine: 1, pitfall: 2, smoke: 1, decoy: 2, mindControl: 1 };
+}
+
+function trapKey(pos) {
+  return `${pos.x},${pos.y},${pos.z}`;
+}
+
+function isBackTwoRanks(pos) {
+  return [0, 1, 6, 7].includes(pos?.z);
+}
+
+function activeTrapCount(game, color, type) {
+  ensureScoobyState(game);
+  return game.scooby.traps.filter((trap) => trap.owner === color && trap.type === type).length;
+}
+
+function createDecoyAppearance(pos) {
+  const types = ["mine", "pitfall", "smoke", "mindControl"];
+  const index = Math.abs((Number(pos.x) || 0) * 17 + (Number(pos.z) || 0) * 13) % types.length;
+  return types[index];
+}
+
+function scoobyMineSquares(pos) {
+  return [
+    pos,
+    { x: pos.x + 1, y: 0, z: pos.z },
+    { x: pos.x - 1, y: 0, z: pos.z },
+    { x: pos.x, y: 0, z: pos.z + 1 },
+    { x: pos.x, y: 0, z: pos.z - 1 }
+  ].filter(inBounds);
+}
+
+function isPieceFrozenBySmoke(game, piece) {
+  if (game?.variant !== "scooby" || !piece || piece.y !== 0 || !game.scooby?.smokes?.length) return false;
+  return game.scooby.smokes.some((smoke) => (Number(game.turnToken) || 0) < (Number(smoke.expiresAtTurn) || 0) && Math.abs(piece.x - smoke.centre.x) <= 2 && Math.abs(piece.z - smoke.centre.z) <= 2);
+}
+
+function resolveScoobyStartOfTurn(game, color) {
+  if (game.variant !== "scooby") return;
+  ensureScoobyState(game);
+  game.scooby.smokes = (game.scooby.smokes || []).filter((smoke) => (Number(game.turnToken) || 0) < (Number(smoke.expiresAtTurn) || 0));
+  for (const piece of game.pieces || []) {
+    if (piece.controlledUntilTurn != null && (Number(game.turnToken) || 0) >= Number(piece.controlledUntilTurn)) {
+      piece.color = piece.originalColor || piece.color;
+      delete piece.controlledBy;
+      delete piece.controlledUntilTurn;
+      delete piece.originalColor;
+    }
+  }
+}
+
+function removePiecesAtSquares(game, positions) {
+  const keys = new Set(positions.filter(inBounds).map((pos) => trapKey(pos)));
+  const removed = [];
+  game.pieces = game.pieces.filter((piece) => {
+    if (!keys.has(trapKey(piece))) return true;
+    if (piece.shielded) {
+      piece.shielded = false;
+      return true;
+    }
+    removed.push({ id: piece.id, type: piece.type, color: piece.color, x: piece.x, y: piece.y, z: piece.z });
+    return false;
+  });
+  return removed;
+}
+
+function triggerScoobyTrapIfNeeded(game, piece, to) {
+  if (game.variant !== "scooby") return null;
+  ensureScoobyState(game);
+  const index = game.scooby.traps.findIndex((trap) => samePos(trap.pos, to));
+  if (index < 0) return null;
+  const [trap] = game.scooby.traps.splice(index, 1);
+  const result = { type: trap.type, owner: trap.owner, pos: { ...trap.pos } };
+
+  if (trap.type === "mine") {
+    const affected = scoobyMineSquares(to);
+    result.removed = removePiecesAtSquares(game, affected);
+    addExplosionEffect(game, to, 1, "scoobyMine");
+  } else if (trap.type === "pitfall") {
+    result.removed = removePiecesAtSquares(game, [to]);
+  } else if (trap.type === "smoke") {
+    const expiresAtTurn = (Number(game.turnToken) || 0) + 6;
+    game.scooby.smokes.push({ owner: trap.owner, centre: { ...to }, expiresAtTurn });
+    result.expiresAtTurn = expiresAtTurn;
+  } else if (trap.type === "decoy") {
+    result.decoy = true;
+  } else if (trap.type === "mindControl") {
+    if (piece.type !== "king") {
+      piece.originalColor = piece.originalColor || piece.color;
+      piece.color = trap.owner;
+      piece.controlledBy = trap.owner;
+      piece.controlledUntilTurn = (Number(game.turnToken) || 0) + 4;
+      result.controlledUntilTurn = piece.controlledUntilTurn;
+    } else {
+      result.immune = true;
+    }
+  }
+
+  return result;
+}
+
+export function attemptScoobyAction(game, playerId, actionRaw, to = null, options = {}) {
+  if (game.status !== "playing") return { ok: false, reason: "Game is not currently playing." };
+  if (game.variant !== "scooby") return { ok: false, reason: "Scooby actions are only available in Scooby." };
+  const color = game.turn;
+  const devOverride = Boolean(options.devOverride);
+  const player = game.players[color];
+  if ((!player || player.id !== playerId) && !devOverride) return { ok: false, reason: "You do not control this turn." };
+  ensureScoobyState(game);
+  const action = String(actionRaw || "").trim();
+  const recordBase = { scooby: true, scoobyAction: action, pieceColor: color, pieceType: action, from: null, to: to ? { ...to } : null, time: Date.now() };
+
+  if (action === "defuse") {
+    if (!to || !inBounds(to) || to.y !== 0) return { ok: false, reason: "Choose a board square to defuse." };
+    const index = game.scooby.traps.findIndex((trap) => samePos(trap.pos, to));
+    const success = index >= 0;
+    let removedTrap = null;
+    if (success) {
+      [removedTrap] = game.scooby.traps.splice(index, 1);
+    }
+    const record = { ...recordBase, scoobyAction: success ? `defuse ${removedTrap.type}` : "defuse fail", success, trapType: removedTrap?.type || null };
+    game.lastMove = record;
+    game.moveHistory.push(record);
+    game.message = success ? `${color} successfully defused a ${removedTrap.type} trap.` : `${color} failed to defuse a trap.`;
+    advanceTurn(game, color);
+    return { ok: true, game };
+  }
+
+  if (!to || !inBounds(to) || to.y !== 0) return { ok: false, reason: "Choose an empty 2D board square for that trap." };
+  if (isBackTwoRanks(to)) return { ok: false, reason: "Traps cannot be placed on the back two ranks." };
+  if (getPieceAt(game, to)) return { ok: false, reason: "Traps can only be placed on empty squares." };
+  if (game.scooby.traps.some((trap) => samePos(trap.pos, to))) return { ok: false, reason: "There is already a trap on that square." };
+  if (!Object.keys(game.scooby.trapLimits).includes(action)) return { ok: false, reason: "Unknown Scooby trap." };
+  if (activeTrapCount(game, color, action) >= (game.scooby.trapLimits[action] || 0) && !devOverride) return { ok: false, reason: `You are out of ${action} traps.` };
+
+  const trap = {
+    id: `${color}_${action}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+    owner: color,
+    type: action,
+    pos: { x: to.x, y: 0, z: to.z },
+    apparentType: action === "decoy" ? createDecoyAppearance(to) : action,
+    placedAtTurn: Number(game.turnToken) || 0
+  };
+  game.scooby.traps.push(trap);
+  const record = { ...recordBase, scoobyAction: `place ${action}`, trapType: action };
+  game.lastMove = record;
+  game.moveHistory.push(record);
+  game.message = `${color} placed a ${action} trap.`;
+  advanceTurn(game, color);
+  return { ok: true, game };
+}
+
 export function attemptLegalMove(game, playerId, pieceId, to, options = {}) {
   if (game.status !== "playing") return { ok: false, reason: "Game is not currently playing." };
 
@@ -814,6 +1024,20 @@ export function attemptLegalMove(game, playerId, pieceId, to, options = {}) {
   const legalMoves = getLegalMoves(game, piece);
   const chosen = legalMoves.find((move) => move.x === to.x && move.y === to.y && move.z === to.z);
   if (!chosen) return { ok: false, reason: "Illegal move." };
+
+  if (game.variant === "predict") {
+    ensurePredictState(game);
+    game.predict.pending[movingColor] = { pieceId, color: movingColor, to: { x: chosen.x, y: chosen.y, z: chosen.z }, promotion: options.promotion || "queen" };
+    if (movingColor === "white") {
+      game.turn = "black";
+      game.message = "Predict: white locked a move. black is now choosing blindly.";
+      game.lastTurnStartedAt = Date.now();
+    } else {
+      game.message = "Predict: black locked a move. Resolving both moves.";
+      resolvePredictRound(game);
+    }
+    return { ok: true, game };
+  }
 
   const result = applyMoveUnchecked(game, pieceId, chosen, options);
   if (!result.ok) return result;

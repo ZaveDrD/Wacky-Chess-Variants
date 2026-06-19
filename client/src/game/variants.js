@@ -6,7 +6,9 @@ export const VARIANT_OPTIONS = [
   { id: "kingOfTheHill", label: "King of the Hill" },
   { id: "atomic", label: "Atomic Chess" },
   { id: "nuke", label: "Nuke" },
-  { id: "tycoon", label: "Tycoon" }
+  { id: "tycoon", label: "Tycoon" },
+  { id: "predict", label: "Predict" },
+  { id: "scooby", label: "Scooby" }
 ];
 
 export const TIME_CONTROL_OPTIONS = [

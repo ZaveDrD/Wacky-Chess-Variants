@@ -1,4 +1,4 @@
-import { getLegalMoves, applyMoveUnchecked, getGameEndState, applyAutomaticDrawRules, advanceTurn, attemptLegalDrop, attemptLaunchNuke, attemptTycoonAction } from "./check.js";
+import { getLegalMoves, applyMoveUnchecked, getGameEndState, applyAutomaticDrawRules, advanceTurn, attemptLegalDrop, attemptLaunchNuke, attemptTycoonAction, attemptLegalMove, attemptScoobyAction } from "./check.js";
 import { cloneGame, getPieceAt, getPositionRepeatCount, opponent, pawnZDir, positionSignature, samePos } from "./utils.js";
 
 const PIECE_VALUES = {
@@ -84,11 +84,36 @@ export function runAIMove(game) {
     }
   }
 
+
+  if (game.variant === "scooby") {
+    const scoobyChoice = chooseScoobyAction(game, game.turn);
+    if (scoobyChoice) {
+      const result = attemptScoobyAction(game, aiPlayerId, scoobyChoice.action, scoobyChoice.to, {});
+      if (result.ok) {
+        if (game.lastMove) {
+          game.lastMove.ai = true;
+          game.lastMove.aiDifficulty = getAIDifficultyForTurn(game);
+        }
+        return { ok: true, game, moveRecord: game.lastMove };
+      }
+    }
+  }
+
   const moveChoice = chooseAIMove(game);
   if (!moveChoice) {
     Object.assign(game, getGameEndState(game, game.turn));
     game.lastTurnStartedAt = game.status === "playing" ? Date.now() : null;
     return { ok: false, reason: "AI has no legal moves." };
+  }
+
+  if (game.variant === "predict") {
+    const result = attemptLegalMove(game, aiPlayerId, moveChoice.pieceId, moveChoice.move, { promotion: "queen" });
+    if (!result.ok) return result;
+    if (game.lastMove) {
+      game.lastMove.ai = true;
+      game.lastMove.aiDifficulty = getAIDifficultyForTurn(game);
+    }
+    return { ok: true, game, moveRecord: game.lastMove };
   }
 
   const result = applyMoveUnchecked(game, moveChoice.pieceId, moveChoice.move, { promotion: "queen" });
@@ -160,6 +185,50 @@ function scoreDropCandidate(gameAfterDrop, color, pieceType, to) {
 
 function uniqueReserveTypes(reserve) {
   return [...new Set(reserve.filter((type) => ["pawn", "knight", "bishop", "rook", "queen"].includes(type)))];
+}
+
+function chooseScoobyAction(game, color) {
+  const scooby = game.scooby;
+  if (!scooby) return null;
+  if (Math.random() > 0.28) return null;
+
+  const placeable = empty2DSquares(game).filter((to) => ![0,1,6,7].includes(to.z));
+  const enemyPieces = (game.pieces || []).filter((piece) => piece.color !== color && piece.type !== "king" && piece.y === 0);
+
+  for (const enemy of enemyPieces) {
+    const defuseTarget = { x: enemy.x, y: 0, z: enemy.z };
+    if ((scooby.traps || []).some((trap) => trap.pos.x === defuseTarget.x && trap.pos.z === defuseTarget.z)) {
+      return { action: "defuse", to: defuseTarget };
+    }
+  }
+
+  const trapOrder = ["pitfall", "mine", "smoke", "mindControl", "decoy"];
+  for (const trapType of trapOrder) {
+    const limit = scooby.trapLimits?.[trapType] || 0;
+    const activeCount = (scooby.traps || []).filter((trap) => trap.owner === color && trap.type === trapType).length;
+    if (activeCount >= limit) continue;
+    const target = placeable
+      .map((to) => ({ to, score: scoreScoobySquare(game, color, to, trapType) }))
+      .sort((a, b) => b.score - a.score)[0];
+    if (target && target.score > 0) return { action: trapType, to: target.to };
+  }
+
+  return null;
+}
+
+function scoreScoobySquare(game, color, to, trapType) {
+  const enemy = opponent(color);
+  let score = centerScore(to) * 10 + Math.random() * 8;
+  for (const piece of game.pieces || []) {
+    if (piece.color !== enemy || piece.y !== 0) continue;
+    const distance = Math.abs(piece.x - to.x) + Math.abs(piece.z - to.z);
+    if (trapType === "pitfall") score += Math.max(0, 7 - distance) * 18;
+    if (trapType === "mine") score += Math.max(0, 6 - distance) * 14;
+    if (trapType === "smoke") score += Math.max(0, 5 - distance) * 12;
+    if (trapType === "mindControl") score += Math.max(0, 6 - distance) * (piece.type === "queen" ? 28 : 14);
+    if (trapType === "decoy") score += Math.max(0, 6 - distance) * 9;
+  }
+  return score;
 }
 
 function chooseNukeLaunch(game, color) {

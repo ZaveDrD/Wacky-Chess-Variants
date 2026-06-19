@@ -94,6 +94,27 @@ export const UI_TEXT = {
         "Buy as many upgrades as you can afford; moving a piece is what ends your turn.",
         "Storage and production upgrades scale your economy."
       ]
+    },
+    predict: {
+      label: "Predict",
+      subtitle: "Both players lock a move, then the pair resolves with White first.",
+      rules: [
+        "Both players secretly submit one legal move each round.",
+        "When both are locked in, White resolves first and Black resolves second.",
+        "If White checkmates Black, Black's queued move is cancelled.",
+        "If a queued move becomes illegal or its piece is gone, that move fails."
+      ]
+    },
+    scooby: {
+      label: "Scooby",
+      subtitle: "Hidden traps, smoke, and mind games layered onto normal chess.",
+      rules: [
+        "Each turn you may move a piece, place a trap, or try to defuse a trap.",
+        "Traps only go on empty squares and never on the back two ranks.",
+        "Pawns detect traps in a 4-square cross around them.",
+        "Mines, pitfalls, smoke, decoys, and mind-control traps are all friendly-fire enabled.",
+        "Defusing succeeds only if a trap is on the chosen square; otherwise your turn is spent."
+      ]
     }
   },
   timeControls: {

@@ -8,7 +8,9 @@ export const VARIANTS = {
   kingOfTheHill: { id: "kingOfTheHill", label: "King of the Hill", boardMode: "2d" },
   atomic: { id: "atomic", label: "Atomic Chess", boardMode: "2d" },
   nuke: { id: "nuke", label: "Nuke", boardMode: "2d" },
-  tycoon: { id: "tycoon", label: "Tycoon", boardMode: "2d" }
+  tycoon: { id: "tycoon", label: "Tycoon", boardMode: "2d" },
+  predict: { id: "predict", label: "Predict", boardMode: "2d" },
+  scooby: { id: "scooby", label: "Scooby", boardMode: "2d" }
 };
 
 export const TIME_CONTROLS = {
@@ -125,6 +127,15 @@ export function createGame(roomCode, options = {}) {
       walls: { white: 0, black: 0 },
       bombs: [],
       lastIncome: { white: 0, black: 0 }
+    } : null,
+    predict: variant === "predict" ? {
+      round: 1,
+      pending: { white: null, black: null }
+    } : null,
+    scooby: variant === "scooby" ? {
+      traps: [],
+      smokes: [],
+      trapLimits: { mine: 1, pitfall: 2, smoke: 1, decoy: 2, mindControl: 1 }
     } : null,
     effects: { explosions: [], income: [] },
     turnToken: 0,

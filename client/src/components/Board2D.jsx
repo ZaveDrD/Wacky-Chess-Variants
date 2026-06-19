@@ -147,8 +147,8 @@ function LayerCard({
           {variantHighlight?.marker && <span className={`variant-marker ${variantHighlight.markerClass || ""}`}>{variantHighlight.marker}</span>}
           {piece && (
             <span
-              className={`piece ${piece.color} ${piece.type === "wall" ? "wall-piece" : ""} ${piece.shielded ? "shielded-piece" : ""}`}
-              style={{ color: piece.type === "wall" ? "#d6c5a2" : piece.color === "white" ? COLORS.whitePiece : COLORS.blackPiece }}
+              className={`piece ${piece.type === "wall" ? `${piece.owner || "white"} wall-piece` : piece.color} ${piece.shielded ? "shielded-piece" : ""}`}
+              style={{ color: piece.type === "wall" ? (piece.owner === "black" ? COLORS.blackPiece : COLORS.whitePiece) : piece.color === "white" ? COLORS.whitePiece : COLORS.blackPiece }}
             >
               {getPieceSymbol(piece)}
               {piece.shielded && <span className="shield-marker">◆</span>}
@@ -181,7 +181,7 @@ function LayerCard({
 }
 
 function getPieceSymbol(piece) {
-  if (piece.type === "wall") return "▣";
+  if (piece.type === "wall") return piece.owner === "black" ? "♜︎" : "♖︎";
   return PIECE_SYMBOLS[piece.color]?.[piece.type] || "?";
 }
 

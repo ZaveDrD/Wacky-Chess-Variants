@@ -39,6 +39,7 @@ export default function App() {
   const [selectedPieceId, setSelectedPieceId] = useState(null);
   const [selectedDropType, setSelectedDropType] = useState(null);
   const [selectedTycoonAction, setSelectedTycoonAction] = useState(null);
+  const [selectedScoobyAction, setSelectedScoobyAction] = useState(null);
   const [nukeTargeting, setNukeTargeting] = useState(false);
   const [legalMoves, setLegalMoves] = useState([]);
   const [notice, setNotice] = useState("");
@@ -300,6 +301,7 @@ export default function App() {
     setSelectedPieceId(null);
     setSelectedDropType(null);
     setSelectedTycoonAction(null);
+    setSelectedScoobyAction(null);
     setNukeTargeting(false);
     setLegalMoves([]);
     setReviewIndex((current) => Math.min(current, maxReviewIndex));
@@ -537,6 +539,7 @@ export default function App() {
     setSelectedPieceId(null);
     setSelectedDropType(null);
     setSelectedTycoonAction(null);
+    setSelectedScoobyAction(null);
     setNukeTargeting(false);
     setLegalMoves([]);
     setNotice("");
@@ -615,6 +618,7 @@ export default function App() {
     }
     setSelectedDropType(null);
     setSelectedTycoonAction(null);
+    setSelectedScoobyAction(null);
     setNukeTargeting(false);
     socket.emit("selectPiece", { roomCode, pieceId: piece.id });
   }
@@ -655,6 +659,22 @@ export default function App() {
     setSelectedTycoonAction(null);
   }
 
+  function attemptScoobyAction(to = null, actionOverride = null) {
+    const action = actionOverride || selectedScoobyAction;
+    if (reviewMode || game?.variant !== "scooby" || !action) return;
+    socket.emit("attemptScoobyAction", { roomCode, action, to });
+    setSelectedScoobyAction(null);
+  }
+
+  function selectScoobyAction(action) {
+    setSelectedPieceId(null);
+    setLegalMoves([]);
+    setSelectedDropType(null);
+    setSelectedTycoonAction(null);
+    setNukeTargeting(false);
+    setSelectedScoobyAction((current) => current === action ? null : action);
+  }
+
   function selectTycoonAction(action) {
     setSelectedPieceId(null);
     setLegalMoves([]);
@@ -679,6 +699,11 @@ export default function App() {
 
     if (selectedTycoonAction) {
       attemptTycoonAction(coord);
+      return;
+    }
+
+    if (selectedScoobyAction) {
+      attemptScoobyAction(coord);
       return;
     }
 
@@ -986,11 +1011,13 @@ export default function App() {
             disabled={!canUseVariantAction}
             selectedDropType={selectedDropType}
             selectedTycoonAction={selectedTycoonAction}
+            selectedScoobyAction={selectedScoobyAction}
             nukeTargeting={nukeTargeting}
             onReserveSelect={(type) => {
               setSelectedPieceId(null);
               setLegalMoves([]);
               setSelectedTycoonAction(null);
+              setSelectedScoobyAction(null);
               setNukeTargeting(false);
               setSelectedDropType((current) => current === type ? null : type);
             }}
@@ -999,10 +1026,13 @@ export default function App() {
               setLegalMoves([]);
               setSelectedDropType(null);
               setSelectedTycoonAction(null);
+              setSelectedScoobyAction(null);
               setNukeTargeting((value) => !value);
             }}
             onTycoonSelect={selectTycoonAction}
             onTycoonInstant={(action) => attemptTycoonAction(null, action)}
+            onScoobySelect={selectScoobyAction}
+            onScoobyInstant={(action) => attemptScoobyAction(null, action)}
           />
 
           {is3DVariant && (
@@ -1299,6 +1329,70 @@ function getTycoonCostsClient(storageLevel, productionLevel) {
   };
 }
 
+function PredictPanel({ game, color }) {
+  const round = game.predict?.round || 1;
+  const whiteLocked = Boolean(game.predict?.pending?.white);
+  const blackLocked = Boolean(game.predict?.pending?.black);
+  return (
+    <section className="variant-control-card predict-panel">
+      <h2>Predict</h2>
+      <p className="subtle">Round {round}. White locks first, black locks second, then both moves resolve.</p>
+      <div className="predict-status-grid">
+        <span className={whiteLocked ? "locked-pill" : "waiting-pill"}>White {whiteLocked ? "Locked" : "Waiting"}</span>
+        <span className={blackLocked ? "locked-pill" : "waiting-pill"}>Black {blackLocked ? "Locked" : "Waiting"}</span>
+      </div>
+      <p className="subtle">{game.turn === color ? "Your turn to lock a move." : `${game.turn} is choosing.`}</p>
+    </section>
+  );
+}
+
+function ScoobyPanel({ game, color, disabled, selectedAction, onSelect }) {
+  const scooby = game.scooby || {};
+  const limits = scooby.trapLimits || { mine: 1, pitfall: 2, smoke: 1, decoy: 2, mindControl: 1 };
+  const ownedCounts = Object.fromEntries(Object.keys(limits).map((type) => [type, (scooby.traps || []).filter((trap) => trap.owner === color && trap.type === type).length]));
+  const actions = [
+    { id: "mine", icon: "✹", label: "Mine" },
+    { id: "pitfall", icon: "◌", label: "Pitfall" },
+    { id: "smoke", icon: "☁", label: "Smoke" },
+    { id: "decoy", icon: "◇", label: "Decoy" },
+    { id: "mindControl", icon: "◈", label: "Mind Control" }
+  ];
+  return (
+    <section className="variant-control-card scooby-panel">
+      <h2>Scooby</h2>
+      <p className="subtle">Pick a trap to place, or choose defuse and click any square.</p>
+      <div className="scooby-action-grid">
+        {actions.map((action) => {
+          const left = Math.max(0, (limits[action.id] || 0) - (ownedCounts[action.id] || 0));
+          return (
+            <button
+              key={action.id}
+              type="button"
+              disabled={disabled || left <= 0}
+              className={selectedAction === action.id ? "active" : ""}
+              onClick={() => onSelect(action.id)}
+            >
+              <span className={`trap-icon-preview ${color}`}>{action.icon}</span>
+              <strong>{action.label}</strong>
+              <small>{left} left</small>
+            </button>
+          );
+        })}
+        <button
+          type="button"
+          disabled={disabled}
+          className={selectedAction === "defuse" ? "active" : ""}
+          onClick={() => onSelect("defuse")}
+        >
+          <span className={`trap-icon-preview ${color}`}>✂</span>
+          <strong>Defuse</strong>
+          <small>Click any square</small>
+        </button>
+      </div>
+    </section>
+  );
+}
+
 function ReservePanel({ reserves, color, selectedDropType, disabled, onSelect }) {
   const pieces = (reserves?.[color] || []);
   const counts = pieces.reduce((acc, type) => {
@@ -1398,6 +1492,18 @@ function getVariantGuideSteps(variant) {
       { title: "Buy upgrades", body: "Spend money on pieces, walls, shields, bombs, storage, and production. You can buy multiple things; only moving a piece ends your turn.", art: "tycoonShop" }
     ];
   }
+  if (variant === "predict") {
+    return [
+      { title: "Predict: lock moves in the dark", body: "White chooses and locks a move first. Black then locks a move without seeing White's destination.", art: "predictLock" },
+      { title: "Then resolve the pair", body: "Once both are locked, White's move resolves first and Black's resolves second if it is still legal.", art: "predictResolve" }
+    ];
+  }
+  if (variant === "scooby") {
+    return [
+      { title: "Scooby: traps between the pieces", body: "On your turn you may move normally, place one hidden trap, or try to defuse a suspected trap square.", art: "scoobyTrapSet" },
+      { title: "Pawns sniff out danger", body: "Your pawns detect traps in a 4-square cross around them. Mines, pitfalls, smoke, decoys, and mind control all have different payoffs.", art: "scoobyDetect" }
+    ];
+  }
   return [
     { title: "1. Choose a slice", body: "Pick XZ, XY, or YZ. Each button shows a different 2D board slice through the 3D cube.", art: "planes" },
     { title: "2. Scroll layers", body: "Use the scroll wheel to flick through the stacked layers like sheets of paper.", art: "layers" },
@@ -1433,7 +1539,13 @@ function TutorialArt({ art }) {
     return <div className="tutorial-art variant-art tycoon-silo-art">{Array.from({ length: 64 }).map((_, i) => <span key={i} className={isTutorialSiloIndex(i) ? "tutorial-silo" : ""}>{isTutorialSiloIndex(i) ? "$" : ""}</span>)}</div>;
   }
   if (art === "tycoonShop") {
-    return <div className="tutorial-art variant-art tycoon-shop-art"><div><strong>Pieces</strong><span>♙ ♘ ♖ ♕</span></div><div><strong>Defence</strong><span>▣ ◆</span></div><div><strong>Attack</strong><span>✹</span></div><div><strong>Economy</strong><span>$ +</span></div></div>;
+    return <div className="tutorial-art variant-art tycoon-shop-art"><div><strong>Pieces</strong><span>♙ ♘ ♖ ♕</span></div><div><strong>Defence</strong><span>▥ ⛨</span></div><div><strong>Attack</strong><span>✹</span></div><div><strong>Economy</strong><span>$ +</span></div></div>;
+  }
+  if (art === "predictLock" || art === "predictResolve") {
+    return <div className="tutorial-art variant-art predict-art"><div className="predict-card white">♘ → ?</div><div className="predict-card black">♞ → ?</div><strong>{art === "predictLock" ? "Lock first, reveal later" : "White resolves, then Black"}</strong></div>;
+  }
+  if (art === "scoobyTrapSet" || art === "scoobyDetect") {
+    return <div className="tutorial-art variant-art scooby-art"><div className="scooby-icons"><span>✹</span><span>◌</span><span>☁</span><span>◇</span><span>◈</span></div><strong>{art === "scoobyTrapSet" ? "Move, place, or defuse" : "Pawns detect nearby traps"}</strong></div>;
   }
   if (art === "planes") {
     return (
@@ -1563,6 +1675,22 @@ function buildVariantHighlights(game) {
       if (!active) continue;
       const stage = countdownStage(active.targetTurn, game.turnToken);
       for (const pos of circularBlastSquares(active.centre, active.radius, game)) add(pos, `nuke-warning ${stage}`, sameCoord(pos, active.centre) ? "☢" : "", "nuke-marker");
+    }
+  }
+
+  if (game.variant === "scooby") {
+    const iconMap = { mine: "✹", pitfall: "◌", smoke: "☁", decoy: "◇", mindControl: "◈" };
+    for (const trap of game.scooby?.traps || []) {
+      const type = trap.displayType || trap.type;
+      add(trap.pos, trap.owner === game.turn ? "scooby-trap-own" : "scooby-trap-detected", iconMap[type] || "?", "scooby-trap-marker");
+    }
+    for (const smoke of game.scooby?.smokes || []) {
+      for (let dx = -2; dx <= 2; dx += 1) {
+        for (let dz = -2; dz <= 2; dz += 1) {
+          const pos = { x: smoke.centre.x + dx, y: 0, z: smoke.centre.z + dz };
+          if (pos.x >= 0 && pos.x < 8 && pos.z >= 0 && pos.z < 8) add(pos, "scooby-smoke-zone", dx === 0 && dz === 0 ? "☁" : "", "scooby-smoke-marker");
+        }
+      }
     }
   }
 
@@ -1698,7 +1826,8 @@ function formatMoveEntry(move) {
   if (move.nukeExplosion) return <><strong>{move.pieceColor} nuke</strong> explosion radius {move.radius} at ({move.to.x},{move.to.y},{move.to.z})</>;
   if (move.tycoon) return <><strong>{move.pieceColor} tycoon</strong> {move.tycoonAction}{move.to ? ` at (${move.to.x},${move.to.y},${move.to.z})` : ""}</>;
   if (move.tycoonExplosion) return <><strong>{move.pieceColor} bomb</strong> explosion at ({move.to.x},{move.to.y},{move.to.z})</>;
-  return <><strong>{move.pieceColor} {move.promotedTo ? "pawn" : move.pieceType}</strong> {move.drop ? "drop" : `(${move.from.x},${move.from.y},${move.from.z}) →`} ({move.to.x},{move.to.y},{move.to.z}){move.captured ? ` × ${move.captured.type}${move.shieldBlocked ? " shield" : ""}` : ""}{move.castle ? " castle" : ""}{move.enPassant ? " en passant" : ""}{move.promotedTo ? ` = ${move.promotedTo}` : ""}{Array.isArray(move.atomicRemoved) && move.atomicRemoved.length ? ` explosion ${move.atomicRemoved.length}` : ""}</>;
+  if (move.scooby) return <><strong>{move.pieceColor} scooby</strong> {move.scoobyAction}{move.to ? ` at (${move.to.x},${move.to.y},${move.to.z})` : ""}</>;
+  return <><strong>{move.pieceColor} {move.promotedTo ? "pawn" : move.pieceType}</strong> {move.drop ? "drop" : `(${move.from.x},${move.from.y},${move.from.z}) →`} ({move.to.x},{move.to.y},{move.to.z}){move.captured ? ` × ${move.captured.type}${move.shieldBlocked ? " shield" : ""}` : ""}{move.castle ? " castle" : ""}{move.enPassant ? " en passant" : ""}{move.promotedTo ? ` = ${move.promotedTo}` : ""}{move.scoobyTrap ? ` | trap: ${move.scoobyTrap.type}` : ""}{Array.isArray(move.atomicRemoved) && move.atomicRemoved.length ? ` explosion ${move.atomicRemoved.length}` : ""}</>;
 }
 
 function GameChat({ chat, draft, onDraftChange, onSend, onForfeit, canForfeit }) {
