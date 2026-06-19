@@ -1203,8 +1203,21 @@ function DevConsole({ open, input, lines, unlocked, history, historyIndex, onHis
 }
 
 
-function VariantControls({ game, color, disabled, selectedDropType, selectedTycoonAction, nukeTargeting, onReserveSelect, onNukeTarget, onTycoonSelect, onTycoonInstant }) {
-  if (!game || !["crazyhouse", "nuke", "tycoon"].includes(game.variant)) return null;
+function VariantControls({
+  game,
+  color,
+  disabled,
+  selectedDropType,
+  selectedTycoonAction,
+  selectedScoobyAction,
+  nukeTargeting,
+  onReserveSelect,
+  onNukeTarget,
+  onTycoonSelect,
+  onTycoonInstant,
+  onScoobySelect
+}) {
+  if (!game || !["crazyhouse", "nuke", "tycoon", "predict", "scooby"].includes(game.variant)) return null;
   return (
     <section className="variant-side-panel">
       {game.variant === "crazyhouse" && (
@@ -1227,6 +1240,16 @@ function VariantControls({ game, color, disabled, selectedDropType, selectedTyco
           selectedAction={selectedTycoonAction}
           onSelect={onTycoonSelect}
           onInstant={onTycoonInstant}
+        />
+      )}
+      {game.variant === "predict" && <PredictPanel game={game} color={color} />}
+      {game.variant === "scooby" && (
+        <ScoobyPanel
+          game={game}
+          color={color}
+          disabled={disabled}
+          selectedAction={selectedScoobyAction}
+          onSelect={onScoobySelect}
         />
       )}
     </section>
@@ -1678,11 +1701,22 @@ function buildVariantHighlights(game) {
     }
   }
 
+  if (game.variant === "predict") {
+    for (const color of ["white", "black"]) {
+      const pending = game.predict?.pending?.[color];
+      if (!pending?.to) continue;
+      const piece = (game.pieces || []).find((candidate) => candidate.id === pending.pieceId);
+      if (piece) add(piece, "predict-from-highlight", "A", "predict-marker");
+      add(pending.to, "predict-to-highlight", "→", "predict-marker");
+    }
+  }
+
   if (game.variant === "scooby") {
     const iconMap = { mine: "✹", pitfall: "◌", smoke: "☁", decoy: "◇", mindControl: "◈" };
     for (const trap of game.scooby?.traps || []) {
       const type = trap.displayType || trap.type;
-      add(trap.pos, trap.owner === game.turn ? "scooby-trap-own" : "scooby-trap-detected", iconMap[type] || "?", "scooby-trap-marker");
+      const isOwnTrap = trap.owner === "white" || trap.owner === "black" ? trap.owner === game.turn : false;
+      add(trap.pos, isOwnTrap ? "scooby-trap-own" : "scooby-trap-detected", iconMap[type] || "?", "scooby-trap-marker");
     }
     for (const smoke of game.scooby?.smokes || []) {
       for (let dx = -2; dx <= 2; dx += 1) {

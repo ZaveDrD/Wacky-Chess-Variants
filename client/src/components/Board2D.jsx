@@ -181,7 +181,7 @@ function LayerCard({
 }
 
 function getPieceSymbol(piece) {
-  if (piece.type === "wall") return piece.owner === "black" ? "♜︎" : "♖︎";
+  if (piece.type === "wall") return "▥";
   return PIECE_SYMBOLS[piece.color]?.[piece.type] || "?";
 }
 

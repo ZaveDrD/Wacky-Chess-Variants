@@ -75,11 +75,22 @@ function sanitiseGameForViewer(game, socketId) {
   const copy = cloneGame(game);
   const viewerColor = getViewerColor(game, socketId);
   if (copy.variant === "predict" && copy.predict) {
+    const visiblePending = (entry, entryColor) => {
+      if (!entry) return null;
+      if (viewerColor === entryColor) {
+        return {
+          locked: true,
+          pieceId: entry.pieceId,
+          to: entry.to ? { ...entry.to } : null
+        };
+      }
+      return { locked: true };
+    };
     copy.predict = {
       round: copy.predict.round || 1,
       pending: {
-        white: viewerColor === "white" && copy.predict.pending?.white ? { locked: true } : (copy.predict.pending?.white ? { locked: true } : null),
-        black: viewerColor === "black" && copy.predict.pending?.black ? { locked: true } : (copy.predict.pending?.black ? { locked: true } : null)
+        white: visiblePending(copy.predict.pending?.white, "white"),
+        black: visiblePending(copy.predict.pending?.black, "black")
       }
     };
   }

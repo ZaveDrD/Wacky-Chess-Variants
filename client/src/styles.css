@@ -4370,3 +4370,192 @@ select {
   flex-wrap: wrap;
   justify-content: center;
 }
+
+
+/* Predict + Scooby bugfix patch */
+.move-panel {
+  max-height: calc(100vh - 7.5rem);
+  overflow-y: auto;
+  min-width: 0;
+}
+
+.variant-side-panel {
+  min-width: 0;
+}
+
+.tycoon-panel {
+  max-height: none;
+}
+
+.tycoon-panel .shop-section {
+  margin-top: 0.45rem;
+}
+
+.tycoon-panel .shop-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.tycoon-panel .shop-grid:not(.two) {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.tycoon-panel .shop-grid button,
+.tycoon-panel .shop-section > button {
+  min-height: 34px;
+  padding: 0.34rem 0.28rem;
+  font-size: 0.72rem;
+}
+
+.tycoon-panel .money-card {
+  padding: 0.5rem;
+}
+
+.variant-control-card {
+  overflow: visible;
+}
+
+.scooby-panel,
+.predict-panel {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.scooby-action-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.scooby-action-grid button {
+  min-width: 0;
+  min-height: 54px;
+  border-radius: 12px;
+  padding: 0.48rem 0.35rem;
+  display: grid;
+  justify-items: center;
+  gap: 0.12rem;
+  font-size: 0.74rem;
+}
+
+.scooby-action-grid button.active,
+.predict-panel .locked-pill {
+  background: #eeeed2;
+  color: #171614;
+  border-color: #eeeed2;
+}
+
+.trap-icon-preview {
+  display: grid;
+  place-items: center;
+  width: 1.7rem;
+  height: 1.7rem;
+  border-radius: 50%;
+  font-family: "Segoe UI Symbol", "Noto Sans Symbols 2", "DejaVu Sans", "Apple Symbols", serif;
+  font-size: 1.05rem;
+  line-height: 1;
+}
+
+.trap-icon-preview.white {
+  color: #fff;
+  text-shadow: 0 2px 5px rgba(0,0,0,0.7);
+}
+
+.trap-icon-preview.black {
+  color: #1f2933;
+  text-shadow: 0 1px 3px rgba(255,255,255,0.35);
+}
+
+.predict-status-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.locked-pill,
+.waiting-pill {
+  border: 1px solid rgba(238,238,210,0.18);
+  border-radius: 999px;
+  padding: 0.38rem 0.48rem;
+  text-align: center;
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.waiting-pill {
+  color: #b8b8b8;
+}
+
+.square.predict-from-highlight::before {
+  background: rgba(96, 165, 250, 0.28);
+  box-shadow: inset 0 0 0 2px rgba(96, 165, 250, 0.65);
+}
+
+.square.predict-to-highlight::before {
+  background: rgba(246, 246, 105, 0.32);
+  box-shadow: inset 0 0 0 2px rgba(246, 246, 105, 0.8), 0 0 15px rgba(246, 246, 105, 0.35);
+}
+
+.predict-marker {
+  left: 50%;
+  top: 50%;
+  right: auto;
+  transform: translate(-50%, -50%);
+  color: #171614;
+  font-size: 0.95rem;
+  text-shadow: 0 1px 8px rgba(255,255,255,0.55);
+}
+
+.scooby-trap-marker,
+.scooby-smoke-marker {
+  left: 50%;
+  top: 50%;
+  right: auto;
+  transform: translate(-50%, -50%);
+  font-size: 1rem;
+}
+
+.square.scooby-trap-own::before {
+  background: radial-gradient(circle, rgba(34,197,94,0.22), rgba(34,197,94,0.06));
+  box-shadow: inset 0 0 0 2px rgba(34,197,94,0.36);
+}
+
+.square.scooby-trap-detected::before {
+  background: radial-gradient(circle, rgba(251,191,36,0.24), rgba(251,191,36,0.06));
+  box-shadow: inset 0 0 0 2px rgba(251,191,36,0.42);
+}
+
+.square.scooby-smoke-zone::before {
+  background: rgba(148, 163, 184, 0.28);
+  box-shadow: inset 0 0 0 1px rgba(203,213,225,0.25);
+}
+
+.wall-piece {
+  font-family: "Segoe UI Symbol", "Noto Sans Symbols 2", "DejaVu Sans", "Apple Symbols", serif !important;
+  transform: scaleX(1.35) scaleY(0.92);
+  letter-spacing: -0.08em;
+  filter: drop-shadow(0 3px 3px rgba(0,0,0,0.35));
+}
+
+@media (max-width: 1100px) {
+  .move-panel {
+    max-height: none;
+    overflow: visible;
+  }
+}
+
+@media (max-height: 820px) and (min-width: 1101px) {
+  .tycoon-panel .shop-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .tycoon-panel .shop-section {
+    gap: 0.24rem;
+    margin-top: 0.3rem;
+  }
+
+  .tycoon-panel .shop-grid button,
+  .tycoon-panel .shop-section > button {
+    min-height: 30px;
+    padding: 0.28rem 0.22rem;
+  }
+}
