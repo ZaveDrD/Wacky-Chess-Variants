@@ -506,6 +506,19 @@ function emitBadgeCatalog(socket) {
   socket.emit("badgeCatalog", payload);
 }
 
+function applyAccountParticipantFields(participant, account) {
+  if (!participant || !account) return false;
+  participant.name = account.username;
+  participant.accountId = account.id;
+  participant.accountName = account.username;
+  participant.profile = account.profile || participant.profile || {};
+  participant.ranks = account.ranks || [];
+  participant.badges = account.badges || [];
+  participant.devConsoleAccess = Boolean(account.devConsoleAccess);
+  participant.chatColour = account.chatColour || null;
+  return true;
+}
+
 function refreshAccountParticipantInRooms(socketId, account) {
   if (!socketId || !account) return [];
   const affected = [];
@@ -514,25 +527,35 @@ function refreshAccountParticipantInRooms(socketId, account) {
     for (const color of ["white", "black"]) {
       const player = game.players?.[color];
       if (player?.id === socketId) {
-        player.name = account.username;
-        player.accountId = account.id;
-        player.accountName = account.username;
-        player.profile = account.profile || player.profile || {};
-        changed = true;
+        changed = applyAccountParticipantFields(player, account) || changed;
       }
     }
     for (const spectator of game.spectators || []) {
       if (spectator.id === socketId) {
-        spectator.name = account.username;
-        spectator.accountId = account.id;
-        spectator.accountName = account.username;
-        spectator.profile = account.profile || spectator.profile || {};
-        changed = true;
+        changed = applyAccountParticipantFields(spectator, account) || changed;
       }
     }
     if (changed) affected.push(game);
   }
   return affected;
+}
+
+function pushAccountAdminUpdate(accountId) {
+  const rawAccount = findAccountById(accountId);
+  if (!rawAccount) return [];
+  const account = publicAccount(rawAccount);
+  const affectedRoomCodes = new Set();
+
+  for (const targetSocket of socketsForAccount(accountId)) {
+    targetSocket.data.account = rawAccount;
+    targetSocket.emit("accountUpdated", { account });
+    updateConnectedClient(targetSocket.id, account.username, connectedClients.get(targetSocket.id)?.lastRoomCode || null);
+    const affectedGames = refreshAccountParticipantInRooms(targetSocket.id, account);
+    for (const game of affectedGames) affectedRoomCodes.add(game.roomCode);
+  }
+
+  emitSocialStateForAccounts([accountId]);
+  return Array.from(affectedRoomCodes);
 }
 
 function accountPresenceLines(queryRaw = "") {
@@ -1556,7 +1579,13 @@ io.on("connection", (socket) => {
 
 
   socket.on("devCommand", (payload = {}) => {
-    const result = handleDevCommand(socket, payload);
+    let result;
+    try {
+      result = handleDevCommand(socket, payload);
+    } catch (error) {
+      console.error(`[devCommand] ${error?.stack || error?.message || error}`);
+      result = { response: { ok: false, lines: [`Command error: ${error?.message || "unknown error"}`] } };
+    }
     if (result?.gameStateRoom) {
       emitGameStateToRoom(io, rooms.get(result.gameStateRoom));
     }
