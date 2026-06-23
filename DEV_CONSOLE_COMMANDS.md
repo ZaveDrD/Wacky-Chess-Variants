@@ -510,3 +510,50 @@ Home screen has a leaderboard tab. Only registered accounts appear. Monthly lead
 - Moved Leaderboards out of the main Online/Vs AI/Private mode tab group.
 - Leaderboards now appears as a separate side button beside the play-mode tabs.
 - Added `UI_TEXT.lobby.privateModeLabel` so the private-mode tab text remains editable in `client/src/game/text.js`.
+
+## Social/account/moderation commands
+
+These are now included in `help`, `help 1`, and individual category help:
+
+```text
+help account
+help report
+help punish
+help friend
+help leaderboard
+help profile
+```
+
+Useful examples:
+
+```text
+account info [username|email|id]
+account list [limit]
+account online [username|email|id]
+account create [email] [username] [password]
+account remove [username|email|id]
+account icon [username|email|id] [icon-file]
+account store
+
+report list [date|strength|name]
+report view [caseId]
+report approve [caseId] [mute|ban] [duration|-1] [reason]
+report deny [caseId]
+report appeal list
+report appeal view [appealId]
+report appeal approve [appealId]
+report appeal deny [appealId]
+
+punish list
+punish all
+punish mute [target] [duration|-1] [reason]
+punish ban [target] [duration|-1] [reason]
+punish remove [punishmentId]
+
+friend list
+friend send [username]
+friend accept [requestId|username]
+
+leaderboard show [variant] [month|allTime]
+profile [username|email|id]
+```

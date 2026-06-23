@@ -49,6 +49,7 @@ export default function App() {
   const [challengeNotice, setChallengeNotice] = useState(null);
   const [leaderboard, setLeaderboard] = useState(null);
   const [leaderboardScope, setLeaderboardScope] = useState("month");
+  const [leaderboardOpen, setLeaderboardOpen] = useState(false);
   const [publicProfile, setPublicProfile] = useState(null);
   const [reportCase, setReportCase] = useState(null);
   const [profileMenu, setProfileMenu] = useState(null);
@@ -399,9 +400,9 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!leaderboard && homePanel !== "leaderboard") return;
+    if (!leaderboardOpen) return;
     socket.emit("requestLeaderboard", { variant: selectedVariant, scope: leaderboardScope });
-  }, [homePanel, selectedVariant, leaderboardScope]);
+  }, [leaderboardOpen, selectedVariant, leaderboardScope]);
 
   useEffect(() => {
     if (!accountToken) return;
@@ -1759,9 +1760,9 @@ export default function App() {
                   ))}
                 </div>
                 <button
-                  className={`leaderboard-side-button ${homePanel === "leaderboard" ? "active" : ""}`}
+                  className="leaderboard-side-button"
                   type="button"
-                  onClick={() => setHomePanel("leaderboard")}
+                  onClick={() => setLeaderboardOpen(true)}
                 >
                   <span>♕</span>
                   <strong>{UI_TEXT.leaderboard.title}</strong>
@@ -1832,16 +1833,6 @@ export default function App() {
                   </div>
                 )}
 
-                {homePanel === "leaderboard" && (
-                  <LeaderboardPanel
-                    data={leaderboard}
-                    variant={selectedVariant}
-                    scope={leaderboardScope}
-                    onScope={setLeaderboardScope}
-                    onRefresh={() => socket.emit("requestLeaderboard", { variant: selectedVariant, scope: leaderboardScope })}
-                    onProfile={requestPublicProfile}
-                  />
-                )}
               </div>
             </>
           )}
@@ -1878,6 +1869,16 @@ export default function App() {
         <ChallengeNotice challenge={challengeNotice} onAccept={() => respondToChallenge(true)} onDeny={() => respondToChallenge(false)} />
         <PunishmentNoticeModal notice={punishmentNotice} appealText={appealText} onAppealText={setAppealText} onSubmit={submitAppeal} onClose={() => setPunishmentNotice(null)} />
         <PublicProfileModal profile={publicProfile} onClose={() => setPublicProfile(null)} />
+      <LeaderboardModal
+        open={leaderboardOpen}
+        data={leaderboard}
+        variant={selectedVariant}
+        scope={leaderboardScope}
+        onScope={setLeaderboardScope}
+        onRefresh={() => socket.emit("requestLeaderboard", { variant: selectedVariant, scope: leaderboardScope })}
+        onProfile={requestPublicProfile}
+        onClose={() => setLeaderboardOpen(false)}
+      />
       <ReportCaseModal reportCase={reportCase} onClose={() => setReportCase(null)} />
         <ReportCaseModal reportCase={reportCase} onClose={() => setReportCase(null)} />
         <MatchFoundOverlay match={matchFoundOverlay} />
@@ -2190,6 +2191,16 @@ export default function App() {
       <ChallengeNotice challenge={challengeNotice} onAccept={() => respondToChallenge(true)} onDeny={() => respondToChallenge(false)} />
       <PunishmentNoticeModal notice={punishmentNotice} appealText={appealText} onAppealText={setAppealText} onSubmit={submitAppeal} onClose={() => setPunishmentNotice(null)} />
       <PublicProfileModal profile={publicProfile} onClose={() => setPublicProfile(null)} />
+      <LeaderboardModal
+        open={leaderboardOpen}
+        data={leaderboard}
+        variant={selectedVariant}
+        scope={leaderboardScope}
+        onScope={setLeaderboardScope}
+        onRefresh={() => socket.emit("requestLeaderboard", { variant: selectedVariant, scope: leaderboardScope })}
+        onProfile={requestPublicProfile}
+        onClose={() => setLeaderboardOpen(false)}
+      />
       <ReportCaseModal reportCase={reportCase} onClose={() => setReportCase(null)} />
       <MatchFoundOverlay match={matchFoundOverlay} />
       <NetworkDashboardModal
@@ -2696,6 +2707,25 @@ function MatchFoundOverlay({ match }) {
 
 function VersusPlayer({ player }) {
   return <div className="versus-player"><h3>{player?.name || "Player"}</h3><p>{player?.color} · {UI_TEXT.versus.elo} {player?.elo || "guest"} · {UI_TEXT.versus.rank} {player?.rank || "—"}</p></div>;
+}
+
+function LeaderboardModal({ open, data, variant, scope, onScope, onRefresh, onProfile, onClose }) {
+  if (!open) return null;
+  return (
+    <div className="modal-backdrop leaderboard-modal-backdrop">
+      <section className="game-over-modal pop-modal leaderboard-modal" role="dialog" aria-modal="true" aria-label={UI_TEXT.leaderboard.title}>
+        <button className="modal-close" onClick={onClose}>×</button>
+        <LeaderboardPanel
+          data={data}
+          variant={variant}
+          scope={scope}
+          onScope={onScope}
+          onRefresh={onRefresh}
+          onProfile={(query) => { onProfile(query); }}
+        />
+      </section>
+    </div>
+  );
 }
 
 function LeaderboardPanel({ data, variant, scope, onScope, onRefresh, onProfile }) {

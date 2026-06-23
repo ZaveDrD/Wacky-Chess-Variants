@@ -449,11 +449,13 @@ export function getDevCommandListLines(page = null) {
   if (!Number.isInteger(pageNumber)) {
     return [
       "Developer console help is paged.",
+      "New systems: account, report, punish, friend, leaderboard, profile.",
       "Use: help 1, help 2, help 3, ...",
-      "Use: help [category] for category commands, e.g. help chat",
+      "Use: help [category] for category commands, e.g. help report",
+      "Examples: help account, help report, help punish, help friend, help leaderboard, help profile",
       "Use: help [command] for aliases, e.g. help sudo",
       "Pages:",
-      "1 room / player / account / match / chat",
+      "1 room / player / account / report / punish / friend / leaderboard / profile / match / chat",
       "2 board / piece / view / mark / ai / clock",
       "3 network / fx / cosmetic",
       "4 chaos / predict",
@@ -466,8 +468,9 @@ export function getDevCommandListLines(page = null) {
   return [
     `Help page ${pageNumber}:`,
     ...names.map(([name, group]) => `${name.padEnd(12)} ${group.summary}`),
-    "Use help [category] for subcommands."
-  ];
+    "Use help [category] for subcommands.",
+    pageNumber === 1 ? "Social/admin examples: account info [name] | report list strength | punish ban [target] 1h [reason] | friend send [name] | leaderboard show normal month | profile [name]" : ""
+  ].filter(Boolean);
 }
 
 export function getDevCommandHelp(target = "") {

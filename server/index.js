@@ -441,6 +441,301 @@ function accountPresenceLines(queryRaw = "") {
   return { ok: true, lines };
 }
 
+
+
+function getRoomSocketIds(game) {
+  if (!game) return [];
+  return [
+    game.players?.white?.id,
+    game.players?.black?.id,
+    ...(game.spectators || []).map((spectator) => spectator.id)
+  ].filter(Boolean);
+}
+
+function parseCloseRoomArgs(args = [], currentRoomCode = null) {
+  const first = String(args[0] || "").trim().toUpperCase();
+  const firstIsRoom = Boolean(first && rooms.has(first));
+  const roomCode = firstIsRoom ? first : String(currentRoomCode || first || "").trim().toUpperCase();
+  const reason = (firstIsRoom ? args.slice(1) : args).join(" ").trim() || "Closed by developer";
+  return { roomCode, reason };
+}
+
+function participantForPunishment(game, queryRaw = "") {
+  if (!game) return null;
+  const query = String(queryRaw || "").trim().toLowerCase();
+  const candidates = [
+    game.players?.white ? { ...game.players.white, color: "white", role: "player" } : null,
+    game.players?.black ? { ...game.players.black, color: "black", role: "player" } : null,
+    ...(game.spectators || []).map((spectator) => ({ ...spectator, role: "spectator" }))
+  ].filter(Boolean);
+  if (["white", "w"].includes(query)) return candidates.find((item) => item.color === "white") || null;
+  if (["black", "b"].includes(query)) return candidates.find((item) => item.color === "black") || null;
+  return candidates.find((item) => String(item.name || "").toLowerCase() === query || String(item.accountName || "").toLowerCase() === query || String(item.accountId || "").toLowerCase() === query || String(item.id || "").toLowerCase() === query) || null;
+}
+
+function devPunishmentTarget(targetQuery, currentRoomCode = null) {
+  const raw = String(targetQuery || "").trim();
+  if (!raw) return null;
+  const account = findAccount(raw);
+  if (account) return { type: "account", accountId: account.id, accountName: account.username, name: account.username };
+
+  const game = currentRoomCode ? rooms.get(String(currentRoomCode).trim().toUpperCase()) : null;
+  const participant = participantForPunishment(game, raw);
+  if (participant) {
+    const socket = io.sockets.sockets.get(participant.id);
+    return {
+      type: participant.accountId ? "account" : "device",
+      accountId: participant.accountId || null,
+      accountName: participant.accountName || null,
+      deviceId: socket?.data?.deviceId || participant.deviceId || null,
+      socketId: participant.id,
+      name: participant.name || raw
+    };
+  }
+
+  if (/^[a-zA-Z0-9:_-]{8,128}$/.test(raw)) return { type: "device", deviceId: raw, name: raw };
+  return null;
+}
+
+function notifyPunishedClients(punishment) {
+  if (!punishment) return;
+  for (const targetSocket of io.sockets.sockets.values()) {
+    const identity = punishmentIdentityForSocket(targetSocket);
+    const matchesAccount = punishment.accountId && identity.accountId === punishment.accountId;
+    const matchesDevice = punishment.deviceId && identity.deviceId === punishment.deviceId;
+    if (matchesAccount || matchesDevice) sendPunishmentNotice(targetSocket);
+  }
+}
+
+function recordIllegalMoveAttempt(game, socket, reason = "Illegal move") {
+  if (!game) return;
+  if (!Array.isArray(game.illegalMoveAttempts)) game.illegalMoveAttempts = [];
+  const viewerColor = getViewerColor(game, socket?.id);
+  const account = socket?.data?.account || null;
+  game.illegalMoveAttempts.push({
+    id: `illegal-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    time: Date.now(),
+    roomCode: game.roomCode,
+    variant: game.variant,
+    player: account?.username || connectedClients.get(socket?.id)?.name || "Guest",
+    color: viewerColor,
+    socketId: socket?.id || null,
+    accountId: account?.id || null,
+    deviceId: socket?.data?.deviceId || null,
+    reason: String(reason || "Illegal move").slice(0, 240),
+    moveCount: game.moveHistory?.length || 0
+  });
+  game.illegalMoveAttempts = game.illegalMoveAttempts.slice(-120);
+}
+
+function markFirstMoveAndMaybeStartTimer(game) {
+  if (!game || game.status !== "playing") return;
+  if (!game.players?.white || !game.players?.black) return;
+  if (!game.firstMoveMadeBy) game.firstMoveMadeBy = { white: false, black: false };
+  const mover = game.turn === "white" ? "black" : "white";
+  if (mover === "white" || mover === "black") game.firstMoveMadeBy[mover] = true;
+  const bothMoved = Boolean(game.firstMoveMadeBy.white && game.firstMoveMadeBy.black);
+  if (!bothMoved) {
+    game.lastTurnStartedAt = null;
+    game.clockWaitingForBothPlayers = true;
+    return;
+  }
+  if (game.clockWaitingForBothPlayers || !game.clocksStartedAt) {
+    game.clockWaitingForBothPlayers = false;
+    game.clocksStartedAt = Date.now();
+    game.lastTurnStartedAt = Date.now();
+  }
+}
+
+function socketIdentity(socket) {
+  const account = socket?.data?.account || null;
+  const client = connectedClients.get(socket?.id) || {};
+  return {
+    socketId: socket?.id || null,
+    accountId: account?.id || null,
+    accountName: account?.username || null,
+    name: account?.username || client.name || "Guest",
+    deviceId: socket?.data?.deviceId || null,
+    guest: !account
+  };
+}
+
+function socketsForAccount(accountId) {
+  if (!accountId) return [];
+  return Array.from(io.sockets.sockets.values()).filter((targetSocket) => targetSocket.data?.account?.id === accountId);
+}
+
+function activeRoomsForAccount(accountId) {
+  if (!accountId) return [];
+  const memberships = [];
+  for (const game of rooms.values()) {
+    if (game.players?.white?.accountId === accountId) memberships.push({ roomCode: game.roomCode, role: "white", variant: game.variant, variantName: game.variantName, status: game.status });
+    if (game.players?.black?.accountId === accountId) memberships.push({ roomCode: game.roomCode, role: "black", variant: game.variant, variantName: game.variantName, status: game.status });
+    for (const spectator of game.spectators || []) {
+      if (spectator.accountId === accountId) memberships.push({ roomCode: game.roomCode, role: "spectator", variant: game.variant, variantName: game.variantName, status: game.status });
+    }
+  }
+  return memberships;
+}
+
+function enrichSocialStateForAccount(accountId) {
+  const state = getSocialState(accountId);
+  if (!state) return null;
+  const enrichFriend = (friend) => {
+    const sockets = socketsForAccount(friend.accountId);
+    const roomsForFriend = activeRoomsForAccount(friend.accountId);
+    return {
+      ...friend,
+      online: sockets.length > 0,
+      inGame: roomsForFriend.some((room) => room.role === "white" || room.role === "black"),
+      rooms: roomsForFriend,
+      lastSeen: sockets.length ? Date.now() : null
+    };
+  };
+  return {
+    ...state,
+    friends: (state.friends || []).map(enrichFriend),
+    challenges: (state.challenges || []).map((challenge) => {
+      const from = findAccount(challenge.fromAccountId);
+      return { ...challenge, fromUsername: from?.username || "Unknown" };
+    }),
+    outgoingRequests: (state.outgoingRequests || []).map((request) => ({
+      ...request,
+      targetOnline: socketsForAccount(request.toAccountId).length > 0
+    }))
+  };
+}
+
+function emitSocialStateToSocket(socket) {
+  const account = socket?.data?.account || null;
+  if (!socket || !account) return;
+  const payload = enrichSocialStateForAccount(account.id);
+  if (!payload) return;
+  recordOutgoing("socialState", payload, connectedClients.get(socket.id)?.lastRoomCode || "GLOBAL", 1);
+  socket.emit("socialState", payload);
+}
+
+function emitSocialStateForAccounts(accountIds = []) {
+  const ids = new Set((Array.isArray(accountIds) ? accountIds : [accountIds]).filter(Boolean));
+  for (const targetSocket of io.sockets.sockets.values()) {
+    if (ids.has(targetSocket.data?.account?.id)) emitSocialStateToSocket(targetSocket);
+  }
+}
+
+function opponentAccountForSocket(game, socketId) {
+  if (!game || !socketId) return null;
+  const isWhite = game.players?.white?.id === socketId;
+  const isBlack = game.players?.black?.id === socketId;
+  const opponent = isWhite ? game.players?.black : isBlack ? game.players?.white : null;
+  if (!opponent) return null;
+  return {
+    socketId: opponent.id || null,
+    name: opponent.name || "Opponent",
+    accountId: opponent.accountId || null,
+    accountName: opponent.accountName || opponent.name || null,
+    guest: !opponent.accountId
+  };
+}
+
+function handleFriendRequestCommand(socket, targetQuery) {
+  const account = socket?.data?.account;
+  if (!account) { socket.emit("chatError", "Log in first to send friend requests."); return; }
+  const target = String(targetQuery || "").trim();
+  if (!target) { socket.emit("chatError", "No account target found for friend request."); return; }
+  const result = sendFriendRequest(account.id, target);
+  if (!result.ok) { socket.emit("chatError", result.reason); return; }
+  socket.emit("chatError", `Friend request sent to ${result.targetAccount.username}.`);
+  emitSocialStateForAccounts([account.id, result.targetAccount.id]);
+}
+
+function handleFriendAcceptCommand(socket, fromQuery) {
+  const account = socket?.data?.account;
+  if (!account) { socket.emit("chatError", "Log in first to accept friend requests."); return; }
+  const target = String(fromQuery || "").trim();
+  if (!target) { socket.emit("chatError", "Use !accept [username or request id]."); return; }
+  const result = respondFriendRequest(account.id, target, true);
+  if (!result.ok) { socket.emit("chatError", result.reason); return; }
+  socket.emit("chatError", "Friend request accepted.");
+  emitSocialStateForAccounts([result.request.fromAccountId, result.request.toAccountId]);
+}
+
+function notifyChallenge(challenge) {
+  if (!challenge) return;
+  const from = findAccount(challenge.fromAccountId);
+  const payload = { challenge: { ...challenge, fromUsername: from?.username || "Friend" } };
+  for (const targetSocket of socketsForAccount(challenge.toAccountId)) {
+    recordOutgoing("challengeNotice", payload, connectedClients.get(targetSocket.id)?.lastRoomCode || "GLOBAL", 1);
+    targetSocket.emit("challengeNotice", payload);
+  }
+}
+
+function makeMatchFoundPayload(game, viewerSocketId = null) {
+  const entryFor = (color) => {
+    const player = game?.players?.[color] || null;
+    if (!player) return null;
+    const accountId = player.accountId || null;
+    let rank = null;
+    let elo = accountId ? getLeaderboard(game.variant, "month", 1000).entries.find((entry, index) => {
+      if (entry.accountId === accountId) { rank = index + 1; return true; }
+      return false;
+    })?.elo : null;
+    return {
+      color,
+      name: player.name || capitalise(color),
+      accountId,
+      guest: !accountId,
+      elo: elo || (accountId ? 800 : null),
+      rank
+    };
+  };
+  return {
+    roomCode: game?.roomCode || null,
+    variant: game?.variant || null,
+    variantName: game?.variantName || null,
+    viewerColor: getViewerColor(game, viewerSocketId),
+    white: entryFor("white"),
+    black: entryFor("black")
+  };
+}
+
+function startAcceptedChallenge(acceptingSocket, challenge, acceptingName = "Player") {
+  const fromSocket = socketsForAccount(challenge.fromAccountId)[0];
+  const toSocket = acceptingSocket || socketsForAccount(challenge.toAccountId)[0];
+  if (!fromSocket || !toSocket) {
+    if (toSocket) toSocket.emit("socialError", "The challenger is no longer online.");
+    return null;
+  }
+
+  const affected = [...leaveCurrentRooms(fromSocket, fromSocket.id), ...leaveCurrentRooms(toSocket, toSocket.id)];
+  for (const game of affected) emitGameStateToRoom(io, game);
+
+  const fromAccount = fromSocket.data?.account;
+  const toAccount = toSocket.data?.account;
+  const hostName = fromAccount?.username || connectedClients.get(fromSocket.id)?.name || "White";
+  const joinName = toAccount?.username || acceptingName || connectedClients.get(toSocket.id)?.name || "Black";
+  const game = createRoom(fromSocket, hostName, {
+    variant: challenge.variant || "normal",
+    timeControl: challenge.timeControl || "rapid",
+    gameMode: "online",
+    publicMatch: false,
+    account: participantAccount(fromAccount)
+  });
+  const joined = joinRoom(toSocket, game.roomCode, joinName, { account: participantAccount(toAccount) });
+  if (!joined.ok) {
+    toSocket.emit("socialError", joined.reason || "Could not accept challenge.");
+    return null;
+  }
+
+  updateConnectedClient(fromSocket.id, hostName, game.roomCode, "room");
+  updateConnectedClient(toSocket.id, joinName, game.roomCode, "room");
+  fromSocket.emit("roomCreated", { roomCode: game.roomCode, color: "white", role: "player", game: sanitiseGameForViewer(game, fromSocket.id) });
+  toSocket.emit("roomJoined", { roomCode: game.roomCode, color: "black", role: "player", game: sanitiseGameForViewer(game, toSocket.id) });
+  emitGameStateToRoom(io, game);
+  emitSocialStateForAccounts([challenge.fromAccountId, challenge.toAccountId]);
+  scheduleAIMoveIfNeeded(game);
+  return game;
+}
+
 app.get("/health", (_req, res) => {
   res.json({ ok: true, rooms: rooms.size });
 });

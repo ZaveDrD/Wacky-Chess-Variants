@@ -6736,3 +6736,30 @@ select {
     grid-template-columns: auto auto;
   }
 }
+
+/* Leaderboard modal placement fix */
+.leaderboard-modal-backdrop {
+  z-index: 96;
+}
+
+.leaderboard-modal {
+  width: min(760px, 94vw);
+  max-height: min(760px, 90vh);
+  overflow: hidden;
+  padding: 1rem;
+}
+
+.leaderboard-modal .leaderboard-panel {
+  background: transparent;
+  border: 0;
+  padding: 0.35rem 0.1rem 0;
+}
+
+.leaderboard-modal .leaderboard-list {
+  max-height: min(62vh, 520px);
+}
+
+.leaderboard-side-button.active {
+  border-color: rgba(250,204,21,0.55);
+  background: linear-gradient(135deg, rgba(250,204,21,0.18), rgba(132,204,22,0.08));
+}
