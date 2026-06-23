@@ -1589,22 +1589,23 @@ export default function App() {
                     </div>
                   </button>
                 ) : (
-                  <>
-                    <div>
-                      <span className="eyebrow">{UI_TEXT.lobby.guestAccessEyebrow}</span>
-                      <h2>{UI_TEXT.lobby.playAsGuestTitle}</h2>
-                      <p>{UI_TEXT.lobby.guestHelp}</p>
-                    </div>
-                    <label className="lab-name-input">
+                  <div className="guest-home-strip">
+                    <button className="guest-profile-chip" type="button" onClick={() => setAccountModalOpen(true)} title={UI_TEXT.account.signedOutBody}>
+                      <GuestAvatar size="large" />
+                      <span>
+                        <span className="eyebrow">{UI_TEXT.account.guestBadge}</span>
+                        <strong>{UI_TEXT.lobby.playAsGuestTitle}</strong>
+                      </span>
+                    </button>
+                    <label className="lab-name-input guest-name-input">
                       <span>{UI_TEXT.lobby.displayNameLabel}</span>
                       <input value={name} onChange={(event) => setName(event.target.value)} placeholder={UI_TEXT.lobby.displayNamePlaceholder} />
                     </label>
-                    <button className="account-placeholder" type="button" onClick={() => setAccountModalOpen(true)} title={UI_TEXT.account.signedOutBody}>
-                      <span>◎</span>
-                      <strong>{UI_TEXT.account.accountSlot}</strong>
-                      <small>{UI_TEXT.account.guestBadge}</small>
+                    <button className="compact-account-button" type="button" onClick={() => setAccountModalOpen(true)} title={UI_TEXT.account.signedOutBody}>
+                      <strong>{UI_TEXT.account.openAccount}</strong>
+                      <small>{UI_TEXT.account.signedOutBody}</small>
                     </button>
-                  </>
+                  </div>
                 )}
               </div>
 
@@ -2150,6 +2151,10 @@ function ProfileAvatar({ account, size = "normal" }) {
   return <img className={`profile-avatar ${size}`} src={profileIconUrl(icon)} alt="" />;
 }
 
+function GuestAvatar({ size = "normal" }) {
+  return <img className={`profile-avatar guest-avatar ${size}`} src={profileIconUrl("anonymous.svg")} alt="" />;
+}
+
 function profileIconUrl(icon) {
   return `/profile-icons/${encodeURIComponent(icon || "lab-pawn.svg")}`;
 }
@@ -2213,7 +2218,7 @@ function SettingsButton({
           <p>{UI_TEXT.settings.censorHelp}</p>
 
           <div className="settings-account-panel compact-account-panel">
-            {account ? <ProfileAvatar account={account} /> : <span className="settings-account-guest">◎</span>}
+            {account ? <ProfileAvatar account={account} /> : <GuestAvatar />}
             <div>
               <span className="eyebrow">{account ? UI_TEXT.account.accountBadge : UI_TEXT.account.guestBadge}</span>
               <strong>{account ? account.username : UI_TEXT.account.signedOutTitle}</strong>

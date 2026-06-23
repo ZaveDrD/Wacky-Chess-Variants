@@ -6434,3 +6434,130 @@ select {
     max-height: 94dvh;
   }
 }
+
+/* Guest account UI alignment fix */
+.guest-home-strip {
+  display: grid;
+  grid-template-columns: minmax(170px, 0.8fr) minmax(180px, 1.05fr) minmax(150px, 0.75fr);
+  gap: 0.75rem;
+  align-items: center;
+  width: 100%;
+}
+
+.guest-profile-chip,
+.compact-account-button {
+  min-width: 0;
+  border: 1px solid rgba(238,238,210,0.12);
+  border-radius: 18px;
+  background: rgba(255,255,255,0.045);
+  color: #eeeed2;
+  cursor: pointer;
+}
+
+.guest-profile-chip {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.7rem;
+  align-items: center;
+  text-align: left;
+  padding: 0.55rem 0.65rem;
+}
+
+.guest-profile-chip strong,
+.compact-account-button strong {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.guest-name-input {
+  min-width: 0;
+}
+
+.compact-account-button {
+  display: grid;
+  gap: 0.15rem;
+  padding: 0.58rem 0.7rem;
+  text-align: left;
+}
+
+.compact-account-button small {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  color: rgba(238,238,210,0.54);
+  font-size: 0.72rem;
+  line-height: 1.2;
+}
+
+.profile-avatar.guest-avatar {
+  border-style: dashed;
+  border-color: rgba(96,165,250,0.55);
+  box-shadow: 0 0 0 3px rgba(96,165,250,0.08), 0 8px 24px rgba(0,0,0,0.28);
+}
+
+.account-modal-head button {
+  display: grid;
+  place-items: center;
+  padding: 0;
+  line-height: 1;
+  font-size: 1.2rem;
+}
+
+/* Slightly tighter home card to remove the empty lower band. */
+.lab-home-card {
+  width: min(1080px, 95vw);
+  padding: clamp(0.85rem, 1.8vw, 1.25rem);
+}
+
+.lab-user-row {
+  padding: 0.65rem;
+}
+
+.lab-selection-row {
+  margin-top: 0.75rem;
+}
+
+@media (max-width: 900px) {
+  .guest-home-strip {
+    grid-template-columns: minmax(0, 1fr) minmax(170px, 0.9fr);
+  }
+
+  .guest-name-input {
+    grid-column: 1 / -1;
+    order: 3;
+  }
+
+  .compact-account-button {
+    min-height: 62px;
+  }
+}
+
+@media (max-width: 620px) {
+  .guest-home-strip {
+    grid-template-columns: 1fr;
+    gap: 0.55rem;
+  }
+
+  .guest-profile-chip,
+  .compact-account-button {
+    min-height: 0;
+  }
+
+  .compact-account-button small {
+    -webkit-line-clamp: 1;
+  }
+
+  .profile-avatar.large {
+    width: 58px;
+    height: 58px;
+  }
+
+  .lab-home-card {
+    width: min(96vw, 520px);
+    padding: 0.75rem;
+  }
+}
