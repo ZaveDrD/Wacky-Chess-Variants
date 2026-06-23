@@ -17,8 +17,8 @@ const DIFFICULTY_DEPTH = {
 };
 
 const MAX_BRANCHING = {
-  normal: 44,
-  threeD: 32
+  normal: 32,
+  threeD: 10
 };
 
 const DRAW_AVOIDANCE_SCORE = 260000;
@@ -499,19 +499,18 @@ export function chooseAIMove(game) {
   if (legalMoves.length === 0) return null;
 
   const difficulty = getAIDifficultyForTurn(game);
-  const ranked = rankCandidates(game, legalMoves, color);
 
   if (difficulty === "easy") {
-    const safePool = ranked.filter(({ candidate }) => !wouldImmediatelyDraw(game, candidate));
-    const pool = safePool.length > 0 ? safePool : ranked;
-    return weightedRandom(pool.map(({ candidate, score }) => ({ candidate, score })));
+    return legalMoves[Math.floor(Math.random() * legalMoves.length)];
   }
+
+  const ranked = rankCandidates(game, legalMoves, color);
 
   if (difficulty === "medium") {
     return pickStrategicCandidate(game, ranked, color, 5) || ranked[0]?.candidate || legalMoves[0];
   }
 
-  const depth = DIFFICULTY_DEPTH[difficulty] || 1;
+  const depth = getSearchDepth(game, difficulty);
   const strategic = prioritiseCandidates(game, ranked, color);
   const limited = strategic.slice(0, MAX_BRANCHING[game.variant] || MAX_BRANCHING.normal).map((entry) => entry.candidate);
   let best = null;
@@ -531,6 +530,14 @@ export function chooseAIMove(game) {
   }
 
   return best || pickStrategicCandidate(game, ranked, color, 3) || ranked[0]?.candidate || legalMoves[0];
+}
+
+function getSearchDepth(game, difficulty) {
+  if (game?.variant === "threeD") {
+    if (difficulty === "hard") return 1;
+    if (difficulty === "medium") return 0;
+  }
+  return DIFFICULTY_DEPTH[difficulty] || 1;
 }
 
 function minimax(game, depth, aiColor, alpha, beta) {

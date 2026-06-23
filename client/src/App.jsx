@@ -12,6 +12,10 @@ import {
   RULE_LAB_DIFFICULTY_OPTIONS,
   getVariantLabel,
   getTimeControlLabel,
+  getTimeControlOption,
+  describeTimeControl,
+  getVariantReferenceLines,
+  getTimeControlReferenceLines,
   getGameModeLabel,
   getAIDifficultyLabel,
   getRuleLabDifficultyLabel
@@ -23,6 +27,7 @@ import { playSoundEffect, unlockAudio } from "./game/sound.js";
 const VIEWS = ["XZ", "XY", "YZ", "ISO"];
 const REVIEW_PLAY_DELAY_MS = 650;
 const MOBILE_DEV_TOUCH_SEQUENCE = ["topLeft", "topRight", "bottomLeft", "bottomRight", "centre"];
+const SUPPORT_CHECKOUT_URL = import.meta.env.VITE_STRIPE_SUPPORT_URL || import.meta.env.VITE_SUPPORT_CHECKOUT_URL || "";
 
 export default function App() {
   const [name, setName] = useState(localStorage.getItem("playerName") || "");
@@ -30,10 +35,13 @@ export default function App() {
   const [accountToken, setAccountToken] = useState(localStorage.getItem("tclAccountToken") || "");
   const [accountMode, setAccountMode] = useState("login");
   const [accountForm, setAccountForm] = useState({ email: "", username: "", login: "", password: "" });
-  const [accountEditForm, setAccountEditForm] = useState({ username: "", email: "", currentPassword: "", newPassword: "", profileIcon: "lab-pawn.svg" });
+  const [accountEditForm, setAccountEditForm] = useState({ username: "", email: "", currentPassword: "", newPassword: "", profileIcon: "lab-pawn.svg", equippedBadge: "" });
   const [accountMessage, setAccountMessage] = useState("");
   const [accountModalOpen, setAccountModalOpen] = useState(false);
+  const [supportModalOpen, setSupportModalOpen] = useState(false);
+  const [siteSettings, setSiteSettings] = useState({ supportUiEnabled: true });
   const [profileIcons, setProfileIcons] = useState(["lab-pawn.svg"]);
+  const [badgeCatalog, setBadgeCatalog] = useState([]);
   const [deviceId] = useState(() => {
     const existing = localStorage.getItem("tclDeviceId");
     if (existing) return existing;
@@ -121,7 +129,10 @@ export default function App() {
       setNotice(UI_TEXT.notices.connected);
       socket.emit("identifyDevice", { deviceId });
       socket.emit("requestAIAvailability");
+    socket.emit("requestSiteSettings");
+      socket.emit("requestSiteConfig");
       socket.emit("requestProfileIcons");
+      socket.emit("requestBadgeCatalog");
       const storedToken = localStorage.getItem("tclAccountToken") || accountToken;
       if (storedToken) socket.emit("accountSession", { token: storedToken });
     });
@@ -230,9 +241,14 @@ export default function App() {
           username: nextAccount.username || "",
           email: nextAccount.email || "",
           profileIcon: nextAccount.profile?.icon || "lab-pawn.svg",
+          equippedBadge: nextAccount.profile?.equippedBadge || "",
           currentPassword: "",
           newPassword: ""
         }));
+      }
+      if (nextAccount?.devConsoleAccess) {
+        setDevConsoleUnlocked(true);
+        setDevConsoleLines((current) => current.length === 1 && current[0].includes("locked") ? ["> developer console unlocked by rank."] : current);
       }
       if (nextAccount?.username) {
         setName(nextAccount.username);
@@ -251,15 +267,21 @@ export default function App() {
         username: nextAccount.username || "",
         email: nextAccount.email || "",
         profileIcon: nextAccount.profile?.icon || current.profileIcon || "lab-pawn.svg",
+        equippedBadge: nextAccount.profile?.equippedBadge || "",
         currentPassword: "",
         newPassword: ""
       }));
+      if (nextAccount?.devConsoleAccess) setDevConsoleUnlocked(true);
       setAccountMessage(UI_TEXT.account.updated);
       playSoundEffect("ping", { enabled: soundEnabled, volume: soundVolume });
     });
 
     socket.on("profileIcons", ({ icons } = {}) => {
       if (Array.isArray(icons) && icons.length) setProfileIcons(icons);
+    });
+
+    socket.on("badgeCatalog", ({ badges } = {}) => {
+      if (Array.isArray(badges)) setBadgeCatalog(badges);
     });
 
     socket.on("accountError", (message) => {
@@ -294,6 +316,11 @@ export default function App() {
 
     socket.on("aiAvailability", (availability = {}) => {
       setAIAvailability((current) => ({ ...current, ...availability }));
+    });
+
+    socket.on("siteSettings", (settings = {}) => {
+      setSiteSettings((current) => ({ ...current, ...settings }));
+      if (settings.supportUiEnabled === false) setSupportModalOpen(false);
     });
 
     socket.on("networkMetrics", (metrics = {}) => {
@@ -370,12 +397,14 @@ export default function App() {
       socket.off("accountAuthenticated");
       socket.off("accountUpdated");
       socket.off("profileIcons");
+      socket.off("badgeCatalog");
       socket.off("accountError");
       socket.off("accountSessionExpired");
       socket.off("accountLoggedOut");
       socket.off("devKickedHome");
       socket.off("devRoomClosed");
       socket.off("aiAvailability");
+      socket.off("siteSettings");
       socket.off("networkMetrics");
       socket.off("punishmentNotice");
       socket.off("appealSubmitted");
@@ -435,10 +464,10 @@ export default function App() {
   }, [networkDashboard]);
 
   useEffect(() => {
-    if (aiAvailability[selectedAIDifficulty] !== false) return;
-    const fallback = AI_DIFFICULTY_OPTIONS.find((difficulty) => aiAvailability[difficulty.id] !== false)?.id || "easy";
+    if (isAIDifficultyAvailable(aiAvailability, selectedAIDifficulty, selectedVariant)) return;
+    const fallback = AI_DIFFICULTY_OPTIONS.find((difficulty) => isAIDifficultyAvailable(aiAvailability, difficulty.id, selectedVariant))?.id || "easy";
     setSelectedAIDifficulty(fallback);
-  }, [aiAvailability, selectedAIDifficulty]);
+  }, [aiAvailability, selectedAIDifficulty, selectedVariant]);
 
   useEffect(() => {
     function openDevConsoleFromHiddenInput(event) {
@@ -876,13 +905,14 @@ export default function App() {
     if (command.action === "botBattle") {
       const variant = args[0] || selectedVariant;
       const difficulty = args[1] || selectedAIDifficulty || "medium";
+      const timeControl = args[2] || selectedTimeControl;
       socket.emit("devCommand", {
         action: "startMatch",
-        args: [variant, "2", difficulty],
+        args: [variant, "2", difficulty, timeControl],
         name: name.trim() || "Developer",
         currentRoomCode: roomCode,
         selectedVariant,
-        selectedTimeControl,
+        selectedTimeControl: timeControl,
         selectedAIDifficulty: difficulty
       });
       return;
@@ -1107,6 +1137,24 @@ export default function App() {
   }
 
   function handleLocalDevCommand(action, args) {
+    if (action === "variantReference") {
+      appendDevLines([
+        "Variant IDs / aliases:",
+        ...getVariantReferenceLines(),
+        "Examples: room start 3d 1 medium | ai disable hard threeD"
+      ]);
+      return true;
+    }
+
+    if (action === "timeControlReference") {
+      appendDevLines([
+        "Time control IDs / aliases:",
+        ...getTimeControlReferenceLines(),
+        "Examples: clock preset 3+2 | room start normal 1 medium 10+5 | choose Unlimited for no clock"
+      ]);
+      return true;
+    }
+
     if (action === "fx" && ["force", "send", "push"].includes(String(args[0] || "").toLowerCase())) {
       const target = args[1] || "room";
       const fxArgs = args.slice(2);
@@ -1293,7 +1341,7 @@ export default function App() {
 
   function submitProfileUpdate(event) {
     event?.preventDefault?.();
-    submitAccountUpdate({ username: accountEditForm.username, profileIcon: accountEditForm.profileIcon });
+    submitAccountUpdate({ username: accountEditForm.username, profileIcon: accountEditForm.profileIcon, equippedBadge: accountEditForm.equippedBadge || null });
   }
 
   function submitEmailUpdate(event) {
@@ -1336,7 +1384,7 @@ export default function App() {
     unlockAudio();
     const nextGameMode = override.gameMode || selectedGameMode;
     const nextDifficulty = override.aiDifficulty || selectedAIDifficulty;
-    if (nextGameMode === "ai" && aiAvailability[nextDifficulty] === false) {
+    if (nextGameMode === "ai" && !isAIDifficultyAvailable(aiAvailability, nextDifficulty, selectedVariant)) {
       setNotice(`${getAIDifficultyLabel(nextDifficulty)} AI is currently disabled by the server.`);
       playUiSound("illegal");
       return;
@@ -1674,6 +1722,7 @@ export default function App() {
           accountEditForm={accountEditForm}
           accountMessage={accountMessage}
           profileIcons={profileIcons}
+          badgeCatalog={badgeCatalog}
           selectedVariant={selectedVariant}
           onClose={() => setAccountModalOpen(false)}
           onAccountMode={setAccountMode}
@@ -1686,6 +1735,19 @@ export default function App() {
           onPasswordUpdate={submitPasswordUpdate}
           onAccountLogout={logoutAccount}
         />
+        {siteSettings.supportUiEnabled !== false && (
+          <>
+            <SupportModal
+              open={supportModalOpen}
+              checkoutUrl={SUPPORT_CHECKOUT_URL}
+              onClose={() => setSupportModalOpen(false)}
+            />
+
+            <button className="support-site-button" type="button" onClick={() => setSupportModalOpen(true)}>
+              {UI_TEXT.support.buttonLabel}
+            </button>
+          </>
+        )}
 
         <section className="lab-hero" aria-label="The Chess Lab home">
           <h1 className="lab-title" aria-label="The Chess Lab">
@@ -1716,7 +1778,7 @@ export default function App() {
               items={selectedVariant === "ruleLab" ? RULE_LAB_DIFFICULTY_OPTIONS : TIME_CONTROL_OPTIONS}
               selectedId={selectedVariant === "ruleLab" ? selectedRuleLabDifficulty : selectedTimeControl}
               getDescription={(id) => selectedVariant === "ruleLab" ? getRuleLabDifficultyDescription(id) : getTimeControlDescription(id)}
-              getMeta={(id) => selectedVariant === "ruleLab" ? "15 min shared timer" : `${TIME_CONTROL_OPTIONS.find((control) => control.id === id)?.seconds || 0}s each`}
+              getMeta={(id) => selectedVariant === "ruleLab" ? "15 min shared timer" : describeTimeControl(id)}
               onSelect={(id) => { if (selectedVariant === "ruleLab") setSelectedRuleLabDifficulty(id); else setSelectedTimeControl(id); setHomeChooser(null); }}
               onBack={() => setHomeChooser(null)}
             />
@@ -1824,7 +1886,7 @@ export default function App() {
                     </div>
                     <div className="ai-card-grid">
                       {AI_DIFFICULTY_OPTIONS.map((difficulty) => {
-                        const disabled = aiAvailability[difficulty.id] === false;
+                        const disabled = !isAIDifficultyAvailable(aiAvailability, difficulty.id, selectedVariant);
                         return (
                           <button
                             key={difficulty.id}
@@ -1963,6 +2025,7 @@ export default function App() {
         accountEditForm={accountEditForm}
         accountMessage={accountMessage}
         profileIcons={profileIcons}
+        badgeCatalog={badgeCatalog}
         selectedVariant={game?.variant || selectedVariant}
         onClose={() => setAccountModalOpen(false)}
         onAccountMode={setAccountMode}
@@ -2258,6 +2321,39 @@ export default function App() {
 
 
 
+function SupportModal({ open, checkoutUrl, onClose }) {
+  if (!open) return null;
+  const canCheckout = Boolean(checkoutUrl);
+  return (
+    <div className="account-modal-backdrop support-modal-backdrop">
+      <section className="support-modal" role="dialog" aria-modal="true" aria-label={UI_TEXT.support.title}>
+        <header className="account-modal-head support-modal-head">
+          <div>
+            <span className="eyebrow">Support the site</span>
+            <h2>{UI_TEXT.support.title}</h2>
+          </div>
+          <button type="button" onClick={onClose} aria-label={UI_TEXT.support.close}>×</button>
+        </header>
+        <p className="support-modal-intro">{UI_TEXT.support.intro}</p>
+        <div className="support-benefits-card">
+          <h3>{UI_TEXT.support.benefitsTitle}</h3>
+          <ul>
+            {UI_TEXT.support.benefits.map((benefit) => <li key={benefit}>{benefit}</li>)}
+          </ul>
+        </div>
+        <div className="support-modal-actions">
+          {canCheckout ? (
+            <a className="support-checkout-button" href={checkoutUrl} target="_blank" rel="noreferrer">{UI_TEXT.support.checkoutButton}</a>
+          ) : (
+            <button className="support-checkout-button disabled" type="button" disabled>{UI_TEXT.support.checkoutUnavailable}</button>
+          )}
+          <button className="support-secondary-button" type="button" onClick={onClose}>{UI_TEXT.support.close}</button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function AccountModal({
   open,
   account,
@@ -2266,6 +2362,7 @@ function AccountModal({
   accountEditForm,
   accountMessage,
   profileIcons,
+  badgeCatalog,
   selectedVariant,
   onClose,
   onAccountMode,
@@ -2322,6 +2419,16 @@ function AccountModal({
                     </button>
                   ))}
                 </div>
+                <label><span>Equipped badge</span></label>
+                <div className="badge-grid" aria-label="Equipped badge">
+                  <button type="button" className={!accountEditForm.equippedBadge ? "active" : ""} onClick={() => onAccountEditForm("equippedBadge", "")}>None</button>
+                  {(account.badges || []).map((badge) => (
+                    <button key={badge} type="button" className={accountEditForm.equippedBadge === badge ? "active" : ""} onClick={() => onAccountEditForm("equippedBadge", badge)} title={badge}>
+                      <img src={badgeUrl(badge)} alt="" />
+                    </button>
+                  ))}
+                </div>
+                {(account.badges || []).length === 0 && <small className="subtle">No badges granted yet.</small>}
                 <button type="submit">{UI_TEXT.account.saveProfile}</button>
               </form>
 
@@ -2371,15 +2478,25 @@ function AccountModal({
 
 function ProfileAvatar({ account, size = "normal" }) {
   const icon = account?.profile?.icon || "lab-pawn.svg";
-  return <img className={`profile-avatar ${size}`} src={profileIconUrl(icon)} alt="" />;
+  const badge = account?.profile?.equippedBadge || null;
+  return (
+    <span className={`avatar-badge-wrap ${size}`}>
+      <img className={`profile-avatar ${size}`} src={profileIconUrl(icon)} alt="" />
+      {badge && <img className="equipped-badge" src={badgeUrl(badge)} alt="" title={badge} />}
+    </span>
+  );
 }
 
 function GuestAvatar({ size = "normal" }) {
-  return <img className={`profile-avatar guest-avatar ${size}`} src={profileIconUrl("anonymous.svg")} alt="" />;
+  return <span className={`avatar-badge-wrap ${size}`}><img className={`profile-avatar guest-avatar ${size}`} src={profileIconUrl("anonymous.svg")} alt="" /></span>;
 }
 
 function profileIconUrl(icon) {
   return `/profile-icons/${encodeURIComponent(icon || "lab-pawn.svg")}`;
+}
+
+function badgeUrl(badge) {
+  return `/badges/${encodeURIComponent(badge || "supporter.svg")}`;
 }
 
 function getModeStats(account, variant) {
@@ -2506,12 +2623,12 @@ function formatElapsed(seconds) {
 }
 
 function getTimeControlDescription(id) {
-  return {
-    classical: "Slow, deliberate games for deeper testing.",
-    rapid: "Balanced pace for most experiments.",
-    blitz: "Fast games with enough time to think.",
-    bullet: "Unstable speed tests. Expect chaos."
-  }[id] || "Custom experiment pace.";
+  const control = getTimeControlOption(id);
+  if (!control) return "Custom experiment pace.";
+  if (control.seconds == null) return "No game clock. Useful for teaching, testing, and casual rooms.";
+  const increment = control.incrementSeconds || 0;
+  const base = Math.floor(control.seconds / 60);
+  return `${control.category || "Timed"} game: ${base} minute${base === 1 ? "" : "s"} each${increment ? ` with ${increment}s increment per move` : " with no increment"}.`;
 }
 
 function getAIDifficultyDescription(id) {
@@ -2731,7 +2848,7 @@ function PublicProfileModal({ profile, onClose }) {
       <section className="game-over-modal pop-modal public-profile-modal">
         <button className="modal-close" onClick={onClose}>×</button>
         <div className="public-profile-head">
-          <img src={`/profile-icons/${profile.profile?.icon || "anonymous.svg"}`} alt="" />
+          <ProfileAvatar account={profile} size="large" />
           <div>
             <h2>{profile.username}</h2>
             <p>{UI_TEXT.account.memberSince} {formatDateShort(profile.createdAt)}</p>
@@ -2820,6 +2937,7 @@ function LeaderboardPanel({ data, variant, scope, onScope, onRefresh, onProfile 
         {entries.length ? entries.map((entry, index) => (
           <button key={entry.accountId} className={`leaderboard-row rank-${index + 1}`} onClick={() => onProfile(entry.accountId)}>
             <span>{index === 0 ? "👑" : index === 1 ? "♕" : index === 2 ? "♔" : index + 1}</span>
+            <ProfileAvatar account={entry} />
             <strong>{entry.username}</strong>
             <em>{UI_TEXT.leaderboard.elo} {entry.elo}</em>
             <small>{entry.games}G {entry.wins}W {entry.losses}L</small>
@@ -3969,14 +4087,15 @@ function TimerBar({ game, now }) {
 
 function getDisplayedClocks(game, now) {
   const clocks = { ...(game.clocks || { white: 0, black: 0 }) };
-  if (game.status === "playing" && game.lastTurnStartedAt && clocks[game.turn] != null) {
+  if (game.status === "playing" && !game.unlimitedTime && game.lastTurnStartedAt && clocks[game.turn] != null) {
     clocks[game.turn] = Math.max(0, clocks[game.turn] - Math.max(0, now - game.lastTurnStartedAt));
   }
   return clocks;
 }
 
 function formatClock(ms) {
-  const totalSeconds = Math.ceil(Math.max(0, ms || 0) / 1000);
+  if (ms == null || !Number.isFinite(Number(ms))) return "∞";
+  const totalSeconds = Math.ceil(Math.max(0, Number(ms) || 0) / 1000);
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
@@ -4012,7 +4131,7 @@ function GameChat({ chat, draft, onDraftChange, onSend, onForfeit, canForfeit, f
         ) : (
           chat.slice(-80).map((message, index) => (
             <div key={message.id} className={`chat-line ${message.color} ${index % 2 === 0 ? "even" : "odd"}`}>
-              <span className="chat-prefix">[{formatChatTime(message.time)}] [{formatText(message.name)}]:</span>
+              <span className="chat-prefix" style={message.chatColour ? { color: message.chatColour } : undefined}>[{formatChatTime(message.time)}] [{formatText(message.name)}]:</span>
               <span className="chat-body">{formatText(message.body)}</span>
             </div>
           ))
@@ -4304,11 +4423,15 @@ function PlayerLine({ label, player, active, formatText = (value) => value, onPr
   const canOpenProfile = Boolean(player?.accountId && onProfile);
   const name = player?.name ? formatText(player.name) : UI_TEXT.labels.waiting;
   const detail = player?.accountId ? `${player.elo ? `ELO ${player.elo}` : "ELO 800"}${player.rank ? ` · #${player.rank}` : ""}` : (player?.id?.startsWith?.("AI:") ? "Bot" : "Guest");
+  const avatarAccount = player?.accountId ? player : null;
   const body = (
-    <div className="player-line-main">
-      <strong>{name}</strong>
-      <small>{detail}</small>
-    </div>
+    <>
+      {avatarAccount ? <ProfileAvatar account={avatarAccount} /> : <GuestAvatar />}
+      <div className="player-line-main">
+        <strong style={player?.chatColour ? { color: player.chatColour } : undefined}>{name}</strong>
+        <small>{detail}</small>
+      </div>
+    </>
   );
   return (
     <div className={`player-line ${active ? "active" : ""} ${canOpenProfile ? "clickable" : ""}`}>
@@ -4334,6 +4457,14 @@ function key(coord) {
 
 function capitalise(value) {
   return String(value || "").slice(0, 1).toUpperCase() + String(value || "").slice(1);
+}
+
+function isAIDifficultyAvailable(availability, difficulty, variant) {
+  const diff = String(difficulty || "medium");
+  const mode = String(variant || "normal");
+  if (availability?.variants?.[mode]?.[diff] !== undefined) return availability.variants[mode][diff] !== false;
+  if (availability?.all?.[diff] !== undefined) return availability.all[diff] !== false;
+  return availability?.[diff] !== false;
 }
 
 

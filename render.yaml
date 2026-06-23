@@ -9,3 +9,15 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      - key: PUBLIC_SITE_URL
+        sync: false
+      - key: CLIENT_ORIGINS
+        sync: false
+      - key: VITE_PUBLIC_SITE_URL
+        sync: false
+      - key: VITE_SOCKET_URL
+        sync: false
+      - key: VITE_STRIPE_SUPPORT_URL
+        sync: false
+      - key: SUPPORT_UI_ENABLED
+        value: "true"

@@ -1,3 +1,5 @@
+import { getVariantReferenceLines, getTimeControlReferenceLines } from "./variants.js";
+
 // Developer console command registry.
 // The visible console is intentionally organised as broad command groups.
 // Old one-word commands remain as aliases so existing habits still work.
@@ -5,10 +7,15 @@ export const DEV_CONSOLE_UNLOCK_SEQUENCE = ["Shift", "ArrowUp", "ArrowDown", "Ar
 
 export const DEV_COMMANDS = [
   { name: "help", action: "help", usage: "help [page|category|command]", summary: "Shows paged command help." },
+  { name: "variants", action: "variantReference", aliases: ["variant", "modes", "gamemodes"], usage: "variants", summary: "List canonical variant IDs and aliases." },
+  { name: "timecontrols", action: "timeControlReference", aliases: ["timecontrol", "times", "timers", "clockpresets"], usage: "timecontrols", summary: "List time-control IDs, aliases, and increments." },
+  { name: "support", action: "support", aliases: ["stripe", "supporter"], usage: "support [status|enable|disable]", summary: "Show or hide the Support/Stripe home-page UI." },
   { name: "clear", action: "clear", aliases: ["cls"], usage: "clear", summary: "Clears the developer console output." },
   { name: "room", action: "room", usage: "room [list|join|start|spectate|kick|lock|unlock|rename|exit|info] ...", summary: "Room and matchmaking commands." },
-  { name: "player", action: "player", usage: "player [bot|takeover|find|count|override|colour|rename] ...", summary: "Player slot and identity commands." },
+  { name: "player", action: "player", usage: "player [bot|takeover|find|count|override|colour|textcolour|rename] ...", summary: "Player slot and identity commands." },
   { name: "account", action: "account", aliases: ["accounts"], usage: "account [info|list|online|create|remove|icon|wipe|store] ...", summary: "Inspect and manage registered player accounts." },
+  { name: "rank", action: "rank", aliases: ["ranks"], usage: "rank [list|new|add|remove|delete] ...", summary: "Create rank types and assign them to accounts." },
+  { name: "badge", action: "badge", aliases: ["badges"], usage: "badge [list|grant|revoke|equip] ...", summary: "Grant, revoke, and equip account badges." },
   { name: "report", action: "report", aliases: ["reports"], usage: "report [list|view|approve|deny|appeal] ...", summary: "Review and resolve report cases." },
   { name: "punish", action: "punish", aliases: ["punishment", "punishments"], usage: "punish [list|mute|ban|remove] ...", summary: "Create and remove mutes/bans." },
   { name: "friend", action: "friend", aliases: ["friends"], usage: "friend [list|send|accept] ...", summary: "Friend-system test commands." },
@@ -48,8 +55,8 @@ const GROUPS = {
       ["list detailed", "room list detailed", "List all rooms with metadata."],
       ["spectate", "room spectate [room|random]", "Spectate a room."],
       ["join", "room join [room]", "Join a room."],
-      ["start", "room start [variant] [bots=0] [difficulty=medium]", "Start a dev match."],
-      ["botbattle", "room botbattle [variant] [difficulty1] [difficulty2]", "Start bot-vs-bot match."],
+      ["start", "room start [variant] [bots=0] [difficulty=medium] [timeControl=selected]", "Start a dev match. Variant aliases like 3d are allowed."],
+      ["botbattle", "room botbattle [variant] [difficulty=medium] [timeControl=selected]", "Start bot-vs-bot match."],
       ["exit", "room exit", "Return to home/lobby."],
       ["info", "room info [room=current]", "Show room metadata."],
       ["copy", "room copy", "Copy current room code."],
@@ -70,6 +77,7 @@ const GROUPS = {
       ["count", "player count", "Show player/bot/spectator counts."],
       ["override", "player override [self|name] [on|off]", "Allow moving all pieces."],
       ["colour", "player colour [name] [white|black|spectator]", "Move participant to slot."],
+      ["textcolour", "player textcolour [name] [colour|clear]", "Set a participant's chat text colour for the current game."],
       ["rename", "player rename [white|black|name] [new name]", "Temporarily rename a player."]
     ]
   },
@@ -85,6 +93,36 @@ const GROUPS = {
       ["icon", "account icon [username|email|id] [icon-file]", "Set an account profile icon."],
       ["wipe", "account wipe [username|email|id] [game|all]", "Reset stats, game history, ELO history, and leaderboard entries; all also clears hidden moderation history."],
       ["store", "account store", "Show the account JSON store path and available profile icons."]
+    ]
+  },
+  rank: {
+    page: 1,
+    summary: "Persistent account ranks with optional chat colour, badge, and console access.",
+    subcommands: [
+      ["list", "rank list", "List configured rank types."],
+      ["new", "rank new [Name] [ChatColour] [Badge|null] [ConsoleAccess=false]", "Create a new rank type."],
+      ["add", "rank add [account] [rank]", "Grant a rank to an account. Its badge is granted too."],
+      ["remove", "rank remove [account] [rank]", "Remove a rank from an account. Its badge is revoked too."],
+      ["delete", "rank delete [rank]", "Delete a rank type from the server."]
+    ]
+  },
+  badge: {
+    page: 1,
+    summary: "Account badge ownership and equipped badge control.",
+    subcommands: [
+      ["list", "badge list", "List badge files in client/public/badges."],
+      ["grant", "badge grant [account] [badge-file]", "Grant a badge to an account."],
+      ["revoke", "badge revoke [account] [badge-file]", "Remove a badge from an account."],
+      ["equip", "badge equip [account] [badge-file|null]", "Force an account's equipped badge."]
+    ]
+  },
+  support: {
+    page: 1,
+    summary: "Support/Stripe home-page button visibility.",
+    subcommands: [
+      ["status", "support status", "Show whether the Support button is currently visible."],
+      ["enable", "support enable", "Show the Support button and modal on the home page."],
+      ["disable", "support disable", "Hide the Support button and close the modal for connected clients."]
     ]
   },
   report: {
@@ -216,7 +254,7 @@ const GROUPS = {
       ["move", "ai move [white|black] [difficulty]", "Force AI move."],
       ["difficulty", "ai difficulty [white|black] [easy|medium|hard]", "Set bot difficulty."],
       ["availability", "ai availability", "Show which AI difficulties are enabled."],
-      ["enable/disable", "ai enable|disable [easy|medium|hard]", "Enable or disable a difficulty button for online players."],
+      ["enable/disable", "ai enable|disable [easy|medium|hard] [variant|all]", "Enable or disable a difficulty for one variant or all variants."],
       ["pause", "ai pause", "Pause bots."],
       ["resume", "ai resume", "Resume bots."],
       ["eval", "ai eval [white|black]", "Evaluate position."],
@@ -231,9 +269,10 @@ const GROUPS = {
       ["pause", "clock pause", "Pause clock."],
       ["resume", "clock resume", "Resume clock."],
       ["add", "clock add [white|black] [seconds|mm:ss]", "Add time."],
-      ["preset", "clock preset [classical|rapid|blitz|bullet]", "Reset time control."],
+      ["preset", "clock preset [timeControl]", "Reset time control. Supports unlimited and increment aliases like 3+2."],
       ["flag", "clock flag [white|black]", "Force timeout."]
-    ]
+    ],
+    options: ["Use help timecontrols or the timecontrols command for preset IDs and aliases."]
   },
   network: {
     page: 3,
@@ -433,7 +472,7 @@ const LEGACY = {
   startmatch: ["room", "start"], newmatch: ["room", "start"], spawnmatch: ["room", "start"], botbattle: ["room", "botbattle"],
   exitmatch: ["room", "exit"], exit: ["room", "exit"], leave: ["room", "exit"], home: ["room", "exit"],
   roominfo: ["room", "info"], copyroom: ["room", "copy"], closeroom: ["room", "close"], kickplayer: ["room", "kick"], lockroom: ["room", "lock"], unlockroom: ["room", "unlock"], renameroom: ["room", "rename"],
-  replacewithbot: ["player", "bot"], replaceplayer: ["player", "takeover"], findplayer: ["player", "find"], playercount: ["player", "count"], spectatoroverride: ["player", "override", "self", "on"], clearoverride: ["player", "override", "self", "off"], setplayercolour: ["player", "colour"], rename: ["player", "rename"],
+  replacewithbot: ["player", "bot"], replaceplayer: ["player", "takeover"], findplayer: ["player", "find"], playercount: ["player", "count"], spectatoroverride: ["player", "override", "self", "on"], clearoverride: ["player", "override", "self", "off"], setplayercolour: ["player", "colour"], setplayertextcolour: ["player", "textcolour"], setplayertextcolor: ["player", "textcolour"], setchatcolour: ["player", "textcolour"], setchatcolor: ["player", "textcolour"], rename: ["player", "rename"],
   endmatch: ["match", "end"], setturn: ["match", "turn"], resetmatch: ["match", "reset"], validateboard: ["match", "validate"],
   shout: ["chat", "shout"], announce: ["chat", "announce"], broadcast: ["chat", "system"], systemchat: ["chat", "system"], sudo: ["chat", "sudo"], whisper: ["chat", "whisper"], blunderquote: ["chat", "quote", "blunder"],
   clearboard: ["board", "clear"], cloneposition: ["board", "copy"], loadposition: ["board", "load"], mirrorboard: ["board", "mirror"], shufflebackrank: ["board", "shuffle", "backrank"],
@@ -496,13 +535,14 @@ export function getDevCommandListLines(page = null) {
   if (!Number.isInteger(pageNumber)) {
     return [
       "Developer console help is paged.",
-      "New systems: account, report, punish, friend, leaderboard, profile.",
+      "New systems: account, rank, badge, report, punish, friend, leaderboard, profile.",
+      "References: help variants, help timecontrols",
       "Use: help 1, help 2, help 3, ...",
       "Use: help [category] for category commands, e.g. help report",
-      "Examples: help account, help report, help punish, help friend, help leaderboard, help profile",
+      "Examples: help account, help rank, help badge, help variants, help timecontrols",
       "Use: help [command] for aliases, e.g. help sudo",
       "Pages:",
-      "1 room / player / account / report / punish / friend / leaderboard / profile / match / chat",
+      "1 room / player / account / rank / badge / support / report / punish / friend / leaderboard / profile / match / chat",
       "2 board / piece / view / mark / ai / clock",
       "3 network / fx / cosmetic",
       "4 chaos / 3check / antichess / anarchy / rulelab / predict",
@@ -528,6 +568,12 @@ export function getDevCommandHelp(target = "") {
 
   const tokens = query.split(/\s+/).filter(Boolean).map(normalizeName);
   const first = tokens[0];
+  if (["variants", "variant", "modes", "gamemodes"].includes(first)) {
+    return ["Variant IDs / aliases:", ...getVariantReferenceLines(), "Examples: room start 3d 1 medium | ai disable hard threeD"];
+  }
+  if (["timecontrols", "timecontrol", "times", "timers", "clockpresets"].includes(first)) {
+    return ["Time control IDs / aliases:", ...getTimeControlReferenceLines(), "Examples: clock preset 3+2 | room start normal 1 medium 10+5 | unlimited"] ;
+  }
   const command = findDevCommand(first);
   if (!command) return [`No help found for: ${query}`];
 

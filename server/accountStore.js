@@ -5,7 +5,7 @@ import { fileURLToPath } from "url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const ACCOUNT_STORE_VERSION = 3;
+const ACCOUNT_STORE_VERSION = 4;
 const PASSWORD_ITERATIONS = 210000;
 const SESSION_DAYS = 30;
 const DEFAULT_STORE_PATH = path.join(__dirname, "data", "accounts.json");
@@ -25,7 +25,7 @@ function loadState() {
 }
 
 function makeEmptyState() {
-  return { schemaVersion: ACCOUNT_STORE_VERSION, accounts: [], sessions: [], auditLog: [] };
+  return { schemaVersion: ACCOUNT_STORE_VERSION, accounts: [], sessions: [], auditLog: [], rankTypes: defaultRankTypes() };
 }
 
 function migrateState(raw) {
@@ -33,6 +33,8 @@ function migrateState(raw) {
   if (!Array.isArray(next.accounts)) next.accounts = [];
   if (!Array.isArray(next.sessions)) next.sessions = [];
   if (!Array.isArray(next.auditLog)) next.auditLog = [];
+  next.rankTypes = normaliseRankTypes(next.rankTypes);
+  ensureDefaultRankTypes(next.rankTypes);
   next.schemaVersion = ACCOUNT_STORE_VERSION;
   for (const account of next.accounts) {
     account.schemaVersion = account.schemaVersion || 1;
@@ -42,6 +44,10 @@ function migrateState(raw) {
     account.profile = account.profile || {};
     account.profile.icon = normaliseProfileIcon(account.profile.icon || account.profileIcon || DEFAULT_PROFILE_ICON);
     account.profile.displayBio = String(account.profile.displayBio || "");
+    account.ranks = Array.isArray(account.ranks) ? [...new Set(account.ranks.map(normaliseRankKey).filter(Boolean))] : [];
+    account.badges = Array.isArray(account.badges) ? [...new Set(account.badges.map(normaliseBadgeId).filter(Boolean))] : [];
+    account.profile.equippedBadge = normaliseBadgeId(account.profile.equippedBadge);
+    if (account.profile.equippedBadge && !account.badges.includes(account.profile.equippedBadge)) account.profile.equippedBadge = null;
     account.moderation = account.moderation || {};
     account.moderation.credibility = Number.isFinite(Number(account.moderation.credibility)) ? Number(account.moderation.credibility) : 50;
     account.moderation.punishmentHistory = Array.isArray(account.moderation.punishmentHistory) ? account.moderation.punishmentHistory : [];
@@ -49,6 +55,214 @@ function migrateState(raw) {
     account.updatedAt = account.updatedAt || account.createdAt || Date.now();
   }
   return next;
+}
+
+
+function defaultRankTypes() {
+  const now = Date.now();
+  return [
+    { key: "admin", name: "Admin", chatColour: "#facc15", badge: "admin.svg", consoleAccess: true, createdAt: now },
+    { key: "moderator", name: "Moderator", chatColour: "#60a5fa", badge: "moderator.svg", consoleAccess: true, createdAt: now },
+    { key: "supporter", name: "Supporter", chatColour: "#c084fc", badge: "supporter.svg", consoleAccess: false, createdAt: now }
+  ];
+}
+
+function normaliseRankKey(value) {
+  return String(value || "").trim().toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 32);
+}
+
+function normaliseBadgeId(value) {
+  const clean = String(value || "").trim().replace(/^Badge=/i, "");
+  if (!clean || clean.toLowerCase() === "null" || clean.toLowerCase() === "none") return null;
+  const fileLike = clean.replace(/\s+/g, "-");
+  const withExt = /\.(svg|png|jpg|jpeg|webp)$/i.test(fileLike) ? fileLike : `${fileLike}.svg`;
+  if (!/^[a-zA-Z0-9_.-]+\.(svg|png|jpg|jpeg|webp)$/i.test(withExt)) return null;
+  return withExt;
+}
+
+function normaliseChatColour(value) {
+  const clean = String(value || "").trim();
+  if (!clean || clean.toLowerCase() === "null" || clean.toLowerCase() === "none") return null;
+  if (/^#[0-9a-f]{3}([0-9a-f]{3})?$/i.test(clean)) return clean;
+  if (/^[a-zA-Z]{3,24}$/.test(clean)) return clean;
+  return null;
+}
+
+function normaliseConsoleAccess(value) {
+  if (typeof value === "boolean") return value;
+  const clean = String(value ?? "false").trim().toLowerCase();
+  return ["true", "1", "yes", "on", "console", "access"].includes(clean);
+}
+
+function normaliseRankTypes(rankTypes) {
+  if (!Array.isArray(rankTypes)) return [];
+  const seen = new Set();
+  const out = [];
+  for (const raw of rankTypes) {
+    const name = String(raw?.name || raw?.key || "").trim().slice(0, 32);
+    const key = normaliseRankKey(raw?.key || name);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push({
+      key,
+      name: name || key,
+      chatColour: normaliseChatColour(raw?.chatColour || raw?.chatColor) || null,
+      badge: normaliseBadgeId(raw?.badge) || null,
+      consoleAccess: normaliseConsoleAccess(raw?.consoleAccess),
+      createdAt: Number(raw?.createdAt) || Date.now()
+    });
+  }
+  return out;
+}
+
+function ensureDefaultRankTypes(rankTypes) {
+  const defaults = defaultRankTypes();
+  for (const rank of defaults) {
+    if (!rankTypes.some((item) => item.key === rank.key)) rankTypes.push(rank);
+  }
+}
+
+function findRankType(queryRaw) {
+  const key = normaliseRankKey(queryRaw);
+  return (state.rankTypes || []).find((rank) => rank.key === key || rank.name.toLowerCase() === String(queryRaw || "").trim().toLowerCase()) || null;
+}
+
+function getPublicRankSummaries(account) {
+  const ranks = Array.isArray(account?.ranks) ? account.ranks : [];
+  return ranks.map((rankKey) => findRankType(rankKey)).filter(Boolean).map((rank) => ({
+    key: rank.key,
+    name: rank.name,
+    chatColour: rank.chatColour || null,
+    badge: rank.badge || null,
+    consoleAccess: Boolean(rank.consoleAccess)
+  }));
+}
+
+export function accountHasConsoleAccess(account) {
+  return getPublicRankSummaries(account).some((rank) => rank.consoleAccess);
+}
+
+export function getAccountChatColour(account) {
+  const ranks = getPublicRankSummaries(account);
+  const coloured = [...ranks].reverse().find((rank) => rank.chatColour);
+  return coloured?.chatColour || null;
+}
+
+export function createRankType({ name, chatColour = null, badge = null, consoleAccess = false } = {}) {
+  const cleanName = String(name || "").trim().slice(0, 32);
+  const key = normaliseRankKey(cleanName);
+  if (!key) return { ok: false, reason: "Usage: rank new [Name] [ChatColour] [Badge|null] [ConsoleAccess=false]" };
+  if (findRankType(key)) return { ok: false, reason: "That rank already exists." };
+  const rank = { key, name: cleanName, chatColour: normaliseChatColour(chatColour), badge: normaliseBadgeId(badge), consoleAccess: normaliseConsoleAccess(consoleAccess), createdAt: Date.now() };
+  state.rankTypes.push(rank);
+  state.auditLog.push({ type: "rankCreated", rank: key, at: Date.now() });
+  saveState();
+  return { ok: true, rank, lines: [`Created rank ${rank.name} | colour=${rank.chatColour || "none"} | badge=${rank.badge || "none"} | consoleAccess=${rank.consoleAccess}`] };
+}
+
+export function deleteRankType(queryRaw) {
+  const rank = findRankType(queryRaw);
+  if (!rank) return { ok: false, reason: "Rank not found." };
+  state.rankTypes = state.rankTypes.filter((item) => item.key !== rank.key);
+  for (const account of state.accounts) {
+    account.ranks = (account.ranks || []).filter((item) => item !== rank.key);
+    if (rank.badge && (account.badges || []).includes(rank.badge)) {
+      const stillGrantedByRank = (account.ranks || []).some((key) => findRankType(key)?.badge === rank.badge);
+      if (!stillGrantedByRank) account.badges = (account.badges || []).filter((badge) => badge !== rank.badge);
+      if (account.profile?.equippedBadge === rank.badge && !(account.badges || []).includes(rank.badge)) account.profile.equippedBadge = null;
+    }
+  }
+  state.auditLog.push({ type: "rankDeleted", rank: rank.key, at: Date.now() });
+  saveState();
+  return { ok: true, rank, lines: [`Deleted rank ${rank.name}.`] };
+}
+
+export function addRankToAccount(queryRaw, rankRaw) {
+  const account = findAccount(queryRaw);
+  if (!account) return { ok: false, reason: "Account not found." };
+  const rank = findRankType(rankRaw);
+  if (!rank) return { ok: false, reason: "Rank not found." };
+  account.ranks = Array.isArray(account.ranks) ? account.ranks : [];
+  if (!account.ranks.includes(rank.key)) account.ranks.push(rank.key);
+  if (rank.badge) {
+    account.badges = Array.isArray(account.badges) ? account.badges : [];
+    if (!account.badges.includes(rank.badge)) account.badges.push(rank.badge);
+    if (!account.profile?.equippedBadge) {
+      account.profile = account.profile || {};
+      account.profile.equippedBadge = rank.badge;
+    }
+  }
+  account.updatedAt = Date.now();
+  state.auditLog.push({ type: "rankGranted", accountId: account.id, rank: rank.key, at: Date.now() });
+  saveState();
+  return { ok: true, account: publicAccount(account), lines: [`Granted ${rank.name} to ${account.username}${rank.badge ? ` and granted badge ${rank.badge}` : ""}.`] };
+}
+
+export function removeRankFromAccount(queryRaw, rankRaw) {
+  const account = findAccount(queryRaw);
+  if (!account) return { ok: false, reason: "Account not found." };
+  const rank = findRankType(rankRaw);
+  if (!rank) return { ok: false, reason: "Rank not found." };
+  account.ranks = (account.ranks || []).filter((item) => item !== rank.key);
+  if (rank.badge) {
+    const stillGrantedByRank = (account.ranks || []).some((key) => findRankType(key)?.badge === rank.badge);
+    if (!stillGrantedByRank) account.badges = (account.badges || []).filter((badge) => badge !== rank.badge);
+    if (account.profile?.equippedBadge === rank.badge && !(account.badges || []).includes(rank.badge)) account.profile.equippedBadge = null;
+  }
+  account.updatedAt = Date.now();
+  state.auditLog.push({ type: "rankRevoked", accountId: account.id, rank: rank.key, at: Date.now() });
+  saveState();
+  return { ok: true, account: publicAccount(account), lines: [`Removed ${rank.name} from ${account.username}${rank.badge ? ` and revoked badge ${rank.badge}` : ""}.`] };
+}
+
+export function getRankListLines() {
+  const ranks = normaliseRankTypes(state.rankTypes);
+  if (!ranks.length) return ["No rank types configured."];
+  return ranks.map((rank) => `${rank.name} | key=${rank.key} | colour=${rank.chatColour || "none"} | badge=${rank.badge || "none"} | consoleAccess=${rank.consoleAccess}`);
+}
+
+export function grantBadgeToAccount(queryRaw, badgeRaw) {
+  const account = findAccount(queryRaw);
+  if (!account) return { ok: false, reason: "Account not found." };
+  const badge = normaliseBadgeId(badgeRaw);
+  if (!badge) return { ok: false, reason: "Usage: badge grant [account] [badge-file]" };
+  account.badges = Array.isArray(account.badges) ? account.badges : [];
+  if (!account.badges.includes(badge)) account.badges.push(badge);
+  account.profile = account.profile || {};
+  if (!account.profile.equippedBadge) account.profile.equippedBadge = badge;
+  account.updatedAt = Date.now();
+  state.auditLog.push({ type: "badgeGranted", accountId: account.id, badge, at: Date.now() });
+  saveState();
+  return { ok: true, account: publicAccount(account), lines: [`Granted badge ${badge} to ${account.username}.`] };
+}
+
+export function revokeBadgeFromAccount(queryRaw, badgeRaw) {
+  const account = findAccount(queryRaw);
+  if (!account) return { ok: false, reason: "Account not found." };
+  const badge = normaliseBadgeId(badgeRaw);
+  if (!badge) return { ok: false, reason: "Usage: badge revoke [account] [badge-file]" };
+  account.badges = (account.badges || []).filter((item) => item !== badge);
+  if (account.profile?.equippedBadge === badge) account.profile.equippedBadge = null;
+  account.updatedAt = Date.now();
+  state.auditLog.push({ type: "badgeRevoked", accountId: account.id, badge, at: Date.now() });
+  saveState();
+  return { ok: true, account: publicAccount(account), lines: [`Revoked badge ${badge} from ${account.username}.`] };
+}
+
+export function equipBadgeForAccount(queryRaw, badgeRaw) {
+  const account = findAccount(queryRaw);
+  if (!account) return { ok: false, reason: "Account not found." };
+  const badge = normaliseBadgeId(badgeRaw);
+  account.profile = account.profile || {};
+  if (!badge) {
+    account.profile.equippedBadge = null;
+  } else {
+    if (!(account.badges || []).includes(badge)) return { ok: false, reason: "That badge has not been granted to this account." };
+    account.profile.equippedBadge = badge;
+  }
+  account.updatedAt = Date.now();
+  saveState();
+  return { ok: true, account: publicAccount(account), lines: [`${account.username} equipped badge ${account.profile.equippedBadge || "none"}.`] };
 }
 
 function saveState() {
@@ -134,7 +348,9 @@ export function createAccount({ email, username, password }) {
     stats: makeEmptyStats(),
     gameHistory: [],
     flags: { disabled: false },
-    profile: { icon: DEFAULT_PROFILE_ICON, displayBio: "" },
+    profile: { icon: DEFAULT_PROFILE_ICON, displayBio: "", equippedBadge: null },
+    ranks: [],
+    badges: [],
     moderation: { credibility: 50, punishmentHistory: [] },
     eloHistory: []
   };
@@ -208,7 +424,11 @@ export function publicAccount(account) {
     email: account.email,
     createdAt: account.createdAt,
     lastLoginAt: account.lastLoginAt,
-    profile: account.profile || { icon: DEFAULT_PROFILE_ICON, displayBio: "" },
+    profile: account.profile || { icon: DEFAULT_PROFILE_ICON, displayBio: "", equippedBadge: null },
+    ranks: getPublicRankSummaries(account),
+    badges: Array.isArray(account.badges) ? [...account.badges] : [],
+    devConsoleAccess: accountHasConsoleAccess(account),
+    chatColour: getAccountChatColour(account),
     stats: account.stats || makeEmptyStats(),
     gameHistory: Array.isArray(account.gameHistory) ? account.gameHistory.slice(-25) : [],
     eloHistory: Array.isArray(account.eloHistory) ? account.eloHistory.slice(-100) : []
@@ -217,7 +437,15 @@ export function publicAccount(account) {
 
 export function participantAccount(account) {
   if (!account) return null;
-  return { id: account.id, username: account.username, profile: account.profile || { icon: DEFAULT_PROFILE_ICON } };
+  return {
+    id: account.id,
+    username: account.username,
+    profile: account.profile || { icon: DEFAULT_PROFILE_ICON, equippedBadge: null },
+    ranks: getPublicRankSummaries(account),
+    badges: Array.isArray(account.badges) ? [...account.badges] : [],
+    devConsoleAccess: accountHasConsoleAccess(account),
+    chatColour: getAccountChatColour(account)
+  };
 }
 
 export function getAccountLabelForSocketAccount(account) {
@@ -275,6 +503,14 @@ export function updateAccount(token, updates = {}) {
   if (updates.profileIcon !== undefined) {
     account.profile = account.profile || {};
     account.profile.icon = normaliseProfileIcon(updates.profileIcon);
+  }
+
+  if (updates.equippedBadge !== undefined) {
+    account.profile = account.profile || {};
+    const badgeId = normaliseBadgeId(updates.equippedBadge);
+    if (!badgeId) account.profile.equippedBadge = null;
+    else if ((account.badges || []).includes(badgeId)) account.profile.equippedBadge = badgeId;
+    else return { ok: false, reason: "That badge has not been granted to this account." };
   }
 
   account.updatedAt = now;
@@ -336,6 +572,9 @@ export function getAccountInfoLines(queryRaw) {
       `ID: ${account.id}`,
       `Email: ${account.email}`,
       `Profile icon: ${account.profile?.icon || DEFAULT_PROFILE_ICON}`,
+      `Equipped badge: ${account.profile?.equippedBadge || "none"}`,
+      `Badges: ${(account.badges || []).join(", ") || "none"}`,
+      `Ranks: ${getPublicRankSummaries(account).map((rank) => `${rank.name}${rank.consoleAccess ? "*" : ""}`).join(", ") || "none"}`,
       `Created: ${new Date(account.createdAt).toISOString()}`,
       `Last login: ${account.lastLoginAt ? new Date(account.lastLoginAt).toISOString() : "never"}`,
       `Games: ${stats.totalGames || 0} | Wins: ${stats.wins || 0} | Losses: ${stats.losses || 0} | Draws: ${stats.draws || 0}`,
@@ -350,7 +589,7 @@ export function getAccountInfoLines(queryRaw) {
 export function getAccountListLines(limitRaw = 25) {
   const limit = Math.min(100, Math.max(1, Number.parseInt(limitRaw, 10) || 25));
   if (!state.accounts.length) return ["No accounts registered."];
-  return state.accounts.slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)).slice(0, limit).map((account) => `${account.username} | ${account.email} | created ${new Date(account.createdAt).toISOString()} | games ${account.stats?.totalGames || 0} | icon ${account.profile?.icon || DEFAULT_PROFILE_ICON} | id ${account.id}`);
+  return state.accounts.slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)).slice(0, limit).map((account) => `${account.username} | ${account.email} | created ${new Date(account.createdAt).toISOString()} | games ${account.stats?.totalGames || 0} | icon ${account.profile?.icon || DEFAULT_PROFILE_ICON} | badge ${account.profile?.equippedBadge || "none"} | ranks ${getPublicRankSummaries(account).map((r)=>r.name).join("+") || "none"} | id ${account.id}`);
 }
 
 export function recordCompletedGameForAccounts(game) {

@@ -18,11 +18,36 @@ export const VARIANTS = {
 };
 
 export const TIME_CONTROLS = {
-  classical: { id: "classical", label: "Classical", seconds: 30 * 60 },
-  rapid: { id: "rapid", label: "Rapid", seconds: 10 * 60 },
-  blitz: { id: "blitz", label: "Blitz", seconds: 5 * 60 },
-  bullet: { id: "bullet", label: "Bullet", seconds: 60 }
+  unlimited: { id: "unlimited", label: "Unlimited", seconds: null, incrementSeconds: 0, category: "Casual", aliases: ["none", "infinite", "infinity", "no-clock", "noclock", "untimed"] },
+  bullet: { id: "bullet", label: "Bullet 1+0", seconds: 60, incrementSeconds: 0, category: "Bullet", aliases: ["1+0", "1|0", "1/0", "1m", "1min"] },
+  bullet1_1: { id: "bullet1_1", label: "Bullet 1+1", seconds: 60, incrementSeconds: 1, category: "Bullet", aliases: ["1+1", "1|1", "1/1"] },
+  bullet2_1: { id: "bullet2_1", label: "Bullet 2+1", seconds: 2 * 60, incrementSeconds: 1, category: "Bullet", aliases: ["2+1", "2|1", "2/1"] },
+  blitz3: { id: "blitz3", label: "Blitz 3+0", seconds: 3 * 60, incrementSeconds: 0, category: "Blitz", aliases: ["3+0", "3|0", "3/0"] },
+  blitz3_2: { id: "blitz3_2", label: "Blitz 3+2", seconds: 3 * 60, incrementSeconds: 2, category: "Blitz", aliases: ["3+2", "3|2", "3/2"] },
+  blitz: { id: "blitz", label: "Blitz 5+0", seconds: 5 * 60, incrementSeconds: 0, category: "Blitz", aliases: ["5+0", "5|0", "5/0", "5m", "5min"] },
+  blitz5_3: { id: "blitz5_3", label: "Blitz 5+3", seconds: 5 * 60, incrementSeconds: 3, category: "Blitz", aliases: ["5+3", "5|3", "5/3"] },
+  rapid: { id: "rapid", label: "Rapid 10+0", seconds: 10 * 60, incrementSeconds: 0, category: "Rapid", aliases: ["10+0", "10|0", "10/0", "10m", "10min"] },
+  rapid10_5: { id: "rapid10_5", label: "Rapid 10+5", seconds: 10 * 60, incrementSeconds: 5, category: "Rapid", aliases: ["10+5", "10|5", "10/5"] },
+  rapid15_10: { id: "rapid15_10", label: "Rapid 15+10", seconds: 15 * 60, incrementSeconds: 10, category: "Rapid", aliases: ["15+10", "15|10", "15/10"] },
+  rapid30: { id: "rapid30", label: "Rapid 30+0", seconds: 30 * 60, incrementSeconds: 0, category: "Rapid", aliases: ["30+0", "30|0", "30/0", "30m"] },
+  classical: { id: "classical", label: "Classical 30+20", seconds: 30 * 60, incrementSeconds: 20, category: "Classical", aliases: ["30+20", "30|20", "30/20"] },
+  classical45_45: { id: "classical45_45", label: "Classical 45+45", seconds: 45 * 60, incrementSeconds: 45, category: "Classical", aliases: ["45+45", "45|45", "45/45"] },
+  classical60: { id: "classical60", label: "Classical 60+0", seconds: 60 * 60, incrementSeconds: 0, category: "Classical", aliases: ["60+0", "60|0", "60/0", "60m", "1h"] },
+  classical90_30: { id: "classical90_30", label: "Classical 90+30", seconds: 90 * 60, incrementSeconds: 30, category: "Classical", aliases: ["90+30", "90|30", "90/30"] }
 };
+
+export function timeControlAliases() {
+  const aliases = new Map();
+  for (const [id, control] of Object.entries(TIME_CONTROLS)) {
+    aliases.set(id.toLowerCase(), id);
+    aliases.set(String(control.label || id).toLowerCase().replace(/[\s_-]+/g, ""), id);
+    for (const alias of control.aliases || []) aliases.set(String(alias).toLowerCase().replace(/[\s_-]+/g, ""), id);
+  }
+  aliases.set("classic", "classical");
+  aliases.set("standard", "rapid");
+  aliases.set("noincrement", "rapid");
+  return aliases;
+}
 
 export const RULE_LAB_DIFFICULTIES = {
   easy: { id: "easy", label: "Easy", rules: 2, clueEveryMs: 3 * 60 * 1000, wrongGuessPenaltyMs: 0, winBase: 10 },
@@ -42,7 +67,10 @@ export function is2DVariant(variantId) {
 }
 
 export function normaliseTimeControl(timeControlId) {
-  return TIME_CONTROLS[timeControlId] ? timeControlId : "rapid";
+  const raw = String(timeControlId || "").trim();
+  if (TIME_CONTROLS[raw]) return raw;
+  const key = raw.toLowerCase().replace(/[\s_-]+/g, "");
+  return timeControlAliases().get(key) || "rapid";
 }
 
 export function normaliseGameMode(gameMode) {
@@ -102,7 +130,9 @@ export function createGame(roomCode, options = {}) {
   const timeControl = normaliseTimeControl(options.timeControl);
   const gameMode = normaliseGameMode(options.gameMode);
   const ruleLabDifficulty = normaliseRuleLabDifficulty(options.ruleLabDifficulty || options.difficulty);
-  const timeMs = variant === "ruleLab" ? 15 * 60 * 1000 : TIME_CONTROLS[timeControl].seconds * 1000;
+  const selectedControl = TIME_CONTROLS[timeControl];
+  const timeMs = variant === "ruleLab" ? 15 * 60 * 1000 : selectedControl.seconds == null ? null : selectedControl.seconds * 1000;
+  const incrementMs = variant === "ruleLab" ? 0 : Number(selectedControl.incrementSeconds || 0) * 1000;
   const pieces = createInitialPieces(variant);
 
   return {
@@ -111,7 +141,9 @@ export function createGame(roomCode, options = {}) {
     variantName: VARIANTS[variant].label,
     boardMode: VARIANTS[variant].boardMode,
     timeControl,
-    timeControlName: variant === "ruleLab" ? `${RULE_LAB_DIFFICULTIES[ruleLabDifficulty].label} difficulty` : TIME_CONTROLS[timeControl].label,
+    timeControlName: variant === "ruleLab" ? `${RULE_LAB_DIFFICULTIES[ruleLabDifficulty].label} difficulty` : selectedControl.label,
+    incrementMs,
+    unlimitedTime: variant !== "ruleLab" && selectedControl.seconds == null,
     ruleLabDifficulty,
     gameMode,
     ai: {
@@ -180,6 +212,10 @@ export function createGame(roomCode, options = {}) {
     stalemate: false,
     clocks: { white: timeMs, black: timeMs },
     clockInitialMs: timeMs,
+    timerStarted: false,
+    clockWaitingForBothPlayers: false,
+    firstMoveMadeBy: { white: false, black: false },
+    clocksStartedAt: null,
     lastTurnStartedAt: null,
     timeout: false,
     createdAt: Date.now()

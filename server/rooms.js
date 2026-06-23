@@ -1,5 +1,5 @@
 import { customAlphabet } from "nanoid";
-import { createGame, TIME_CONTROLS } from "./rules/setup.js";
+import { createGame, TIME_CONTROLS, normaliseTimeControl } from "./rules/setup.js";
 import { getGameEndState, getLegalMoves, isKingInCheck, isSquareAttacked, resolvePredictRound, submitRuleLabGuess } from "./rules/check.js";
 import { cloneGame, getPieceAt, getPieceById, inBounds, opponent, recordCurrentPosition, removePieceAt } from "./rules/utils.js";
 
@@ -17,7 +17,12 @@ function makeParticipant(socketId, playerName, fallbackName, account = null) {
     name: clean,
     guest: !account,
     accountId: account?.id || null,
-    accountName: account?.username || null
+    accountName: account?.username || null,
+    profile: account?.profile || null,
+    ranks: Array.isArray(account?.ranks) ? account.ranks : [],
+    badges: Array.isArray(account?.badges) ? account.badges : [],
+    devConsoleAccess: Boolean(account?.devConsoleAccess),
+    chatColour: account?.chatColour || null
   };
 }
 
@@ -34,6 +39,9 @@ function startRuleLabTimer(game) {
   game.ruleLab.endsAt = now + 15 * 60 * 1000;
   game.clocks = { white: 15 * 60 * 1000, black: 15 * 60 * 1000 };
   game.timerStarted = true;
+  game.clockWaitingForBothPlayers = false;
+  game.clocksStartedAt = now;
+  game.lastTurnStartedAt = now;
 }
 
 export function createRoom(hostSocket, hostName, options = {}) {
@@ -60,7 +68,11 @@ export function createRoom(hostSocket, hostName, options = {}) {
     game.publicMatch = false;
     game.message = "white to move.";
     startRuleLabTimer(game);
-    game.lastTurnStartedAt = Date.now();
+    if (game.variant !== "ruleLab") {
+      game.timerStarted = false;
+      game.clockWaitingForBothPlayers = true;
+      game.lastTurnStartedAt = null;
+    }
     ensureInitialPositionRecorded(game);
   }
 
@@ -167,7 +179,11 @@ export function createDevMatch(socket, playerName, options = {}) {
     game.status = "playing";
     game.message = "white to move.";
     startRuleLabTimer(game);
-    game.lastTurnStartedAt = Date.now();
+    if (game.variant !== "ruleLab") {
+      game.timerStarted = false;
+      game.clockWaitingForBothPlayers = true;
+      game.lastTurnStartedAt = null;
+    }
     ensureInitialPositionRecorded(game);
     rooms.set(roomCode, game);
     socket.join(roomCode);
@@ -187,7 +203,11 @@ export function createDevMatch(socket, playerName, options = {}) {
     game.status = "playing";
     game.message = "white to move.";
     startRuleLabTimer(game);
-    game.lastTurnStartedAt = Date.now();
+    if (game.variant !== "ruleLab") {
+      game.timerStarted = false;
+      game.clockWaitingForBothPlayers = true;
+      game.lastTurnStartedAt = null;
+    }
     ensureInitialPositionRecorded(game);
   }
 
@@ -312,7 +332,11 @@ export function joinRoom(socket, roomCodeRaw, playerName, options = {}) {
     game.publicMatch = false;
     game.message = "white to move.";
     startRuleLabTimer(game);
-    game.lastTurnStartedAt = Date.now();
+    if (game.variant !== "ruleLab") {
+      game.timerStarted = false;
+      game.clockWaitingForBothPlayers = true;
+      game.lastTurnStartedAt = null;
+    }
     ensureInitialPositionRecorded(game);
     return { ok: true, game, color: "black", role: "player" };
   }
@@ -486,6 +510,27 @@ export function removePieceFromRoom(roomCodeRaw, location) {
   return { ok: true, game, lines: [`Removed ${removed.color} ${removed.type} from (${location.x},${location.y},${location.z}).`] };
 }
 
+
+export function setParticipantChatColourInRoom(roomCodeRaw, targetNameRaw, colourRaw) {
+  const roomCode = String(roomCodeRaw ?? "").trim().toUpperCase();
+  const game = rooms.get(roomCode);
+  if (!game) return { ok: false, reason: "Room not found." };
+  const target = findParticipantInGame(game, targetNameRaw, null);
+  if (!target) return { ok: false, reason: "Player not found in this room." };
+  const colour = normaliseChatColour(colourRaw);
+  const participant = target.participant;
+  participant.chatColour = colour;
+  game.message = `${participant.name}'s chat colour is now ${colour || "default"}.`;
+  return { ok: true, game, lines: [game.message] };
+}
+
+function normaliseChatColour(value) {
+  const clean = String(value || "").trim();
+  if (!clean || ["clear", "none", "default", "null"].includes(clean.toLowerCase())) return null;
+  if (/^#[0-9a-f]{3}([0-9a-f]{3})?$/i.test(clean)) return clean;
+  if (/^[a-zA-Z]{3,24}$/.test(clean)) return clean;
+  return null;
+}
 
 export function replacePlayerWithBotInRoom(roomCodeRaw, targetNameRaw, difficultyRaw = "medium") {
   const roomCode = String(roomCodeRaw ?? "").trim().toUpperCase();
@@ -684,13 +729,19 @@ export function setTimerForRoom(roomCodeRaw, timeRaw, playerRaw = null) {
   if (game.status === "playing") tickGameClock(game);
 
   const color = normaliseColour(playerRaw) || game.turn || "white";
-  const milliseconds = parseClockTime(timeRaw);
+  const unlimited = ["unlimited", "infinite", "infinity", "none", "no-clock", "noclock", "untimed"].includes(String(timeRaw || "").trim().toLowerCase());
+  const milliseconds = unlimited ? null : parseClockTime(timeRaw);
   if (!color) return { ok: false, reason: "Player must be white or black." };
-  if (!Number.isFinite(milliseconds) || milliseconds < 0) return { ok: false, reason: "Time must be seconds, mm:ss, or hh:mm:ss." };
+  if (!unlimited && (!Number.isFinite(milliseconds) || milliseconds < 0)) return { ok: false, reason: "Time must be seconds, mm:ss, hh:mm:ss, or unlimited." };
 
   game.clocks[color] = milliseconds;
-  if (game.status === "playing" && game.turn === color) game.lastTurnStartedAt = Date.now();
-  if (milliseconds <= 0 && game.status === "playing") {
+  if (unlimited) {
+    game.unlimitedTime = true;
+    game.clockInitialMs = null;
+    game.timerStarted = false;
+    game.lastTurnStartedAt = null;
+  } else if (game.status === "playing" && game.turn === color) game.lastTurnStartedAt = Date.now();
+  if (!unlimited && milliseconds <= 0 && game.status === "playing") {
     game.status = "finished";
   markRoomClosed(game);
     game.timeout = true;
@@ -796,6 +847,7 @@ export function appendChatMessage(socketId, roomCodeRaw, bodyRaw) {
     color: participant.color,
     role: participant.role,
     name: participant.name,
+    chatColour: participant.chatColour || null,
     body
   });
   game.chat = game.chat.slice(-120);
@@ -803,6 +855,7 @@ export function appendChatMessage(socketId, roomCodeRaw, bodyRaw) {
 }
 
 export function tickGameClock(game) {
+  if (!game || game.unlimitedTime || game.clockInitialMs == null) return false;
   if (!game || game.status !== "playing" || game.timerPaused || !game.timerStarted || !game.lastTurnStartedAt) return false;
   const now = Date.now();
   if (game.variant === "ruleLab" && game.ruleLab?.endsAt) {
@@ -821,6 +874,7 @@ export function tickGameClock(game) {
   const elapsed = Math.max(0, now - game.lastTurnStartedAt);
   if (elapsed <= 0) return false;
 
+  if (game.clocks?.[game.turn] == null) return false;
   game.clocks[game.turn] = Math.max(0, game.clocks[game.turn] - elapsed);
   game.lastTurnStartedAt = now;
 
@@ -965,6 +1019,7 @@ function parseClockTime(value) {
 }
 
 function formatClock(ms) {
+  if (ms == null || !Number.isFinite(Number(ms))) return "∞";
   const totalSeconds = Math.max(0, Math.ceil(Number(ms || 0) / 1000));
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
@@ -1213,7 +1268,11 @@ export function runDevUtilityCommand(roomCodeRaw, action, args = [], requesterSo
     reset.ai = game.ai;
     reset.status = game.players.white && game.players.black ? "playing" : "waiting";
     reset.message = reset.status === "playing" ? "white to move." : "Waiting for opponent.";
-    reset.lastTurnStartedAt = reset.status === "playing" ? Date.now() : null;
+    reset.timerStarted = reset.variant === "ruleLab" && reset.status === "playing";
+    reset.clockWaitingForBothPlayers = reset.status === "playing" && reset.variant !== "ruleLab";
+    reset.firstMoveMadeBy = { white: false, black: false };
+    reset.clocksStartedAt = null;
+    reset.lastTurnStartedAt = reset.timerStarted ? Date.now() : null;
     rooms.set(game.roomCode, Object.assign(game, reset));
     if (game.status === "playing") ensureInitialPositionRecorded(game);
     return { ok: true, game, lines: ["Match reset to starting position."] };
@@ -1292,11 +1351,22 @@ export function runDevUtilityCommand(roomCodeRaw, action, args = [], requesterSo
     return { ok: true, game, lines: [`Added ${formatClock(amount)} to ${color}.`] };
   }
   if (action === "setTimeControl") {
-    const tc = String(args[0] || "").trim().toLowerCase();
-    if (!TIME_CONTROLS[tc]) return { ok: false, reason: "Usage: settimecontrol [classical|rapid|blitz|bullet]" };
-    const ms = TIME_CONTROLS[tc].seconds * 1000;
-    game.timeControl = tc; game.timeControlName = TIME_CONTROLS[tc].label; game.clockInitialMs = ms; game.clocks = { white: ms, black: ms }; game.lastTurnStartedAt = game.status === "playing" ? Date.now() : null;
-    return { ok: true, game, lines: [`Time control set to ${TIME_CONTROLS[tc].label}.`] };
+    const tc = normaliseTimeControl(args[0] || "rapid");
+    if (!TIME_CONTROLS[tc]) return { ok: false, reason: "Usage: settimecontrol [unlimited|bullet|1+1|2+1|3+0|3+2|5+0|5+3|rapid|10+5|15+10|30+0|classical|45+45|60+0|90+30]" };
+    const control = TIME_CONTROLS[tc];
+    const ms = control.seconds == null ? null : control.seconds * 1000;
+    game.timeControl = tc;
+    game.timeControlName = control.label;
+    game.incrementMs = Number(control.incrementSeconds || 0) * 1000;
+    game.unlimitedTime = control.seconds == null;
+    game.clockInitialMs = ms;
+    game.clocks = { white: ms, black: ms };
+    game.timerStarted = false;
+    game.clockWaitingForBothPlayers = game.status === "playing" && !game.unlimitedTime;
+    game.firstMoveMadeBy = { white: false, black: false };
+    game.clocksStartedAt = null;
+    game.lastTurnStartedAt = null;
+    return { ok: true, game, lines: [`Time control set to ${control.label}.`] };
   }
   if (action === "flagPlayer") {
     const color = normaliseColour(args[0]) || game.turn;

@@ -33,6 +33,21 @@ export const UI_TEXT = {
     off: "Off",
     censorHelp: "Filters names and chat on your screen only. Other players keep their own setting."
   },
+  support: {
+    buttonLabel: "Support",
+    title: "Become A Supporter",
+    intro: "Supporter contributions help keep the servers running and make it easier to keep adding new variants, polish, and multiplayer features.",
+    benefitsTitle: "Supporter benefits",
+    benefits: [
+      "Supporter role on your account",
+      "Customizable text colour",
+      "Supporter badge for your profile",
+      "Your name in the supporter list"
+    ],
+    checkoutButton: "Continue to Stripe",
+    checkoutUnavailable: "Stripe checkout link not configured yet.",
+    close: "Close"
+  },
   account: {
     signedOutTitle: "Player Account",
     signedOutBody: "Create an account to reserve your name and start saving game stats.",
@@ -219,10 +234,22 @@ export const UI_TEXT = {
     }
   },
   timeControls: {
-    classical: "Classical",
-    rapid: "Rapid",
-    blitz: "Blitz",
-    bullet: "Bullet"
+    unlimited: "Unlimited",
+    bullet: "Bullet 1+0",
+    bullet1_1: "Bullet 1+1",
+    bullet2_1: "Bullet 2+1",
+    blitz3: "Blitz 3+0",
+    blitz3_2: "Blitz 3+2",
+    blitz: "Blitz 5+0",
+    blitz5_3: "Blitz 5+3",
+    rapid: "Rapid 10+0",
+    rapid10_5: "Rapid 10+5",
+    rapid15_10: "Rapid 15+10",
+    rapid30: "Rapid 30+0",
+    classical: "Classical 30+20",
+    classical45_45: "Classical 45+45",
+    classical60: "Classical 60+0",
+    classical90_30: "Classical 90+30"
   },
   ruleLabDifficulty: {
     easy: "Easy",

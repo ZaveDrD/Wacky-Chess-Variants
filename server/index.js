@@ -4,13 +4,13 @@ import path from "path";
 import fs from "fs";
 import { fileURLToPath } from "url";
 import { Server } from "socket.io";
-import { addPieceToRoom, appendChatMessage, cancelQuickMatch, cleanupExpiredRooms, createDevMatch, createRoom, createRoomShout, endMatchByDev, findPlayersByName, forfeitGame, getDetailedRoomLines, getLegalMovesForSocket, getOpenMatches, getPlayerCountSnapshot, getRoomSnapshot, hasDeveloperMoveOverride, joinRoom, leaveCurrentRooms, listPiecesInRoom, removePieceFromRoom, removeSocketFromRooms, replacePlayerWithBotInRoom, quickMatch, replacePlayerWithRequesterInRoom, ROOM_CLEANUP_INTERVAL_MS, rooms, runDevUtilityCommand, setPlayerColourInRoom, setSpectatorOverride, setTimerForRoom, setTurnInRoom, spectateRoom, tickAllRoomClocks, tickGameClock } from "./rooms.js";
+import { addPieceToRoom, appendChatMessage, cancelQuickMatch, cleanupExpiredRooms, createDevMatch, createRoom, createRoomShout, endMatchByDev, findPlayersByName, forfeitGame, getDetailedRoomLines, getLegalMovesForSocket, getOpenMatches, getPlayerCountSnapshot, getRoomSnapshot, hasDeveloperMoveOverride, joinRoom, leaveCurrentRooms, listPiecesInRoom, removePieceFromRoom, removeSocketFromRooms, replacePlayerWithBotInRoom, quickMatch, replacePlayerWithRequesterInRoom, ROOM_CLEANUP_INTERVAL_MS, rooms, runDevUtilityCommand, setPlayerColourInRoom, setParticipantChatColourInRoom, setSpectatorOverride, setTimerForRoom, setTurnInRoom, spectateRoom, tickAllRoomClocks, tickGameClock } from "./rooms.js";
 import { attemptLegalMove, attemptLegalDrop, attemptLaunchNuke, attemptTycoonAction, attemptScoobyAction, submitRuleLabGuess } from "./rules/check.js";
 import { chooseAIMove, evaluateAIPosition, isAITurn, runAIMove, scoreAICandidates } from "./rules/ai.js";
 import { cloneGame } from "./rules/utils.js";
 import { createHash, pbkdf2Sync, timingSafeEqual } from "crypto";
 import os from "os";
-import { createAccount, loginAccount, logoutAccount, getPublicAccountByToken, getAccountByToken, participantAccount, getAccountInfoLines, getAccountListLines, recordCompletedGameForAccounts, accountStorePath, isRegisteredUsername, updateAccount, deleteAccount, devCreateAccount, forceProfileIcon, wipeAccountData, findAccount } from "./accountStore.js";
+import { createAccount, loginAccount, logoutAccount, getPublicAccountByToken, getAccountByToken, participantAccount, getAccountInfoLines, getAccountListLines, recordCompletedGameForAccounts, accountStorePath, isRegisteredUsername, updateAccount, deleteAccount, devCreateAccount, forceProfileIcon, wipeAccountData, findAccount, findAccountById, publicAccount, accountHasConsoleAccess, getRankListLines, createRankType, deleteRankType, addRankToAccount, removeRankFromAccount, grantBadgeToAccount, revokeBadgeFromAccount, equipBadgeForAccount } from "./accountStore.js";
 import { createReport, listReports, getReportCase, reportCaseLines, resolveReport, listAppeals, appealLines, resolveAppeal, submitAppeal, getActivePunishments, punishmentSummaryForClient, hasActivePunishment, listPunishments, addPunishmentForTarget, removePunishment, getSocialState, sendFriendRequest, respondFriendRequest, sendFriendMessage, createChallenge, respondChallenge, getLeaderboard, getElo, leaderboardLines, resetLeaderboard, clearLeaderboardForAccount, recordLeaderboardGame, publicProfile, socialStorePath } from "./socialStore.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -21,8 +21,67 @@ const DEV_PASSWORD_SALT = "wcv-dev-console-v1-salt";
 const DEV_PASSWORD_HASH = "716b38d8fc25690f55750b70a610c967e1ed93c67095dab364958ef51bd8858f";
 const devAuthenticatedSockets = new Set();
 const connectedClients = new Map();
-const aiDifficultyAvailability = { easy: true, medium: true, hard: true };
+const aiDifficultyAvailability = { all: { easy: true, medium: true, hard: true }, variants: {} };
+const SITE_SETTINGS_PATH = path.join(__dirname, "data", "siteSettings.json");
+const siteSettings = loadSiteSettings();
 const networkStats = createNetworkStats();
+
+
+function envFlag(name, fallback = true) {
+  const value = process.env[name];
+  if (value === undefined || value === null || value === "") return fallback;
+  return !["0", "false", "no", "off", "disabled"].includes(String(value).trim().toLowerCase());
+}
+
+function loadSiteSettings() {
+  const defaults = {
+    supportUiEnabled: envFlag("SUPPORT_UI_ENABLED", true),
+    updatedAt: Date.now()
+  };
+
+  try {
+    if (!fs.existsSync(SITE_SETTINGS_PATH)) return defaults;
+    const parsed = JSON.parse(fs.readFileSync(SITE_SETTINGS_PATH, "utf8"));
+    return {
+      ...defaults,
+      ...(parsed && typeof parsed === "object" ? parsed : {}),
+      supportUiEnabled: parsed?.supportUiEnabled !== undefined ? Boolean(parsed.supportUiEnabled) : defaults.supportUiEnabled
+    };
+  } catch (error) {
+    console.warn(`[site-settings] failed to load ${SITE_SETTINGS_PATH}: ${error.message}`);
+    return defaults;
+  }
+}
+
+function saveSiteSettings() {
+  try {
+    fs.mkdirSync(path.dirname(SITE_SETTINGS_PATH), { recursive: true });
+    const tmp = `${SITE_SETTINGS_PATH}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(siteSettings, null, 2));
+    fs.renameSync(tmp, SITE_SETTINGS_PATH);
+  } catch (error) {
+    console.warn(`[site-settings] failed to save ${SITE_SETTINGS_PATH}: ${error.message}`);
+  }
+}
+
+function getPublicSiteSettings() {
+  return {
+    supportUiEnabled: siteSettings.supportUiEnabled !== false
+  };
+}
+
+function setSupportUiEnabled(enabled) {
+  siteSettings.supportUiEnabled = Boolean(enabled);
+  siteSettings.updatedAt = Date.now();
+  saveSiteSettings();
+  return getPublicSiteSettings();
+}
+
+function emitSiteSettings(socket) {
+  const payload = getPublicSiteSettings();
+  recordOutgoing("siteSettings", payload, "GLOBAL", 1);
+  socket.emit("siteSettings", payload);
+}
 
 function verifyDevPassword(password) {
   const digest = pbkdf2Sync(String(password || ""), DEV_PASSWORD_SALT, 120000, 32, "sha256").toString("hex");
@@ -327,25 +386,58 @@ function networkSummaryLines(payload) {
   return lines;
 }
 
-function getAIAvailabilityPayload() {
-  return { ...aiDifficultyAvailability };
+function getAIAvailabilityPayload(variantRaw = null) {
+  const variant = variantRaw ? normaliseDevVariant(variantRaw) : null;
+  const flat = { ...aiDifficultyAvailability.all };
+  if (variant && aiDifficultyAvailability.variants?.[variant]) Object.assign(flat, aiDifficultyAvailability.variants[variant]);
+  return { ...flat, all: { ...aiDifficultyAvailability.all }, variants: JSON.parse(JSON.stringify(aiDifficultyAvailability.variants || {})) };
 }
 
-function setAIDifficultyAvailability(difficulty, enabled) {
+function setAIDifficultyAvailability(difficulty, enabled, variantRaw = "all") {
   const diff = normaliseDevDifficulty(difficulty);
-  aiDifficultyAvailability[diff] = Boolean(enabled);
+  const variantText = String(variantRaw || "all").trim();
+  const isGlobal = !variantText || variantText.toLowerCase() === "all";
+  if (isGlobal) {
+    aiDifficultyAvailability.all[diff] = Boolean(enabled);
+  } else {
+    const variant = normaliseDevVariant(variantText);
+    if (!aiDifficultyAvailability.variants[variant]) aiDifficultyAvailability.variants[variant] = {};
+    aiDifficultyAvailability.variants[variant][diff] = Boolean(enabled);
+  }
   return getAIAvailabilityPayload();
 }
 
-function isAIDifficultyEnabled(difficulty) {
-  return aiDifficultyAvailability[normaliseDevDifficulty(difficulty)] !== false;
+function isAIDifficultyEnabled(difficulty, variantRaw = "all") {
+  const diff = normaliseDevDifficulty(difficulty);
+  const variant = normaliseDevVariant(variantRaw || "normal");
+  if (aiDifficultyAvailability.variants?.[variant]?.[diff] !== undefined) return aiDifficultyAvailability.variants[variant][diff] !== false;
+  return aiDifficultyAvailability.all[diff] !== false;
+}
+
+function parseOriginList(value) {
+  return String(value || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function getSocketAllowedOrigins() {
+  const localOrigins = ["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:3001", "http://127.0.0.1:3001"];
+  const configuredOrigins = [
+    ...parseOriginList(process.env.CLIENT_ORIGINS),
+    ...parseOriginList(process.env.PUBLIC_SITE_URL),
+    ...parseOriginList(process.env.RENDER_EXTERNAL_URL),
+    ...parseOriginList(process.env.VITE_PUBLIC_SITE_URL)
+  ];
+  const origins = Array.from(new Set([...(process.env.NODE_ENV === "production" ? [] : localOrigins), ...configuredOrigins]));
+  return origins.length ? origins : (process.env.NODE_ENV === "production" ? false : localOrigins);
 }
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: process.env.NODE_ENV === "production" ? false : ["http://localhost:5173", "http://127.0.0.1:5173"],
+    origin: getSocketAllowedOrigins(),
     methods: ["GET", "POST"]
   }
 });
@@ -354,6 +446,10 @@ const clientDist = path.join(__dirname, "../client/dist");
 const profileIconDirs = [
   path.join(clientDist, "profile-icons"),
   path.join(__dirname, "../client/public/profile-icons")
+];
+const badgeIconDirs = [
+  path.join(clientDist, "badges"),
+  path.join(__dirname, "../client/public/badges")
 ];
 app.use(express.static(clientDist));
 
@@ -378,6 +474,27 @@ function emitProfileIcons(socket) {
   const payload = { icons: getProfileIconList(), basePath: "/profile-icons/" };
   recordOutgoing("profileIcons", payload, "GLOBAL", 1);
   socket.emit("profileIcons", payload);
+}
+
+function getBadgeCatalog() {
+  const allowed = new Set();
+  for (const dir of badgeIconDirs) {
+    try {
+      if (!fs.existsSync(dir)) continue;
+      for (const file of fs.readdirSync(dir)) {
+        if (/^[a-zA-Z0-9_.-]+\.(svg|png|jpg|jpeg|webp)$/i.test(file)) allowed.add(file);
+      }
+    } catch (error) {
+      console.warn(`[badges] failed to read ${dir}: ${error.message}`);
+    }
+  }
+  return Array.from(allowed).sort();
+}
+
+function emitBadgeCatalog(socket) {
+  const payload = { badges: getBadgeCatalog(), basePath: "/badges/" };
+  recordOutgoing("badgeCatalog", payload, "GLOBAL", 1);
+  socket.emit("badgeCatalog", payload);
 }
 
 function refreshAccountParticipantInRooms(socketId, account) {
@@ -531,16 +648,29 @@ function recordIllegalMoveAttempt(game, socket, reason = "Illegal move") {
 function markFirstMoveAndMaybeStartTimer(game) {
   if (!game || game.status !== "playing") return;
   if (!game.players?.white || !game.players?.black) return;
+  if (game.variant === "ruleLab") return;
+  if (game.unlimitedTime || game.clockInitialMs == null) {
+    game.timerStarted = false;
+    game.clockWaitingForBothPlayers = false;
+    game.lastTurnStartedAt = null;
+    return;
+  }
   if (!game.firstMoveMadeBy) game.firstMoveMadeBy = { white: false, black: false };
   const mover = game.turn === "white" ? "black" : "white";
+  const timerWasRunning = Boolean(game.timerStarted && !game.timerPaused);
   if (mover === "white" || mover === "black") game.firstMoveMadeBy[mover] = true;
+  if (timerWasRunning && Number(game.incrementMs || 0) > 0 && game.clocks?.[mover] != null) {
+    game.clocks[mover] = Math.max(0, Number(game.clocks[mover] || 0)) + Number(game.incrementMs || 0);
+  }
   const bothMoved = Boolean(game.firstMoveMadeBy.white && game.firstMoveMadeBy.black);
   if (!bothMoved) {
+    game.timerStarted = false;
     game.lastTurnStartedAt = null;
     game.clockWaitingForBothPlayers = true;
     return;
   }
-  if (game.clockWaitingForBothPlayers || !game.clocksStartedAt) {
+  if (!game.timerStarted || game.clockWaitingForBothPlayers || !game.clocksStartedAt) {
+    game.timerStarted = true;
     game.clockWaitingForBothPlayers = false;
     game.clocksStartedAt = Date.now();
     game.lastTurnStartedAt = Date.now();
@@ -945,11 +1075,14 @@ function emitGameStateToRoom(io, game) {
   }
 }
 
+
 io.on("connection", (socket) => {
   connectedClients.set(socket.id, { id: socket.id, name: "Guest", connectedAt: Date.now(), lastRoomCode: null, accountId: null, accountName: null });
   socket.emit("aiAvailability", getAIAvailabilityPayload());
   recordOutgoing("aiAvailability", getAIAvailabilityPayload(), "GLOBAL", 1);
+  emitSiteSettings(socket);
   emitProfileIcons(socket);
+  emitBadgeCatalog(socket);
   socket.onAny((eventName, payload = {}) => {
     recordIncoming(eventName, payload, payload?.roomCode || connectedClients.get(socket.id)?.lastRoomCode || "GLOBAL");
   });
@@ -961,6 +1094,8 @@ io.on("connection", (socket) => {
   });
 
   socket.on("requestProfileIcons", () => emitProfileIcons(socket));
+  socket.on("requestBadgeCatalog", () => emitBadgeCatalog(socket));
+  socket.on("requestSiteSettings", () => emitSiteSettings(socket));
 
   socket.on("identifyDevice", ({ deviceId } = {}) => {
     socket.data.deviceId = normaliseDeviceId(deviceId);
@@ -1033,7 +1168,7 @@ io.on("connection", (socket) => {
       socket.emit("joinError", "That name belongs to an account. Sign in or choose another guest name.");
       return;
     }
-    if (gameMode === "ai" && !isAIDifficultyEnabled(aiDifficulty)) {
+    if (gameMode === "ai" && !isAIDifficultyEnabled(aiDifficulty, variant)) {
       socket.emit("joinError", `${capitalise(normaliseDevDifficulty(aiDifficulty))} AI is currently disabled by the server.`);
       return;
     }
@@ -1438,6 +1573,10 @@ io.on("connection", (socket) => {
       io.emit("aiAvailability", result.aiAvailability);
       recordOutgoing("aiAvailability", result.aiAvailability, "GLOBAL", io.sockets.sockets.size);
     }
+    if (result?.siteSettings) {
+      io.emit("siteSettings", result.siteSettings);
+      recordOutgoing("siteSettings", result.siteSettings, "GLOBAL", io.sockets.sockets.size);
+    }
     if (Array.isArray(result?.closedRoomTargets) && result?.closedRoomPayload) {
       const roomCode = result.closedRoomCode;
       for (const targetId of result.closedRoomTargets) {
@@ -1480,6 +1619,10 @@ function handleDevCommand(socket, payload = {}) {
   let action = String(payload.action || "").trim();
 
   if (action === "devUnlock") {
+    if (accountHasConsoleAccess(socket.data?.account)) {
+      devAuthenticatedSockets.add(socket.id);
+      return { response: { ok: true, unlocked: true, lines: ["developer console unlocked by account rank."] } };
+    }
     if (verifyDevPassword(payload.password)) {
       devAuthenticatedSockets.add(socket.id);
       return { response: { ok: true, unlocked: true, lines: ["developer console unlocked."] } };
@@ -1487,7 +1630,7 @@ function handleDevCommand(socket, payload = {}) {
     return { response: { ok: false, lines: [] } };
   }
 
-  if (!devAuthenticatedSockets.has(socket.id)) {
+  if (!devAuthenticatedSockets.has(socket.id) && !accountHasConsoleAccess(socket.data?.account)) {
     return { response: { ok: false, lines: [] } };
   }
   let args = Array.isArray(payload.args) ? payload.args : [];
@@ -1539,26 +1682,65 @@ function handleDevCommand(socket, payload = {}) {
     };
   }
 
-  if (action === "aiAvailability") {
-    const sub = String(args[0] || "status").toLowerCase();
-    if (sub === "status" || sub === "list" || sub === "availability") {
-      const availability = getAIAvailabilityPayload();
+  if (action === "siteCommand") {
+    const area = String(args[0] || "status").toLowerCase();
+    const sub = String(args[1] || "status").toLowerCase();
+
+    if (!["support", "stripe", "donations", "donate"].includes(area)) {
+      return { response: { ok: false, lines: ["Usage: support status|enable|disable OR site support status|enable|disable"] } };
+    }
+
+    if (["status", "list", "state", "show"].includes(sub)) {
       return {
         response: {
           ok: true,
-          lines: Object.entries(availability).map(([difficulty, enabled]) => `${difficulty}: ${enabled ? "enabled" : "disabled"}`)
-        }
+          lines: [
+            `Support/Stripe UI: ${siteSettings.supportUiEnabled !== false ? "enabled" : "disabled"}.`,
+            "Commands: support enable | support disable | support status",
+            "Alias: site support enable|disable|status"
+          ]
+        },
+        siteSettings: getPublicSiteSettings()
       };
+    }
+
+    if (["enable", "enabled", "on", "show", "visible"].includes(sub)) {
+      const settings = setSupportUiEnabled(true);
+      return { response: { ok: true, lines: ["Support/Stripe UI enabled on the home page."] }, siteSettings: settings };
+    }
+
+    if (["disable", "disabled", "off", "hide", "hidden"].includes(sub)) {
+      const settings = setSupportUiEnabled(false);
+      return { response: { ok: true, lines: ["Support/Stripe UI disabled on the home page."] }, siteSettings: settings };
+    }
+
+    return { response: { ok: false, lines: ["Usage: support status|enable|disable OR site support status|enable|disable"] } };
+  }
+
+  if (action === "aiAvailability") {
+    const sub = String(args[0] || "status").toLowerCase();
+    if (sub === "status" || sub === "list" || sub === "availability") {
+      const variant = args[1] && String(args[1]).toLowerCase() !== "all" ? normaliseDevVariant(args[1]) : null;
+      const availability = getAIAvailabilityPayload(variant);
+      const lines = [
+        `AI availability${variant ? ` for ${variant}` : ""}:`,
+        ...["easy", "medium", "hard"].map((difficulty) => `${difficulty}: ${availability[difficulty] !== false ? "enabled" : "disabled"}`),
+        `Global: easy=${availability.all.easy !== false}, medium=${availability.all.medium !== false}, hard=${availability.all.hard !== false}`,
+        ...Object.entries(availability.variants || {}).map(([mode, modes]) => `${mode}: ${["easy","medium","hard"].map((difficulty)=>`${difficulty}=${modes[difficulty] === undefined ? "inherit" : modes[difficulty] !== false}`).join(" ")}`)
+      ];
+      return { response: { ok: true, lines } };
     }
     if (["enable", "disable"].includes(sub)) {
       const difficulty = normaliseDevDifficulty(args[1]);
-      const availability = setAIDifficultyAvailability(difficulty, sub === "enable");
+      const variant = args[2] || "all";
+      const availability = setAIDifficultyAvailability(difficulty, sub === "enable", variant);
+      const label = String(variant).toLowerCase() === "all" ? "all variants" : getVariantLabelServer(normaliseDevVariant(variant));
       return {
-        response: { ok: true, lines: [`${capitalise(difficulty)} AI ${sub === "enable" ? "enabled" : "disabled"}.`] },
+        response: { ok: true, lines: [`${capitalise(difficulty)} AI ${sub === "enable" ? "enabled" : "disabled"} for ${label}.`] },
         aiAvailability: availability
       };
     }
-    return { response: { ok: false, lines: ["Usage: ai enable|disable [easy|medium|hard] OR ai availability"] } };
+    return { response: { ok: false, lines: ["Usage: ai enable|disable [easy|medium|hard] [variant|all] OR ai availability [variant]"] } };
   }
 
   if (action === "accountCommand") {
@@ -1709,16 +1891,15 @@ function handleDevCommand(socket, payload = {}) {
   }
 
   if (action === "startMatch") {
-    const variant = normaliseDevVariant(args[0] || selectedVariant);
-    const botCount = Math.min(2, Math.max(0, Number.parseInt(args[1], 10) || 0));
-    const difficulty = normaliseDevDifficulty(args[2] || selectedDifficulty);
-    if (botCount > 0 && !isAIDifficultyEnabled(difficulty)) {
+    const parsed = parseDevStartMatchArgs(args, { selectedVariant, selectedTimeControl, selectedDifficulty });
+    const { variant, botCount, difficulty, timeControl } = parsed;
+    if (botCount > 0 && !isAIDifficultyEnabled(difficulty, variant)) {
       return { response: { ok: false, lines: [`${capitalise(difficulty)} AI is currently disabled by the server.`] } };
     }
     const affected = leaveCurrentRooms(socket, socket.id);
     const result = createDevMatch(socket, name, {
       variant,
-      timeControl: selectedTimeControl,
+      timeControl,
       botCount,
       aiDifficulty: difficulty,
       account: participantAccount(socket.data.account)
@@ -1882,6 +2063,19 @@ function handleDevCommand(socket, payload = {}) {
     };
   }
 
+  if (action === "setParticipantChatColour") {
+    if (!currentRoomCode) return { response: { ok: false, lines: ["No current room. Use joincode/spectatematch/startmatch first."] } };
+    if (args.length < 2) return { response: { ok: false, lines: ["Usage: player textcolour [name] [colour|clear]"] } };
+    const colour = args[args.length - 1];
+    const targetName = args.slice(0, -1).join(" ");
+    const result = setParticipantChatColourInRoom(currentRoomCode, targetName, colour);
+    if (!result.ok) return { response: { ok: false, lines: [result.reason] } };
+    return {
+      response: { ok: true, lines: result.lines || ["Player chat colour changed."] },
+      gameStateRoom: currentRoomCode
+    };
+  }
+
   if (action === "listPieces") {
     if (!currentRoomCode) return { response: { ok: false, lines: ["No current room. Use joincode/spectatematch/startmatch first."] } };
     const result = listPiecesInRoom(currentRoomCode, args[0]);
@@ -1992,6 +2186,70 @@ function handleDevCommand(socket, payload = {}) {
       if (!result.ok) game.turn = previousTurn;
       return { response: { ok: result.ok, lines: [result.ok ? `Forced ${color} AI move.` : result.reason] }, gameStateRoom: currentRoomCode, scheduleRoomCode: currentRoomCode };
     }
+  }
+
+  if (action === "rankCommand") {
+    const sub = String(args[0] || "list").toLowerCase();
+    if (["list", "types", "all"].includes(sub)) {
+      return { response: { ok: true, lines: getRankListLines() } };
+    }
+    if (["new", "create", "make"].includes(sub)) {
+      const [rankName, chatColour, badgeRaw = null, consoleRaw = "false"] = args.slice(1);
+      if (!rankName || !chatColour) return { response: { ok: false, lines: ["Usage: rank new [Name] [ChatColour] [Badge|null] [ConsoleAccess=false]"] } };
+      const result = createRankType({ name: rankName, chatColour, badge: cleanBadgeArg(badgeRaw), consoleAccess: consoleRaw });
+      return { response: { ok: result.ok, lines: result.lines || [result.reason] } };
+    }
+    if (["delete", "remove-type", "deletetype"].includes(sub)) {
+      const rankName = args.slice(1).join(" ");
+      if (!rankName) return { response: { ok: false, lines: ["Usage: rank delete [rank name]"] } };
+      const result = deleteRankType(rankName);
+      return { response: { ok: result.ok, lines: result.lines || [result.reason] } };
+    }
+    if (["add", "grant"].includes(sub)) {
+      const [accountQuery, rankName] = args.slice(1);
+      if (!accountQuery || !rankName) return { response: { ok: false, lines: ["Usage: rank add [account name] [rank name]"] } };
+      const result = addRankToAccount(accountQuery, rankName);
+      const affectedRooms = result.account?.id ? pushAccountAdminUpdate(result.account.id) : [];
+      return { response: { ok: result.ok, lines: result.lines || [result.reason] }, affectedRooms };
+    }
+    if (["remove", "revoke"].includes(sub)) {
+      const [accountQuery, rankName] = args.slice(1);
+      if (!accountQuery || !rankName) return { response: { ok: false, lines: ["Usage: rank remove [account name] [rank name]"] } };
+      const result = removeRankFromAccount(accountQuery, rankName);
+      const affectedRooms = result.account?.id ? pushAccountAdminUpdate(result.account.id) : [];
+      return { response: { ok: result.ok, lines: result.lines || [result.reason] }, affectedRooms };
+    }
+    return { response: { ok: false, lines: ["Usage: rank list | rank new [Name] [ChatColour] [Badge|null] [ConsoleAccess=false] | rank add/remove [account] [rank] | rank delete [rank]"] } };
+  }
+
+  if (action === "badgeCommand") {
+    const sub = String(args[0] || "list").toLowerCase();
+    if (["list", "catalog", "all"].includes(sub)) {
+      const badges = getBadgeCatalog();
+      return { response: { ok: true, lines: badges.length ? badges.map((badge) => `${badge} -> /badges/${badge}`) : ["No badge files found in client/public/badges."] } };
+    }
+    if (["grant", "add", "give"].includes(sub)) {
+      const [accountQuery, badgeRaw] = args.slice(1);
+      if (!accountQuery || !badgeRaw) return { response: { ok: false, lines: ["Usage: badge grant [account] [badge-file]"] } };
+      const result = grantBadgeToAccount(accountQuery, cleanBadgeArg(badgeRaw));
+      const affectedRooms = result.account?.id ? pushAccountAdminUpdate(result.account.id) : [];
+      return { response: { ok: result.ok, lines: result.lines || [result.reason] }, affectedRooms };
+    }
+    if (["revoke", "remove", "take"].includes(sub)) {
+      const [accountQuery, badgeRaw] = args.slice(1);
+      if (!accountQuery || !badgeRaw) return { response: { ok: false, lines: ["Usage: badge revoke [account] [badge-file]"] } };
+      const result = revokeBadgeFromAccount(accountQuery, cleanBadgeArg(badgeRaw));
+      const affectedRooms = result.account?.id ? pushAccountAdminUpdate(result.account.id) : [];
+      return { response: { ok: result.ok, lines: result.lines || [result.reason] }, affectedRooms };
+    }
+    if (["equip", "set"].includes(sub)) {
+      const [accountQuery, badgeRaw] = args.slice(1);
+      if (!accountQuery) return { response: { ok: false, lines: ["Usage: badge equip [account] [badge-file|null]"] } };
+      const result = equipBadgeForAccount(accountQuery, cleanBadgeArg(badgeRaw || "null"));
+      const affectedRooms = result.account?.id ? pushAccountAdminUpdate(result.account.id) : [];
+      return { response: { ok: result.ok, lines: result.lines || [result.reason] }, affectedRooms };
+    }
+    return { response: { ok: false, lines: ["Usage: badge list | badge grant/revoke/equip [account] [badge-file|null]"] } };
   }
 
   if (action === "reportCommand") {
@@ -2131,6 +2389,7 @@ function routeStructuredDevCommand(action, args = []) {
     if (first === "count") return { action: "playerCount", args: [] };
     if (first === "override") return { action: ["off", "false", "0"].includes(String(args.at(-1)).toLowerCase()) ? "clearOverride" : "spectatorOverride", args: ["on", "off", "true", "false", "0", "1"].includes(String(args.at(-1)).toLowerCase()) ? args.slice(1, -1) : args.slice(1) };
     if (first === "colour" || first === "color") return { action: "setPlayerColour", args: args.slice(1) };
+    if (["textcolour", "textcolor", "chatcolour", "chatcolor"].includes(first)) return { action: "setParticipantChatColour", args: args.slice(1) };
     if (first === "rename") return { action: "renamePlayer", args: args.slice(1) };
   }
 
@@ -2186,9 +2445,19 @@ function routeStructuredDevCommand(action, args = []) {
     if (first === "top") return { action: "topMoves", args: args.slice(1) };
   }
 
+  if (action === "support" || action === "stripe" || action === "donate" || action === "donations") {
+    return { action: "siteCommand", args: ["support", ...args] };
+  }
+  if (action === "site") {
+    return { action: "siteCommand", args };
+  }
+
+
   if (action === "account" || action === "accounts") {
     return { action: "accountCommand", args };
   }
+  if (action === "rank" || action === "ranks") return { action: "rankCommand", args };
+  if (action === "badge" || action === "badges") return { action: "badgeCommand", args };
   if (action === "report" || action === "reports") return { action: "reportCommand", args };
   if (action === "punish" || action === "punishment" || action === "punishments") return { action: "punishCommand", args };
   if (action === "friend" || action === "friends") return { action: "friendCommand", args };
@@ -2369,9 +2638,56 @@ function normaliseDevVariant(value) {
   return "threeD";
 }
 
+function getVariantLabelServer(variantRaw) {
+  const variant = normaliseDevVariant(variantRaw);
+  const game = Array.from(rooms.values()).find((item) => item.variant === variant);
+  if (game?.variantName) return game.variantName;
+  return variant;
+}
+
 function normaliseDevTimeControl(value) {
-  const text = String(value || "").trim().toLowerCase();
-  return ["classical", "rapid", "blitz", "bullet"].includes(text) ? text : "rapid";
+  const raw = String(value || "").trim();
+  const key = raw.toLowerCase().replace(/[\s_-]+/g, "");
+  const aliases = {
+    unlimited: "unlimited", infinite: "unlimited", infinity: "unlimited", none: "unlimited", noclock: "unlimited", untimed: "unlimited",
+    bullet: "bullet", "1+0": "bullet", "1|0": "bullet", "1/0": "bullet", "1m": "bullet",
+    bullet11: "bullet1_1", "1+1": "bullet1_1", "1|1": "bullet1_1", "1/1": "bullet1_1",
+    bullet21: "bullet2_1", "2+1": "bullet2_1", "2|1": "bullet2_1", "2/1": "bullet2_1",
+    blitz3: "blitz3", blitz30: "blitz3", "3+0": "blitz3", "3|0": "blitz3", "3/0": "blitz3",
+    blitz32: "blitz3_2", "3+2": "blitz3_2", "3|2": "blitz3_2", "3/2": "blitz3_2",
+    blitz: "blitz", blitz50: "blitz", "5+0": "blitz", "5|0": "blitz", "5/0": "blitz", "5m": "blitz",
+    blitz53: "blitz5_3", "5+3": "blitz5_3", "5|3": "blitz5_3", "5/3": "blitz5_3",
+    rapid: "rapid", rapid100: "rapid", "10+0": "rapid", "10|0": "rapid", "10/0": "rapid", "10m": "rapid",
+    rapid105: "rapid10_5", "10+5": "rapid10_5", "10|5": "rapid10_5", "10/5": "rapid10_5",
+    rapid1510: "rapid15_10", "15+10": "rapid15_10", "15|10": "rapid15_10", "15/10": "rapid15_10",
+    rapid30: "rapid30", rapid300: "rapid30", "30+0": "rapid30", "30|0": "rapid30", "30/0": "rapid30",
+    classical: "classical", classic: "classical", classical3020: "classical", "30+20": "classical", "30|20": "classical", "30/20": "classical",
+    classical4545: "classical45_45", "45+45": "classical45_45", "45|45": "classical45_45", "45/45": "classical45_45",
+    classical60: "classical60", classical600: "classical60", "60+0": "classical60", "60|0": "classical60", "60/0": "classical60", "1h": "classical60",
+    classical9030: "classical90_30", "90+30": "classical90_30", "90|30": "classical90_30", "90/30": "classical90_30"
+  };
+  return aliases[key] || raw || "rapid";
+}
+
+function isDevDifficultyToken(value) {
+  return ["easy", "medium", "hard"].includes(String(value || "").trim().toLowerCase());
+}
+
+function parseDevStartMatchArgs(args, defaults = {}) {
+  const variant = normaliseDevVariant(args[0] || defaults.selectedVariant || "threeD");
+  let rest = args.slice(1).filter((item) => String(item ?? "").trim());
+  let botCount = 0;
+  if (rest.length && /^\d+$/.test(String(rest[0]))) {
+    botCount = Math.min(2, Math.max(0, Number.parseInt(rest[0], 10) || 0));
+    rest = rest.slice(1);
+  }
+  let difficulty = normaliseDevDifficulty(defaults.selectedDifficulty || "medium");
+  let timeControl = normaliseDevTimeControl(defaults.selectedTimeControl || "rapid");
+  for (const token of rest) {
+    if (isDevDifficultyToken(token)) difficulty = normaliseDevDifficulty(token);
+    else timeControl = normaliseDevTimeControl(token);
+  }
+  return { variant, botCount, difficulty, timeControl };
 }
 
 function normaliseDevColour(value) {
@@ -2400,10 +2716,21 @@ function normaliseDeviceId(value) {
 
 const pendingAITimers = new Map();
 
+function isBotOnlyGame(game) {
+  const aiColors = Array.isArray(game?.ai?.colors) ? game.ai.colors : [];
+  return aiColors.includes("white") && aiColors.includes("black");
+}
+
+function getAIDelayMs(game) {
+  if (game?.ai?.delayMs && Number(game.ai.delayMs) !== 650) return Number(game.ai.delayMs);
+  if (isBotOnlyGame(game)) return game.variant === "threeD" ? 3000 : 1500;
+  return game?.variant === "threeD" ? 900 : 650;
+}
+
 function scheduleAIMoveIfNeeded(game) {
   if (!isAITurn(game) || pendingAITimers.has(game.roomCode)) return;
 
-  const delayMs = Number(game.ai?.delayMs || 650);
+  const delayMs = getAIDelayMs(game);
   const timerId = setTimeout(() => {
     pendingAITimers.delete(game.roomCode);
 
@@ -2416,8 +2743,8 @@ function scheduleAIMoveIfNeeded(game) {
       return;
     }
 
-    if (!isAIDifficultyEnabled(currentGame.ai?.difficulty)) {
-      currentGame.message = `${capitalise(normaliseDevDifficulty(currentGame.ai?.difficulty))} AI is currently disabled by the server.`;
+    if (!isAIDifficultyEnabled(currentGame.ai?.difficulties?.[currentGame.turn] || currentGame.ai?.difficulty, currentGame.variant)) {
+      currentGame.message = `${capitalise(normaliseDevDifficulty(currentGame.ai?.difficulties?.[currentGame.turn] || currentGame.ai?.difficulty))} AI is currently disabled for ${currentGame.variantName || currentGame.variant} by the server.`;
       emitGameStateToRoom(io, currentGame);
       return;
     }
