@@ -389,3 +389,30 @@ Account stats currently track:
 - per-mode results
 - recent game history
 ```
+
+## Account profile update
+
+Account management now lives in a profile modal instead of the settings menu. The settings cog opens only settings plus a button to open the account/profile modal.
+
+Profile icons are loaded from:
+
+```text
+client/public/profile-icons
+```
+
+Drop additional `.svg`, `.png`, `.jpg`, `.jpeg`, or `.webp` files into that folder and rebuild. The account modal will request the available icon list from the server and display them as circular choices.
+
+### Added account dev commands
+
+```text
+account info [username|email|id]
+account list [limit]
+account online [username|email|id]
+account locate [username|email|id]
+account create [email] [username] [password]
+account remove [username|email|id]
+account icon [username|email|id] [icon-file]
+account store
+```
+
+`account online` / `account locate` reports whether the account has active sockets and which room, colour, or spectator slot it is currently using.

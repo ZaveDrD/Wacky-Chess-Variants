@@ -5,7 +5,7 @@ import { fileURLToPath } from "url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const ACCOUNT_STORE_VERSION = 1;
+const ACCOUNT_STORE_VERSION = 2;
 const PASSWORD_ITERATIONS = 210000;
 const SESSION_DAYS = 30;
 const DEFAULT_STORE_PATH = path.join(__dirname, "data", "accounts.json");
@@ -39,6 +39,9 @@ function migrateState(raw) {
     account.stats = account.stats || makeEmptyStats();
     account.gameHistory = Array.isArray(account.gameHistory) ? account.gameHistory : [];
     account.flags = account.flags || {};
+    account.profile = account.profile || {};
+    account.profile.icon = normaliseProfileIcon(account.profile.icon || account.profileIcon || DEFAULT_PROFILE_ICON);
+    account.profile.displayBio = String(account.profile.displayBio || "");
     account.updatedAt = account.updatedAt || account.createdAt || Date.now();
   }
   return next;
@@ -59,8 +62,16 @@ function normaliseEmail(email) {
   return String(email || "").trim().toLowerCase();
 }
 
+const DEFAULT_PROFILE_ICON = "lab-pawn.svg";
+
 function normaliseUsername(username) {
   return String(username || "").trim();
+}
+
+function normaliseProfileIcon(icon) {
+  const clean = String(icon || DEFAULT_PROFILE_ICON).trim();
+  if (!/^[a-zA-Z0-9_.-]+\.(svg|png|jpg|jpeg|webp)$/i.test(clean)) return DEFAULT_PROFILE_ICON;
+  return clean;
 }
 
 function usernameKey(username) {
@@ -119,7 +130,7 @@ export function createAccount({ email, username, password }) {
     stats: makeEmptyStats(),
     gameHistory: [],
     flags: { disabled: false },
-    profile: {}
+    profile: { icon: DEFAULT_PROFILE_ICON, displayBio: "" }
   };
   state.accounts.push(account);
   const session = createSessionForAccount(account);
@@ -191,13 +202,15 @@ export function publicAccount(account) {
     email: account.email,
     createdAt: account.createdAt,
     lastLoginAt: account.lastLoginAt,
-    stats: account.stats || makeEmptyStats()
+    profile: account.profile || { icon: DEFAULT_PROFILE_ICON, displayBio: "" },
+    stats: account.stats || makeEmptyStats(),
+    gameHistory: Array.isArray(account.gameHistory) ? account.gameHistory.slice(-25) : []
   };
 }
 
 export function participantAccount(account) {
   if (!account) return null;
-  return { id: account.id, username: account.username };
+  return { id: account.id, username: account.username, profile: account.profile || { icon: DEFAULT_PROFILE_ICON } };
 }
 
 export function getAccountLabelForSocketAccount(account) {
@@ -208,6 +221,77 @@ export function findAccount(queryRaw) {
   const query = String(queryRaw || "").trim().toLowerCase();
   if (!query) return null;
   return state.accounts.find((account) => account.id.toLowerCase() === query || account.usernameLower === query || account.emailLower === query || account.usernameLower.includes(query) || account.emailLower.includes(query)) || null;
+}
+
+
+export function updateAccount(token, updates = {}) {
+  const account = getAccountByToken(token);
+  if (!account) return { ok: false, reason: "Account session expired." };
+
+  const now = Date.now();
+  const nextUsername = updates.username !== undefined ? normaliseUsername(updates.username) : null;
+  const nextEmail = updates.email !== undefined ? normaliseEmail(updates.email) : null;
+  const nextPassword = updates.newPassword !== undefined ? String(updates.newPassword || "") : null;
+  const changingSensitive = Boolean(nextEmail || nextPassword);
+
+  if (changingSensitive) {
+    if (!verifyPassword(updates.currentPassword, account.passwordHash)) return { ok: false, reason: "Current password is incorrect." };
+  }
+
+  if (nextUsername !== null && nextUsername !== account.username) {
+    const reason = validateAccountInput({ email: account.email, username: nextUsername, password: "password-ok" }, false);
+    if (reason) return { ok: false, reason };
+    const key = usernameKey(nextUsername);
+    if (state.accounts.some((item) => item.id !== account.id && item.usernameLower === key)) return { ok: false, reason: "That username is already taken." };
+    account.username = nextUsername;
+    account.usernameLower = key;
+  }
+
+  if (nextEmail !== null && nextEmail !== account.emailLower) {
+    if (!/^\S+@\S+\.\S+$/.test(nextEmail)) return { ok: false, reason: "Enter a valid email address." };
+    if (state.accounts.some((item) => item.id !== account.id && item.emailLower === nextEmail)) return { ok: false, reason: "That email is already registered." };
+    account.email = nextEmail;
+    account.emailLower = nextEmail;
+  }
+
+  if (nextPassword !== null && nextPassword.length) {
+    if (nextPassword.length < 8) return { ok: false, reason: "Password must be at least 8 characters." };
+    account.passwordHash = hashPassword(nextPassword);
+  }
+
+  if (updates.profileIcon !== undefined) {
+    account.profile = account.profile || {};
+    account.profile.icon = normaliseProfileIcon(updates.profileIcon);
+  }
+
+  account.updatedAt = now;
+  state.auditLog.push({ type: "accountUpdated", accountId: account.id, at: now, fields: Object.keys(updates).filter((key) => key !== "currentPassword" && key !== "newPassword") });
+  saveState();
+  return { ok: true, account: publicAccount(account) };
+}
+
+export function deleteAccount(queryRaw) {
+  const account = findAccount(queryRaw);
+  if (!account) return { ok: false, reason: "Account not found." };
+  state.accounts = state.accounts.filter((item) => item.id !== account.id);
+  state.sessions = state.sessions.filter((session) => session.accountId !== account.id);
+  state.auditLog.push({ type: "accountDeleted", accountId: account.id, username: account.username, at: Date.now() });
+  saveState();
+  return { ok: true, account: publicAccount(account) };
+}
+
+export function devCreateAccount({ email, username, password }) {
+  return createAccount({ email, username, password });
+}
+
+export function forceProfileIcon(queryRaw, icon) {
+  const account = findAccount(queryRaw);
+  if (!account) return { ok: false, reason: "Account not found." };
+  account.profile = account.profile || {};
+  account.profile.icon = normaliseProfileIcon(icon);
+  account.updatedAt = Date.now();
+  saveState();
+  return { ok: true, account: publicAccount(account) };
 }
 
 export function getAccountInfoLines(queryRaw) {
@@ -221,6 +305,7 @@ export function getAccountInfoLines(queryRaw) {
       `Account: ${account.username}`,
       `ID: ${account.id}`,
       `Email: ${account.email}`,
+      `Profile icon: ${account.profile?.icon || DEFAULT_PROFILE_ICON}`,
       `Created: ${new Date(account.createdAt).toISOString()}`,
       `Last login: ${account.lastLoginAt ? new Date(account.lastLoginAt).toISOString() : "never"}`,
       `Games: ${stats.totalGames || 0} | Wins: ${stats.wins || 0} | Losses: ${stats.losses || 0} | Draws: ${stats.draws || 0}`,
@@ -233,7 +318,7 @@ export function getAccountInfoLines(queryRaw) {
 export function getAccountListLines(limitRaw = 25) {
   const limit = Math.min(100, Math.max(1, Number.parseInt(limitRaw, 10) || 25));
   if (!state.accounts.length) return ["No accounts registered."];
-  return state.accounts.slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)).slice(0, limit).map((account) => `${account.username} | ${account.email} | games ${account.stats?.totalGames || 0} | id ${account.id}`);
+  return state.accounts.slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)).slice(0, limit).map((account) => `${account.username} | ${account.email} | created ${new Date(account.createdAt).toISOString()} | games ${account.stats?.totalGames || 0} | icon ${account.profile?.icon || DEFAULT_PROFILE_ICON} | id ${account.id}`);
 }
 
 export function recordCompletedGameForAccounts(game) {

@@ -1,6 +1,7 @@
 import express from "express";
 import http from "http";
 import path from "path";
+import fs from "fs";
 import { fileURLToPath } from "url";
 import { Server } from "socket.io";
 import { addPieceToRoom, appendChatMessage, cancelQuickMatch, cleanupExpiredRooms, createDevMatch, createRoom, createRoomShout, endMatchByDev, findPlayersByName, forfeitGame, getDetailedRoomLines, getLegalMovesForSocket, getOpenMatches, getPlayerCountSnapshot, getRoomSnapshot, hasDeveloperMoveOverride, joinRoom, leaveCurrentRooms, listPiecesInRoom, removePieceFromRoom, removeSocketFromRooms, replacePlayerWithBotInRoom, quickMatch, replacePlayerWithRequesterInRoom, ROOM_CLEANUP_INTERVAL_MS, rooms, runDevUtilityCommand, setPlayerColourInRoom, setSpectatorOverride, setTimerForRoom, setTurnInRoom, spectateRoom, tickAllRoomClocks, tickGameClock } from "./rooms.js";
@@ -9,7 +10,7 @@ import { chooseAIMove, evaluateAIPosition, isAITurn, runAIMove, scoreAICandidate
 import { cloneGame } from "./rules/utils.js";
 import { createHash, pbkdf2Sync, timingSafeEqual } from "crypto";
 import os from "os";
-import { createAccount, loginAccount, logoutAccount, getPublicAccountByToken, getAccountByToken, participantAccount, getAccountInfoLines, getAccountListLines, recordCompletedGameForAccounts, accountStorePath, isRegisteredUsername } from "./accountStore.js";
+import { createAccount, loginAccount, logoutAccount, getPublicAccountByToken, getAccountByToken, participantAccount, getAccountInfoLines, getAccountListLines, recordCompletedGameForAccounts, accountStorePath, isRegisteredUsername, updateAccount, deleteAccount, devCreateAccount, forceProfileIcon, findAccount } from "./accountStore.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -298,7 +299,95 @@ const io = new Server(server, {
 });
 
 const clientDist = path.join(__dirname, "../client/dist");
+const profileIconDirs = [
+  path.join(clientDist, "profile-icons"),
+  path.join(__dirname, "../client/public/profile-icons")
+];
 app.use(express.static(clientDist));
+
+
+function getProfileIconList() {
+  const allowed = new Set();
+  for (const dir of profileIconDirs) {
+    try {
+      if (!fs.existsSync(dir)) continue;
+      for (const file of fs.readdirSync(dir)) {
+        if (/^[a-zA-Z0-9_.-]+\.(svg|png|jpg|jpeg|webp)$/i.test(file)) allowed.add(file);
+      }
+    } catch (error) {
+      console.warn(`[profile-icons] failed to read ${dir}: ${error.message}`);
+    }
+  }
+  if (!allowed.size) allowed.add("lab-pawn.svg");
+  return Array.from(allowed).sort();
+}
+
+function emitProfileIcons(socket) {
+  const payload = { icons: getProfileIconList(), basePath: "/profile-icons/" };
+  recordOutgoing("profileIcons", payload, "GLOBAL", 1);
+  socket.emit("profileIcons", payload);
+}
+
+function refreshAccountParticipantInRooms(socketId, account) {
+  if (!socketId || !account) return [];
+  const affected = [];
+  for (const game of rooms.values()) {
+    let changed = false;
+    for (const color of ["white", "black"]) {
+      const player = game.players?.[color];
+      if (player?.id === socketId) {
+        player.name = account.username;
+        player.accountId = account.id;
+        player.accountName = account.username;
+        player.profile = account.profile || player.profile || {};
+        changed = true;
+      }
+    }
+    for (const spectator of game.spectators || []) {
+      if (spectator.id === socketId) {
+        spectator.name = account.username;
+        spectator.accountId = account.id;
+        spectator.accountName = account.username;
+        spectator.profile = account.profile || spectator.profile || {};
+        changed = true;
+      }
+    }
+    if (changed) affected.push(game);
+  }
+  return affected;
+}
+
+function accountPresenceLines(queryRaw = "") {
+  const account = findAccount(queryRaw);
+  if (!account) return { ok: false, lines: ["Account not found."] };
+  const sockets = Array.from(io.sockets.sockets.values()).filter((socket) => socket.data?.account?.id === account.id);
+  const roomMemberships = [];
+  for (const game of rooms.values()) {
+    if (game.players?.white?.accountId === account.id) roomMemberships.push(`${game.roomCode}: white (${game.variantName})`);
+    if (game.players?.black?.accountId === account.id) roomMemberships.push(`${game.roomCode}: black (${game.variantName})`);
+    for (const spectator of game.spectators || []) {
+      if (spectator.accountId === account.id) roomMemberships.push(`${game.roomCode}: spectator (${game.variantName})`);
+    }
+  }
+  const lines = [
+    `Account: ${account.username}`,
+    `ID: ${account.id}`,
+    `Online: ${sockets.length ? "yes" : "no"}`,
+    `Sockets: ${sockets.length || 0}`,
+    `Room membership: ${roomMemberships.join(", ") || "none"}`
+  ];
+  for (const socket of sockets) {
+    const client = connectedClients.get(socket.id);
+    const games = [];
+    for (const game of rooms.values()) {
+      if (game.players?.white?.id === socket.id) games.push(`${game.roomCode}: white (${game.variantName})`);
+      if (game.players?.black?.id === socket.id) games.push(`${game.roomCode}: black (${game.variantName})`);
+      if ((game.spectators || []).some((spectator) => spectator.id === socket.id)) games.push(`${game.roomCode}: spectator (${game.variantName})`);
+    }
+    lines.push(`${socket.id} | ${client?.lastRoomCode || "lobby"} | ${games.join(", ") || "not in game"}`);
+  }
+  return { ok: true, lines };
+}
 
 app.get("/health", (_req, res) => {
   res.json({ ok: true, rooms: rooms.size });
@@ -426,6 +515,7 @@ io.on("connection", (socket) => {
   connectedClients.set(socket.id, { id: socket.id, name: "Guest", connectedAt: Date.now(), lastRoomCode: null, accountId: null, accountName: null });
   socket.emit("aiAvailability", getAIAvailabilityPayload());
   recordOutgoing("aiAvailability", getAIAvailabilityPayload(), "GLOBAL", 1);
+  emitProfileIcons(socket);
   socket.onAny((eventName, payload = {}) => {
     recordIncoming(eventName, payload, payload?.roomCode || connectedClients.get(socket.id)?.lastRoomCode || "GLOBAL");
   });
@@ -435,6 +525,8 @@ io.on("connection", (socket) => {
     recordOutgoing("aiAvailability", payload, "GLOBAL", 1);
     socket.emit("aiAvailability", payload);
   });
+
+  socket.on("requestProfileIcons", () => emitProfileIcons(socket));
 
   socket.on("accountCreate", ({ email, username, password } = {}) => {
     const result = createAccount({ email, username, password });
@@ -467,6 +559,20 @@ io.on("connection", (socket) => {
     socket.data.account = getAccountByToken(token);
     updateConnectedClient(socket.id, account.username, connectedClients.get(socket.id)?.lastRoomCode || null);
     socket.emit("accountAuthenticated", { account, token });
+  });
+
+  socket.on("accountUpdate", ({ token, updates } = {}) => {
+    const result = updateAccount(token, updates || {});
+    if (!result.ok) {
+      socket.emit("accountError", result.reason || "Could not update account.");
+      return;
+    }
+    socket.data.account = getAccountByToken(token);
+    updateConnectedClient(socket.id, result.account.username, connectedClients.get(socket.id)?.lastRoomCode || null);
+    const affected = refreshAccountParticipantInRooms(socket.id, result.account);
+    socket.emit("accountUpdated", { account: result.account });
+    socket.emit("accountAuthenticated", { account: result.account, token });
+    for (const game of affected) emitGameStateToRoom(io, game);
   });
 
   socket.on("accountLogout", ({ token } = {}) => {
@@ -880,10 +986,33 @@ function handleDevCommand(socket, payload = {}) {
     if (["list", "recent"].includes(sub)) {
       return { response: { ok: true, lines: getAccountListLines(args[1]) } };
     }
-    if (sub === "store") {
-      return { response: { ok: true, lines: [`Account store: ${accountStorePath()}`] } };
+    if (["online", "where", "locate", "presence"].includes(sub)) {
+      const result = accountPresenceLines(args.slice(1).join(" ") || name);
+      return { response: { ok: result.ok, lines: result.lines } };
     }
-    return { response: { ok: false, lines: ["Usage: account info [name|email|id] | account list [limit] | account store"] } };
+    if (["create", "make"].includes(sub)) {
+      const [email, username, password] = args.slice(1);
+      if (!email || !username || !password) return { response: { ok: false, lines: ["Usage: account create [email] [username] [password]"] } };
+      const result = devCreateAccount({ email, username, password });
+      return { response: { ok: result.ok, lines: [result.ok ? `Created account ${result.account.username}.` : result.reason] } };
+    }
+    if (["remove", "delete"].includes(sub)) {
+      const query = args.slice(1).join(" ");
+      if (!query) return { response: { ok: false, lines: ["Usage: account remove [username|email|id]"] } };
+      const result = deleteAccount(query);
+      return { response: { ok: result.ok, lines: [result.ok ? `Removed account ${result.account.username}.` : result.reason] } };
+    }
+    if (["icon", "profileicon"].includes(sub)) {
+      const query = args[1];
+      const icon = args[2];
+      if (!query || !icon) return { response: { ok: false, lines: ["Usage: account icon [username|email|id] [icon-file]"] } };
+      const result = forceProfileIcon(query, icon);
+      return { response: { ok: result.ok, lines: [result.ok ? `Set ${result.account.username} icon to ${result.account.profile?.icon}.` : result.reason] } };
+    }
+    if (sub === "store") {
+      return { response: { ok: true, lines: [`Account store: ${accountStorePath()}`, `Profile icons: ${getProfileIconList().join(", ")}`] } };
+    }
+    return { response: { ok: false, lines: ["Usage: account info|list|online|create|remove|icon|store ..."] } };
   }
 
   if (action === "networkCommand") {

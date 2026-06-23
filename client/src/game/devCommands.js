@@ -8,7 +8,7 @@ export const DEV_COMMANDS = [
   { name: "clear", action: "clear", aliases: ["cls"], usage: "clear", summary: "Clears the developer console output." },
   { name: "room", action: "room", usage: "room [list|join|start|spectate|kick|lock|unlock|rename|exit|info] ...", summary: "Room and matchmaking commands." },
   { name: "player", action: "player", usage: "player [bot|takeover|find|count|override|colour|rename] ...", summary: "Player slot and identity commands." },
-  { name: "account", action: "account", aliases: ["accounts"], usage: "account [info|list|store] ...", summary: "Inspect registered player accounts." },
+  { name: "account", action: "account", aliases: ["accounts"], usage: "account [info|list|online|create|remove|icon|store] ...", summary: "Inspect and manage registered player accounts." },
   { name: "match", action: "match", usage: "match [end|turn|reset|validate|forfeit]", summary: "Match state commands." },
   { name: "chat", action: "chat", usage: "chat [shout|announce|system|sudo|whisper|quote] ...", summary: "Chat, announcements, and fake-message commands." },
   { name: "board", action: "board", usage: "board [clear|copy|load|mirror|shuffle] ...", summary: "Whole-board editing commands." },
@@ -66,11 +66,15 @@ const GROUPS = {
   },
   account: {
     page: 1,
-    summary: "Registered account inspection.",
+    summary: "Registered account inspection and admin controls.",
     subcommands: [
-      ["info", "account info [username|email|id]", "Show account email, stats, and recent games."],
+      ["info", "account info [username|email|id]", "Show account email, profile, stats, and recent games."],
       ["list", "account list [limit]", "List recently created accounts."],
-      ["store", "account store", "Show the account JSON store path."]
+      ["online", "account online [username|email|id]", "Show whether an account is online and what room/socket it is using."],
+      ["create", "account create [email] [username] [password]", "Create an account from the console."],
+      ["remove", "account remove [username|email|id]", "Remove an account and its sessions."],
+      ["icon", "account icon [username|email|id] [icon-file]", "Set an account profile icon."],
+      ["store", "account store", "Show the account JSON store path and available profile icons."]
     ]
   },
   match: {

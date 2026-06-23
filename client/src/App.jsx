@@ -28,7 +28,10 @@ export default function App() {
   const [accountToken, setAccountToken] = useState(localStorage.getItem("tclAccountToken") || "");
   const [accountMode, setAccountMode] = useState("login");
   const [accountForm, setAccountForm] = useState({ email: "", username: "", login: "", password: "" });
+  const [accountEditForm, setAccountEditForm] = useState({ username: "", email: "", currentPassword: "", newPassword: "", profileIcon: "lab-pawn.svg" });
   const [accountMessage, setAccountMessage] = useState("");
+  const [accountModalOpen, setAccountModalOpen] = useState(false);
+  const [profileIcons, setProfileIcons] = useState(["lab-pawn.svg"]);
   const [roomInput, setRoomInput] = useState("");
   const [roomCode, setRoomCode] = useState("");
   const [color, setColor] = useState(null);
@@ -92,6 +95,7 @@ export default function App() {
     socket.on("connect", () => {
       setNotice(UI_TEXT.notices.connected);
       socket.emit("requestAIAvailability");
+      socket.emit("requestProfileIcons");
       const storedToken = localStorage.getItem("tclAccountToken") || accountToken;
       if (storedToken) socket.emit("accountSession", { token: storedToken });
     });
@@ -189,11 +193,40 @@ export default function App() {
         setAccountToken(token);
       }
       setAccount(nextAccount || null);
+      if (nextAccount) {
+        setAccountEditForm((current) => ({
+          ...current,
+          username: nextAccount.username || "",
+          email: nextAccount.email || "",
+          profileIcon: nextAccount.profile?.icon || "lab-pawn.svg",
+          currentPassword: "",
+          newPassword: ""
+        }));
+      }
       if (nextAccount?.username) {
         setName(nextAccount.username);
         localStorage.setItem("playerName", nextAccount.username);
       }
       setAccountMessage(accountMode === "register" ? UI_TEXT.account.created : UI_TEXT.account.loggedIn);
+    });
+
+    socket.on("accountUpdated", ({ account: nextAccount } = {}) => {
+      if (!nextAccount) return;
+      setAccount(nextAccount);
+      setName(nextAccount.username || name);
+      setAccountEditForm((current) => ({
+        ...current,
+        username: nextAccount.username || "",
+        email: nextAccount.email || "",
+        profileIcon: nextAccount.profile?.icon || current.profileIcon || "lab-pawn.svg",
+        currentPassword: "",
+        newPassword: ""
+      }));
+      setAccountMessage(UI_TEXT.account.updated);
+    });
+
+    socket.on("profileIcons", ({ icons } = {}) => {
+      if (Array.isArray(icons) && icons.length) setProfileIcons(icons);
     });
 
     socket.on("accountError", (message) => {
@@ -275,6 +308,8 @@ export default function App() {
       socket.off("chatError");
       socket.off("devCommandResult");
       socket.off("accountAuthenticated");
+      socket.off("accountUpdated");
+      socket.off("profileIcons");
       socket.off("accountError");
       socket.off("accountSessionExpired");
       socket.off("accountLoggedOut");
@@ -302,6 +337,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    socket.emit("requestProfileIcons");
     if (accountToken) socket.emit("accountSession", { token: accountToken });
   }, []);
 
@@ -1157,6 +1193,33 @@ export default function App() {
     setAccountForm((current) => ({ ...current, [field]: value }));
   }
 
+  function updateAccountEditForm(field, value) {
+    setAccountEditForm((current) => ({ ...current, [field]: value }));
+  }
+
+  function submitAccountUpdate(updates) {
+    if (!accountToken) {
+      setAccountMessage(UI_TEXT.account.sessionExpired);
+      return;
+    }
+    socket.emit("accountUpdate", { token: accountToken, updates });
+  }
+
+  function submitProfileUpdate(event) {
+    event?.preventDefault?.();
+    submitAccountUpdate({ username: accountEditForm.username, profileIcon: accountEditForm.profileIcon });
+  }
+
+  function submitEmailUpdate(event) {
+    event?.preventDefault?.();
+    submitAccountUpdate({ email: accountEditForm.email, currentPassword: accountEditForm.currentPassword });
+  }
+
+  function submitPasswordUpdate(event) {
+    event?.preventDefault?.();
+    submitAccountUpdate({ currentPassword: accountEditForm.currentPassword, newPassword: accountEditForm.newPassword });
+  }
+
   function submitAccountLogin(event) {
     event?.preventDefault?.();
     socket.emit("accountLogin", { login: accountForm.login, password: accountForm.password });
@@ -1446,9 +1509,30 @@ export default function App() {
           onAccountLogin={submitAccountLogin}
           onAccountCreate={submitAccountCreate}
           onAccountLogout={logoutAccount}
+          onAccountOpen={() => setAccountModalOpen(true)}
           onSoundToggle={() => { unlockAudio(); setSoundEnabled((value) => !value); }}
           onVolume={(value) => { unlockAudio(); setSoundVolume(value); }}
           onCensorToggle={() => setCensorContent((value) => !value)}
+        />
+        <AccountModal
+          open={accountModalOpen}
+          account={account}
+          accountMode={accountMode}
+          accountForm={accountForm}
+          accountEditForm={accountEditForm}
+          accountMessage={accountMessage}
+          profileIcons={profileIcons}
+          selectedVariant={selectedVariant}
+          onClose={() => setAccountModalOpen(false)}
+          onAccountMode={setAccountMode}
+          onAccountForm={updateAccountForm}
+          onAccountEditForm={updateAccountEditForm}
+          onAccountLogin={submitAccountLogin}
+          onAccountCreate={submitAccountCreate}
+          onProfileUpdate={submitProfileUpdate}
+          onEmailUpdate={submitEmailUpdate}
+          onPasswordUpdate={submitPasswordUpdate}
+          onAccountLogout={logoutAccount}
         />
 
         <section className="lab-hero" aria-label="The Chess Lab home">
@@ -1494,21 +1578,34 @@ export default function App() {
             />
           ) : (
             <>
-              <div className="lab-user-row">
-                <div>
-                  <span className="eyebrow">{account ? UI_TEXT.account.accountBadge : UI_TEXT.lobby.guestAccessEyebrow}</span>
-                  <h2>{account ? account.username : UI_TEXT.lobby.playAsGuestTitle}</h2>
-                  <p>{account ? UI_TEXT.account.statsSaved : UI_TEXT.lobby.guestHelp}</p>
-                </div>
-                <label className="lab-name-input">
-                  <span>{UI_TEXT.lobby.displayNameLabel}</span>
-                  <input value={account?.username || name} disabled={Boolean(account)} onChange={(event) => setName(event.target.value)} placeholder={UI_TEXT.lobby.displayNamePlaceholder} />
-                </label>
-                <div className={`account-placeholder ${account ? "signed-in" : ""}`} title={account ? UI_TEXT.account.statsSaved : UI_TEXT.account.signedOutBody}>
-                  <span>{account ? "●" : "◎"}</span>
-                  <strong>{account ? UI_TEXT.account.accountReady : UI_TEXT.account.accountSlot}</strong>
-                  <small>{account ? account.email : UI_TEXT.account.guestBadge}</small>
-                </div>
+              <div className="lab-user-row polished-account-row">
+                {account ? (
+                  <button className="home-profile-card" type="button" onClick={() => setAccountModalOpen(true)}>
+                    <ProfileAvatar account={account} size="large" />
+                    <div>
+                      <span className="eyebrow">{UI_TEXT.account.accountBadge}</span>
+                      <h2>{account.username}</h2>
+                      <p>{formatModeStats(account, selectedVariant)} · {UI_TEXT.account.memberSince} {formatDateShort(account.createdAt)}</p>
+                    </div>
+                  </button>
+                ) : (
+                  <>
+                    <div>
+                      <span className="eyebrow">{UI_TEXT.lobby.guestAccessEyebrow}</span>
+                      <h2>{UI_TEXT.lobby.playAsGuestTitle}</h2>
+                      <p>{UI_TEXT.lobby.guestHelp}</p>
+                    </div>
+                    <label className="lab-name-input">
+                      <span>{UI_TEXT.lobby.displayNameLabel}</span>
+                      <input value={name} onChange={(event) => setName(event.target.value)} placeholder={UI_TEXT.lobby.displayNamePlaceholder} />
+                    </label>
+                    <button className="account-placeholder" type="button" onClick={() => setAccountModalOpen(true)} title={UI_TEXT.account.signedOutBody}>
+                      <span>◎</span>
+                      <strong>{UI_TEXT.account.accountSlot}</strong>
+                      <small>{UI_TEXT.account.guestBadge}</small>
+                    </button>
+                  </>
+                )}
               </div>
 
               <div className="lab-selection-row">
@@ -1655,9 +1752,30 @@ export default function App() {
         onAccountLogin={submitAccountLogin}
         onAccountCreate={submitAccountCreate}
         onAccountLogout={logoutAccount}
+        onAccountOpen={() => setAccountModalOpen(true)}
         onSoundToggle={() => { unlockAudio(); setSoundEnabled((value) => !value); }}
         onVolume={(value) => { unlockAudio(); setSoundVolume(value); }}
         onCensorToggle={() => setCensorContent((value) => !value)}
+      />
+      <AccountModal
+        open={accountModalOpen}
+        account={account}
+        accountMode={accountMode}
+        accountForm={accountForm}
+        accountEditForm={accountEditForm}
+        accountMessage={accountMessage}
+        profileIcons={profileIcons}
+        selectedVariant={game?.variant || selectedVariant}
+        onClose={() => setAccountModalOpen(false)}
+        onAccountMode={setAccountMode}
+        onAccountForm={updateAccountForm}
+        onAccountEditForm={updateAccountEditForm}
+        onAccountLogin={submitAccountLogin}
+        onAccountCreate={submitAccountCreate}
+        onProfileUpdate={submitProfileUpdate}
+        onEmailUpdate={submitEmailUpdate}
+        onPasswordUpdate={submitPasswordUpdate}
+        onAccountLogout={logoutAccount}
       />
       <section className="top-bar">
         <div>
@@ -1915,6 +2033,141 @@ export default function App() {
 
 
 
+
+function AccountModal({
+  open,
+  account,
+  accountMode,
+  accountForm,
+  accountEditForm,
+  accountMessage,
+  profileIcons,
+  selectedVariant,
+  onClose,
+  onAccountMode,
+  onAccountForm,
+  onAccountEditForm,
+  onAccountLogin,
+  onAccountCreate,
+  onProfileUpdate,
+  onEmailUpdate,
+  onPasswordUpdate,
+  onAccountLogout
+}) {
+  if (!open) return null;
+  const isRegister = accountMode === "register";
+  const modeStats = getModeStats(account, selectedVariant);
+  return (
+    <div className="account-modal-backdrop">
+      <section className="account-modal" role="dialog" aria-modal="true" aria-label={UI_TEXT.account.modalTitle}>
+        <header className="account-modal-head">
+          <div>
+            <span className="eyebrow">{account ? UI_TEXT.account.accountBadge : UI_TEXT.account.guestBadge}</span>
+            <h2>{account ? UI_TEXT.account.manageAccount : UI_TEXT.account.signedOutTitle}</h2>
+          </div>
+          <button type="button" onClick={onClose} aria-label={UI_TEXT.buttons.closeOverlay}>×</button>
+        </header>
+
+        {account ? (
+          <div className="account-modal-grid">
+            <aside className="account-profile-summary">
+              <ProfileAvatar account={account} size="xl" />
+              <h3>{account.username}</h3>
+              <p>{account.email}</p>
+              <small>{UI_TEXT.account.memberSince} {formatDateShort(account.createdAt)}</small>
+              <div className="account-stat-strip">
+                <span><strong>{account.stats?.totalGames || 0}</strong>{UI_TEXT.account.gamesLabel}</span>
+                <span><strong>{account.stats?.wins || 0}</strong>{UI_TEXT.account.winsLabel}</span>
+                <span><strong>{account.stats?.losses || 0}</strong>{UI_TEXT.account.lossesLabel}</span>
+                <span><strong>{account.stats?.draws || 0}</strong>{UI_TEXT.account.drawsLabel}</span>
+              </div>
+              <div className="account-mode-stat-card">
+                <strong>{getVariantLabel(selectedVariant)}</strong>
+                <span>{modeStats.games}G · {modeStats.wins}W · {modeStats.losses}L · {modeStats.draws}D</span>
+              </div>
+            </aside>
+
+            <div className="account-edit-panels">
+              <form className="account-form account-edit-form" onSubmit={onProfileUpdate}>
+                <h3>{UI_TEXT.account.profileSectionTitle}</h3>
+                <label><span>{UI_TEXT.account.usernameLabel}</span><input value={accountEditForm.username} onChange={(event) => onAccountEditForm("username", event.target.value)} autoComplete="username" /></label>
+                <div className="profile-icon-grid" aria-label={UI_TEXT.account.profileIconLabel}>
+                  {profileIcons.map((icon) => (
+                    <button key={icon} type="button" className={accountEditForm.profileIcon === icon ? "active" : ""} onClick={() => onAccountEditForm("profileIcon", icon)} title={icon}>
+                      <img src={profileIconUrl(icon)} alt="" />
+                    </button>
+                  ))}
+                </div>
+                <button type="submit">{UI_TEXT.account.saveProfile}</button>
+              </form>
+
+              <form className="account-form account-edit-form" onSubmit={onEmailUpdate}>
+                <h3>{UI_TEXT.account.emailSectionTitle}</h3>
+                <label><span>{UI_TEXT.account.emailLabel}</span><input value={accountEditForm.email} onChange={(event) => onAccountEditForm("email", event.target.value)} type="email" autoComplete="email" /></label>
+                <label><span>{UI_TEXT.account.currentPasswordLabel}</span><input value={accountEditForm.currentPassword} onChange={(event) => onAccountEditForm("currentPassword", event.target.value)} type="password" autoComplete="current-password" /></label>
+                <button type="submit">{UI_TEXT.account.saveEmail}</button>
+              </form>
+
+              <form className="account-form account-edit-form" onSubmit={onPasswordUpdate}>
+                <h3>{UI_TEXT.account.passwordSectionTitle}</h3>
+                <label><span>{UI_TEXT.account.currentPasswordLabel}</span><input value={accountEditForm.currentPassword} onChange={(event) => onAccountEditForm("currentPassword", event.target.value)} type="password" autoComplete="current-password" /></label>
+                <label><span>{UI_TEXT.account.newPasswordLabel}</span><input value={accountEditForm.newPassword} onChange={(event) => onAccountEditForm("newPassword", event.target.value)} type="password" autoComplete="new-password" /></label>
+                <button type="submit">{UI_TEXT.account.savePassword}</button>
+              </form>
+
+              <button className="account-logout-button" type="button" onClick={onAccountLogout}>{UI_TEXT.account.logOut}</button>
+            </div>
+          </div>
+        ) : (
+          <div className="account-modal-auth">
+            <p>{UI_TEXT.account.signedOutBody}</p>
+            <div className="account-mode-tabs">
+              <button type="button" className={!isRegister ? "active" : ""} onClick={() => onAccountMode("login")}>{UI_TEXT.account.showLogin}</button>
+              <button type="button" className={isRegister ? "active" : ""} onClick={() => onAccountMode("register")}>{UI_TEXT.account.showRegister}</button>
+            </div>
+            <form className="account-form" onSubmit={isRegister ? onAccountCreate : onAccountLogin}>
+              {isRegister ? (
+                <>
+                  <label><span>{UI_TEXT.account.emailLabel}</span><input value={accountForm.email} onChange={(event) => onAccountForm("email", event.target.value)} type="email" autoComplete="email" /></label>
+                  <label><span>{UI_TEXT.account.usernameLabel}</span><input value={accountForm.username} onChange={(event) => onAccountForm("username", event.target.value)} autoComplete="username" /></label>
+                </>
+              ) : (
+                <label><span>{UI_TEXT.account.loginLabel}</span><input value={accountForm.login} onChange={(event) => onAccountForm("login", event.target.value)} autoComplete="username" /></label>
+              )}
+              <label><span>{UI_TEXT.account.passwordLabel}</span><input value={accountForm.password} onChange={(event) => onAccountForm("password", event.target.value)} type="password" autoComplete={isRegister ? "new-password" : "current-password"} /></label>
+              <button type="submit">{isRegister ? UI_TEXT.account.createAccount : UI_TEXT.account.logIn}</button>
+            </form>
+          </div>
+        )}
+        {accountMessage && <small className="account-message modal-message">{accountMessage}</small>}
+      </section>
+    </div>
+  );
+}
+
+function ProfileAvatar({ account, size = "normal" }) {
+  const icon = account?.profile?.icon || "lab-pawn.svg";
+  return <img className={`profile-avatar ${size}`} src={profileIconUrl(icon)} alt="" />;
+}
+
+function profileIconUrl(icon) {
+  return `/profile-icons/${encodeURIComponent(icon || "lab-pawn.svg")}`;
+}
+
+function getModeStats(account, variant) {
+  return account?.stats?.byVariant?.[variant] || { games: 0, wins: 0, losses: 0, draws: 0 };
+}
+
+function formatModeStats(account, variant) {
+  const stats = getModeStats(account, variant);
+  return `${stats.games || 0}G · ${stats.wins || 0}W · ${stats.losses || 0}L · ${stats.draws || 0}D`;
+}
+
+function formatDateShort(value) {
+  if (!value) return "—";
+  return new Date(value).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+}
+
 function SettingsButton({
   open,
   onToggle,
@@ -1930,11 +2183,11 @@ function SettingsButton({
   onAccountLogin,
   onAccountCreate,
   onAccountLogout,
+  onAccountOpen,
   onSoundToggle,
   onVolume,
   onCensorToggle
 }) {
-  const isRegister = accountMode === "register";
   return (
     <div className="settings-cluster">
       <button className="settings-cog" type="button" onClick={onToggle} aria-label="Open settings" title="Settings">⚙</button>
@@ -1959,39 +2212,14 @@ function SettingsButton({
           </label>
           <p>{UI_TEXT.settings.censorHelp}</p>
 
-          <div className="settings-account-panel">
-            {account ? (
-              <>
-                <span className="eyebrow">{UI_TEXT.account.accountBadge}</span>
-                <strong>{UI_TEXT.account.signedInAs} {account.username}</strong>
-                <small>{account.email}</small>
-                <small>{UI_TEXT.account.statsSaved}: {account.stats?.totalGames || 0} games</small>
-                <button type="button" onClick={onAccountLogout}>{UI_TEXT.account.logOut}</button>
-              </>
-            ) : (
-              <>
-                <span className="eyebrow">{UI_TEXT.account.guestBadge}</span>
-                <strong>{UI_TEXT.account.signedOutTitle}</strong>
-                <small>{UI_TEXT.account.signedOutBody}</small>
-                <div className="account-mode-tabs">
-                  <button type="button" className={!isRegister ? "active" : ""} onClick={() => onAccountMode("login")}>{UI_TEXT.account.showLogin}</button>
-                  <button type="button" className={isRegister ? "active" : ""} onClick={() => onAccountMode("register")}>{UI_TEXT.account.showRegister}</button>
-                </div>
-                <form className="account-form" onSubmit={isRegister ? onAccountCreate : onAccountLogin}>
-                  {isRegister ? (
-                    <>
-                      <label><span>{UI_TEXT.account.emailLabel}</span><input value={accountForm.email} onChange={(event) => onAccountForm("email", event.target.value)} type="email" autoComplete="email" /></label>
-                      <label><span>{UI_TEXT.account.usernameLabel}</span><input value={accountForm.username} onChange={(event) => onAccountForm("username", event.target.value)} autoComplete="username" /></label>
-                    </>
-                  ) : (
-                    <label><span>{UI_TEXT.account.loginLabel}</span><input value={accountForm.login} onChange={(event) => onAccountForm("login", event.target.value)} autoComplete="username" /></label>
-                  )}
-                  <label><span>{UI_TEXT.account.passwordLabel}</span><input value={accountForm.password} onChange={(event) => onAccountForm("password", event.target.value)} type="password" autoComplete={isRegister ? "new-password" : "current-password"} /></label>
-                  <button type="submit">{isRegister ? UI_TEXT.account.createAccount : UI_TEXT.account.logIn}</button>
-                </form>
-              </>
-            )}
-            {accountMessage && <small className="account-message">{accountMessage}</small>}
+          <div className="settings-account-panel compact-account-panel">
+            {account ? <ProfileAvatar account={account} /> : <span className="settings-account-guest">◎</span>}
+            <div>
+              <span className="eyebrow">{account ? UI_TEXT.account.accountBadge : UI_TEXT.account.guestBadge}</span>
+              <strong>{account ? account.username : UI_TEXT.account.signedOutTitle}</strong>
+              <small>{account ? UI_TEXT.account.manageAccountHelp : UI_TEXT.account.signedOutBody}</small>
+            </div>
+            <button type="button" onClick={onAccountOpen}>{account ? UI_TEXT.account.manageAccount : UI_TEXT.account.openAccount}</button>
           </div>
         </section>
       )}
