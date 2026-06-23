@@ -20,9 +20,11 @@ export function createRoom(hostSocket, hostName, options = {}) {
     name: cleanName(hostName) || "White"
   };
 
+  game.visibility = options.publicMatch ? "public" : "private";
+  game.publicMatch = Boolean(options.publicMatch);
+
   if (options.publicMatch) {
-    game.publicMatch = true;
-    game.message = "Waiting for quick match opponent.";
+    game.message = "Waiting in the Open Lab Queue.";
   }
 
   if (game.ai?.enabled) {
@@ -73,6 +75,7 @@ export function quickMatch(socket, playerName, options = {}) {
       matched: true,
       created: false,
       roomCode: existing.roomCode,
+      matchedSocketId: existing.players.white?.id,
       scope: existing.matchmakingScope
     };
   }
@@ -204,7 +207,9 @@ export function getOpenMatches() {
       black: game.players.black?.name || null,
       spectators: game.spectators?.length || 0,
       moveCount: game.moveHistory?.length || 0,
-      hasAI: Boolean(game.ai?.enabled)
+      hasAI: Boolean(game.ai?.enabled),
+      visibility: game.visibility || (game.publicMatch ? "public" : "private"),
+      publicMatch: Boolean(game.publicMatch)
     }));
 }
 
@@ -226,6 +231,8 @@ export function getRoomSnapshot(roomCodeRaw) {
     moveCount: game.moveHistory?.length || 0,
     hasAI: Boolean(game.ai?.enabled),
     aiColors: game.ai?.colors || [],
+    visibility: game.visibility || (game.publicMatch ? "public" : "private"),
+    publicMatch: Boolean(game.publicMatch),
     winner: game.winner || null,
     message: game.message || ""
   };
@@ -1592,7 +1599,7 @@ export function runDevUtilityCommand(roomCodeRaw, action, args = [], requesterSo
 export function getDetailedRoomLines() {
   const matches = Array.from(rooms.values());
   if (!matches.length) return ["No rooms."];
-  return matches.map((g) => `${g.roomCode} | ${g.displayName || g.variantName} | ${g.status} | ${g.players.white?.name || "open"} vs ${g.players.black?.name || "open"} | spectators ${(g.spectators||[]).length} | bots ${(g.ai?.colors||[]).join(",") || "none"} | timers ${formatClock(g.clocks?.white)}-${formatClock(g.clocks?.black)}`);
+  return matches.map((g) => `${g.roomCode} | ${g.visibility || (g.publicMatch ? "public" : "private")} | ${g.displayName || g.variantName} | ${g.status} | ${g.players.white?.name || "open"} vs ${g.players.black?.name || "open"} | spectators ${(g.spectators||[]).length} | bots ${(g.ai?.colors||[]).join(",") || "none"} | timers ${formatClock(g.clocks?.white)}-${formatClock(g.clocks?.black)}`);
 }
 
 function consumeDevLocationArgs(args, startIndex = 0) {

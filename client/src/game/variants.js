@@ -1,6 +1,6 @@
 export const VARIANT_OPTIONS = [
-  { id: "threeD", label: "3D Chess" },
   { id: "normal", label: "Normal Chess" },
+  { id: "threeD", label: "3D Chess" },
   { id: "chess960", label: "Chess960" },
   { id: "crazyhouse", label: "Crazyhouse" },
   { id: "kingOfTheHill", label: "King of the Hill" },

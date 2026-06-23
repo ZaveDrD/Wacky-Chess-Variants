@@ -1,9 +1,9 @@
 export const UI_TEXT = {
-  siteTitle: "The Gallery Of Wacky Chess Variants",
-  appTitle: "3D Chess",
-  appSubtitle: "Pick a variant, choose a time control, and start a room.",
+  siteTitle: "The Chess Lab",
+  appTitle: "The Chess Lab",
+  appSubtitle: "Experimental chess variants, playable instantly.",
   lobby: {
-    variantLabel: "Variant",
+    variantLabel: "Experiment",
     timeControlLabel: "Time Control",
     gameModeLabel: "Game Mode",
     aiDifficultyLabel: "AI Difficulty",
@@ -15,7 +15,7 @@ export const UI_TEXT = {
     cancelSearchButton: "Cancel Search",
     hostPrivateButton: "Host Private",
     joinButton: "Join",
-    roomPlaceholder: "Room Code"
+    roomPlaceholder: "Lab Code"
   },
   variants: {
     threeD: {
@@ -163,7 +163,7 @@ export const UI_TEXT = {
     sendChat: "Send"
   },
   labels: {
-    room: "Room",
+    room: "Lab Room",
     copied: "Copied",
     youAre: "You are",
     playing: "Playing",
@@ -204,6 +204,6 @@ export const UI_TEXT = {
     usePlaneView: "Use XY, XZ, or YZ view while this is fixed.",
     noChatYet: "No Messages Yet.",
     chatFailed: "Message could not be sent.",
-    roomCopied: "Room Code Copied."
+    roomCopied: "Lab Code Copied."
   }
 };

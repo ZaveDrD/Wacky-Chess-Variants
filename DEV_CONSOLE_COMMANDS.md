@@ -331,3 +331,26 @@ Notes:
 - Per-room memory is approximate and based on serialised room state size.
 - Per-room CPU is not directly available from Node/Render, so AI CPU is tracked with measured AI move wall time and reported as an AI CPU proxy.
 - Host max bandwidth is shown only if `MAX_SERVER_BANDWIDTH_BPS` is set in the server environment.
+
+## The Chess Lab home / public queue update
+
+Home screen:
+- Main public title is now `The Chess Lab`.
+- Browser title starts as `The Chess Lab - Home` and changes to the active experiment/room while playing.
+- Normal Chess is the default experiment for new players.
+- Variant selection is now an animated `Experiment Gallery` card grid.
+- Time controls now use the same large-card selection style.
+- Home actions are split into `Online Multiplayer`, `Vs. AI`, and `Host / Join Private` tabs.
+- Settings cog is available from the corner and contains sound and local censor controls.
+
+Public/private room behaviour:
+- `Host Private` creates a private Lab Room with a Lab Code.
+- `Find Match` creates or joins only public queue rooms.
+- Private rooms are not eligible for public matchmaking.
+- While waiting in public matchmaking, the client remains on the lobby screen with a chess loading animation, timer, and cancel button.
+- Dev room listings now include `public` / `private` room visibility.
+
+Local censor:
+- Settings -> Local censor filters names and chat on that player's screen only.
+- Raw names and messages are still sent/stored normally.
+- Censoring is local and does not affect the other player.

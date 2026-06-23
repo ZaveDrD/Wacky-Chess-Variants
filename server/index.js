@@ -464,6 +464,17 @@ io.on("connection", (socket) => {
       return;
     }
 
+    if (result.created && !result.matched) {
+      updateConnectedClient(socket.id, name, null);
+      socket.emit("matchmakingStatus", {
+        searching: true,
+        matched: false,
+        roomCode: result.roomCode || result.game.roomCode,
+        scope: result.scope
+      });
+      return;
+    }
+
     updateConnectedClient(socket.id, name, result.roomCode || result.game.roomCode);
     socket.emit("roomJoined", {
       roomCode: result.roomCode || result.game.roomCode,
@@ -472,17 +483,34 @@ io.on("connection", (socket) => {
       game: sanitiseGameForViewer(result.game, socket.id)
     });
     socket.emit("matchmakingStatus", {
-      searching: result.created && !result.matched,
+      searching: false,
       matched: result.matched,
       roomCode: result.roomCode || result.game.roomCode,
       scope: result.scope
     });
+
+    if (result.matchedSocketId) {
+      const hostSocket = io.sockets.sockets.get(result.matchedSocketId);
+      if (hostSocket) {
+        updateConnectedClient(result.matchedSocketId, connectedClients.get(result.matchedSocketId)?.name || result.game.players.white?.name || "White", result.game.roomCode);
+        hostSocket.emit("roomJoined", {
+          roomCode: result.game.roomCode,
+          color: "white",
+          role: "player",
+          game: sanitiseGameForViewer(result.game, result.matchedSocketId)
+        });
+        hostSocket.emit("matchmakingStatus", { searching: false, matched: true, roomCode: result.game.roomCode, scope: result.scope });
+      }
+    }
+
     emitGameStateToRoom(io, result.game);
     scheduleAIMoveIfNeeded(result.game);
   });
 
   socket.on("cancelQuickMatch", () => {
     const result = cancelQuickMatch(socket.id);
+    if (result.roomCode) socket.leave(result.roomCode);
+    updateConnectedClient(socket.id, connectedClients.get(socket.id)?.name || "Guest", null);
     socket.emit("matchmakingStatus", { searching: false, cancelled: result.ok });
   });
 
@@ -822,7 +850,7 @@ function handleDevCommand(socket, payload = {}) {
     return {
       response: {
         ok: true,
-        lines: matches.map((match) => `${match.roomCode} | ${match.variantName} | ${match.status} | ${match.white || "open"} vs ${match.black || "open"} | spectators ${match.spectators} | moves ${match.moveCount}`)
+        lines: matches.map((match) => `${match.roomCode} | ${match.visibility} | ${match.variantName} | ${match.status} | ${match.white || "open"} vs ${match.black || "open"} | spectators ${match.spectators} | moves ${match.moveCount}`)
       }
     };
   }

@@ -28,9 +28,14 @@ export default function App() {
   const [roomCode, setRoomCode] = useState("");
   const [color, setColor] = useState(null);
   const [role, setRole] = useState(null);
-  const [selectedVariant, setSelectedVariant] = useState(localStorage.getItem("selectedVariant") || "threeD");
+  const [selectedVariant, setSelectedVariant] = useState(localStorage.getItem("selectedVariant") || "normal");
   const [selectedTimeControl, setSelectedTimeControl] = useState(localStorage.getItem("selectedTimeControl") || "rapid");
   const [selectedGameMode, setSelectedGameMode] = useState(localStorage.getItem("selectedGameMode") || "online");
+  const [homePanel, setHomePanel] = useState(localStorage.getItem("homePanel") || "online");
+  const [homeChooser, setHomeChooser] = useState(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [censorContent, setCensorContent] = useState(localStorage.getItem("censorContent") === "true");
+  const [queueStartedAt, setQueueStartedAt] = useState(null);
   const [selectedAIDifficulty, setSelectedAIDifficulty] = useState(localStorage.getItem("selectedAIDifficulty") || "medium");
   const [aiAvailability, setAIAvailability] = useState({ easy: true, medium: true, hard: true });
   const [networkDashboard, setNetworkDashboard] = useState(null);
@@ -98,7 +103,8 @@ export default function App() {
       setDismissedGameOver(false);
       setShowForfeitConfirm(false);
       setMatchmakingSearching(false);
-      setNotice(`Room created: ${newRoomCode}`);
+      setQueueStartedAt(null);
+      setNotice(`Lab Room created: ${newRoomCode}`);
       if (newGame.variant !== "normal") { setShowVariantGuide(true); setGuideStep(0); }
     });
 
@@ -115,7 +121,8 @@ export default function App() {
       setDismissedGameOver(false);
       setShowForfeitConfirm(false);
       setMatchmakingSearching(false);
-      setNotice(playerColor === "spectator" ? `Spectating room: ${newRoomCode}` : `Joined room: ${newRoomCode}`);
+      setQueueStartedAt(null);
+      setNotice(playerColor === "spectator" ? `Spectating Lab Room: ${newRoomCode}` : `Joined Lab Room: ${newRoomCode}`);
       if (newGame.variant !== "normal") { setShowVariantGuide(true); setGuideStep(0); }
     });
 
@@ -146,12 +153,15 @@ export default function App() {
     socket.on("matchmakingStatus", (status = {}) => {
       setMatchmakingSearching(Boolean(status.searching));
       if (status.searching) {
-        setNotice(status.scope === "any" ? "Searching any public match..." : "Searching selected match...");
+        setQueueStartedAt((current) => current || Date.now());
+        setNotice(status.scope === "any" ? "Searching all open lab queues..." : "Searching selected experiment queue...");
       } else if (status.matched) {
         playSoundEffect("matchFound", { enabled: soundEnabled, volume: soundVolume });
-        setNotice(`Matched in room ${status.roomCode}.`);
+        setQueueStartedAt(null);
+        setNotice(`Matched in Lab Room ${status.roomCode}.`);
       } else if (status.cancelled) {
-        setNotice("Quick match search cancelled.");
+        setQueueStartedAt(null);
+        setNotice("Open Lab Queue cancelled.");
       }
     });
     socket.on("invalidMove", (message) => { setNotice(message); playSoundEffect("illegal", { enabled: soundEnabled, volume: soundVolume }); });
@@ -530,6 +540,19 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem("soundEnabled", String(soundEnabled));
   }, [soundEnabled]);
+
+  useEffect(() => {
+    localStorage.setItem("censorContent", String(censorContent));
+  }, [censorContent]);
+
+  useEffect(() => {
+    localStorage.setItem("homePanel", homePanel);
+  }, [homePanel]);
+
+  useEffect(() => {
+    const suffix = game ? `${getVariantLabel(game.variant)} · ${game.roomCode || "Game"}` : "Home";
+    document.title = `The Chess Lab - ${suffix}`;
+  }, [game]);
 
   useEffect(() => {
     const clamped = Math.min(1, Math.max(0, Number(soundVolume) || 0));
@@ -1121,7 +1144,8 @@ export default function App() {
     unlockAudio();
     const cleanName = saveName();
     setMatchmakingSearching(true);
-    setNotice(matchmakingScope === "any" ? "Searching any public match..." : "Searching selected match...");
+    setQueueStartedAt(Date.now());
+    setNotice(matchmakingScope === "any" ? "Searching all open lab queues..." : "Searching selected experiment queue...");
     socket.emit("quickMatch", {
       name: cleanName,
       variant: selectedVariant,
@@ -1133,7 +1157,8 @@ export default function App() {
   function cancelQuickMatch() {
     socket.emit("cancelQuickMatch");
     setMatchmakingSearching(false);
-    setNotice("Cancelling quick match search...");
+    setQueueStartedAt(null);
+    setNotice("Cancelling Open Lab Queue search...");
   }
 
   function returnHome() {
@@ -1334,136 +1359,188 @@ export default function App() {
     return map;
   }, [legalMoves, reviewMode]);
 
+  const screenText = (value) => censorContent ? censorText(value) : String(value ?? "");
+
   if (!game) {
+    const queueElapsed = queueStartedAt ? Math.max(0, Math.floor((clockTick - queueStartedAt) / 1000)) : 0;
     return (
-      <main className="app lobby gallery-lobby">
+      <main className="app lobby lab-lobby">
         <div className="lobby-chess-bg" aria-hidden="true" />
-        <section className="gallery-title-wrap compact-gallery-title">
-          <h1 className="gallery-title">{UI_TEXT.siteTitle}</h1>
+        <SettingsButton
+          open={settingsOpen}
+          onToggle={() => setSettingsOpen((value) => !value)}
+          soundEnabled={soundEnabled}
+          soundVolume={soundVolume}
+          censorContent={censorContent}
+          onSoundToggle={() => { unlockAudio(); setSoundEnabled((value) => !value); }}
+          onVolume={(value) => { unlockAudio(); setSoundVolume(value); }}
+          onCensorToggle={() => setCensorContent((value) => !value)}
+        />
+
+        <section className="lab-hero" aria-label="The Chess Lab home">
+          <h1 className="lab-title" aria-label="The Chess Lab">
+            <span>The</span>
+            <span>Chess</span>
+            <span>Lab</span>
+            <i aria-hidden="true" />
+          </h1>
+          <p>Experimental chess variants, playable instantly.</p>
         </section>
-        <section className="lobby-card gallery-card compact-lobby-card">
-          <div className="lobby-grid">
-            <label>
-              {UI_TEXT.lobby.variantLabel}
-              <select value={selectedVariant} onChange={(event) => setSelectedVariant(event.target.value)}>
-                {VARIANT_OPTIONS.map((variant) => (
-                  <option key={variant.id} value={variant.id}>{variant.label}</option>
-                ))}
-              </select>
-            </label>
 
-            <label>
-              {UI_TEXT.lobby.nameLabel}
-              <input value={name} onChange={(event) => setName(event.target.value)} placeholder={UI_TEXT.lobby.namePlaceholder} />
-            </label>
-          </div>
+        <section className="lab-home-card">
+          {homeChooser === "variant" ? (
+            <ChoiceGallery
+              title="Choose an experiment"
+              subtitle="Pick the rules you want to test. Hover or tap a card for the lab notes."
+              items={VARIANT_OPTIONS}
+              selectedId={selectedVariant}
+              getDescription={(id) => UI_TEXT.variants[id]?.subtitle || "A Chess Lab experiment."}
+              getMeta={(id) => getVariantCategory(id)}
+              onSelect={(id) => { setSelectedVariant(id); setHomeChooser(null); }}
+              onBack={() => setHomeChooser(null)}
+            />
+          ) : homeChooser === "time" ? (
+            <ChoiceGallery
+              title="Choose time control"
+              subtitle="Select the pace for the lab room."
+              items={TIME_CONTROL_OPTIONS}
+              selectedId={selectedTimeControl}
+              getDescription={(id) => getTimeControlDescription(id)}
+              getMeta={(id) => `${TIME_CONTROL_OPTIONS.find((control) => control.id === id)?.seconds || 0}s each`}
+              onSelect={(id) => { setSelectedTimeControl(id); setHomeChooser(null); }}
+              onBack={() => setHomeChooser(null)}
+            />
+          ) : matchmakingSearching ? (
+            <QueueSearchPanel
+              variant={getVariantLabel(selectedVariant)}
+              timeControl={getTimeControlLabel(selectedTimeControl)}
+              scope={matchmakingScope}
+              elapsed={queueElapsed}
+              onCancel={cancelQuickMatch}
+            />
+          ) : (
+            <>
+              <div className="lab-user-row">
+                <div>
+                  <span className="eyebrow">Guest access</span>
+                  <h2>Play as guest</h2>
+                  <p>Accounts come next. For now, pick any display name and start testing.</p>
+                </div>
+                <label className="lab-name-input">
+                  <span>Display name</span>
+                  <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Name yourself anything" />
+                </label>
+                <div className="account-placeholder" title="Accounts are planned for the next stage">
+                  <span>◎</span>
+                  <strong>Account slot</strong>
+                  <small>Coming soon</small>
+                </div>
+              </div>
 
-          <p className="subtle variant-subtitle compact-subtitle">{UI_TEXT.variants[selectedVariant]?.subtitle}</p>
+              <div className="lab-selection-row">
+                <button className="lab-big-select experiment-select" type="button" onClick={() => setHomeChooser("variant")}>
+                  <span>Experiment</span>
+                  <strong>{getVariantLabel(selectedVariant)}</strong>
+                  <small>{UI_TEXT.variants[selectedVariant]?.subtitle}</small>
+                </button>
+                <button className="lab-big-select time-select" type="button" onClick={() => setHomeChooser("time")}>
+                  <span>Time control</span>
+                  <strong>{getTimeControlLabel(selectedTimeControl)}</strong>
+                  <small>{getTimeControlDescription(selectedTimeControl)}</small>
+                </button>
+              </div>
 
-          <div className="lobby-grid">
-            <div className="selection-block compact-selection">
-              <span className="selection-label">{UI_TEXT.lobby.gameModeLabel}</span>
-              <div className="time-control-group mode-control-group compact-toggle-group" aria-label={UI_TEXT.lobby.gameModeLabel}>
-                {GAME_MODE_OPTIONS.map((mode) => (
+              <div className="lab-mode-tabs" role="tablist" aria-label="Play mode">
+                {[
+                  ["online", "Online Multiplayer"],
+                  ["ai", "Vs. AI"],
+                  ["private", "Host / Join Private"]
+                ].map(([id, label]) => (
                   <button
-                    key={mode.id}
-                    className={selectedGameMode === mode.id ? "active" : ""}
+                    key={id}
+                    className={homePanel === id ? "active" : ""}
                     type="button"
-                    onClick={() => setSelectedGameMode(mode.id)}
+                    onClick={() => { setHomePanel(id); setSelectedGameMode(id === "ai" ? "ai" : "online"); }}
                   >
-                    {mode.label}
+                    {label}
                   </button>
                 ))}
               </div>
-            </div>
 
-            {selectedGameMode === "ai" ? (
-              <div className="selection-block compact-selection">
-                <span className="selection-label">{UI_TEXT.lobby.aiDifficultyLabel}</span>
-                <div className="time-control-group ai-difficulty-group compact-toggle-group" aria-label={UI_TEXT.lobby.aiDifficultyLabel}>
-                  {AI_DIFFICULTY_OPTIONS.map((difficulty) => {
-                    const disabled = aiAvailability[difficulty.id] === false;
-                    return (
-                      <button
-                        key={difficulty.id}
-                        className={`${selectedAIDifficulty === difficulty.id ? "active" : ""} ${disabled ? "ai-disabled" : ""}`}
-                        type="button"
-                        disabled={disabled}
-                        title={disabled ? `${difficulty.label} AI is disabled by the server` : difficulty.label}
-                        onClick={() => !disabled && setSelectedAIDifficulty(difficulty.id)}
-                      >
-                        {difficulty.label}
-                      </button>
-                    );
-                  })}
-                </div>
+              <div className="lab-mode-panel">
+                {homePanel === "online" && (
+                  <div className="mode-panel-inner online-panel">
+                    <div>
+                      <h3>Open Lab Queue</h3>
+                      <p>Queue for the selected experiment. A public room is created invisibly while you wait; private rooms are never pulled into matchmaking.</p>
+                    </div>
+                    <label className="queue-scope-select polished-select">
+                      <span>Queue scope</span>
+                      <select value={matchmakingScope} onChange={(event) => setMatchmakingScope(event.target.value)}>
+                        <option value="selected">Selected experiment + time</option>
+                        <option value="any">Any public experiment</option>
+                      </select>
+                    </label>
+                    <button className="primary main-action-button lab-action" onClick={quickMatch}>Find Match</button>
+                  </div>
+                )}
+
+                {homePanel === "ai" && (
+                  <div className="mode-panel-inner ai-panel">
+                    <div>
+                      <h3>Bot Test</h3>
+                      <p>Start a private lab room against a bot. Disabled difficulties are crossed out when server load needs protecting.</p>
+                    </div>
+                    <div className="ai-card-grid">
+                      {AI_DIFFICULTY_OPTIONS.map((difficulty) => {
+                        const disabled = aiAvailability[difficulty.id] === false;
+                        return (
+                          <button
+                            key={difficulty.id}
+                            className={`${selectedAIDifficulty === difficulty.id ? "active" : ""} ${disabled ? "ai-disabled" : ""}`}
+                            type="button"
+                            disabled={disabled}
+                            onClick={() => !disabled && setSelectedAIDifficulty(difficulty.id)}
+                          >
+                            <strong>{difficulty.label}</strong>
+                            <span>{getAIDifficultyDescription(difficulty.id)}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <button className="primary main-action-button lab-action" onClick={() => createRoom({ gameMode: "ai" })}>Start Bot Test</button>
+                  </div>
+                )}
+
+                {homePanel === "private" && (
+                  <div className="mode-panel-inner private-panel">
+                    <div>
+                      <h3>Private Lab Room</h3>
+                      <p>Host a code-only room or join a friend directly. These rooms stay out of the public queue.</p>
+                    </div>
+                    <button className="primary main-action-button lab-action" onClick={() => createRoom({ gameMode: "online" })}>Host Private</button>
+                    <div className="join-row compact-join-row lab-join-row">
+                      <input
+                        value={roomInput}
+                        onChange={(event) => setRoomInput(event.target.value.toUpperCase())}
+                        placeholder="Lab Code"
+                        maxLength={6}
+                      />
+                      <button onClick={joinRoom}>Join Lab Room</button>
+                    </div>
+                  </div>
+                )}
               </div>
-            ) : (
-              <div className="selection-block compact-selection matchmaking-scope-block">
-                <span className="selection-label">Queue Scope</span>
-                <label className="queue-scope-select">
-                  <select value={matchmakingScope} onChange={(event) => setMatchmakingScope(event.target.value)}>
-                    <option value="selected">Selected variant + time</option>
-                    <option value="any">Any public match</option>
-                  </select>
-                </label>
-              </div>
-            )}
-          </div>
-
-          <div className="selection-block compact-selection">
-            <span className="selection-label">{UI_TEXT.lobby.timeControlLabel}</span>
-            <div className="time-control-group compact-toggle-group" aria-label={UI_TEXT.lobby.timeControlLabel}>
-              {TIME_CONTROL_OPTIONS.map((control) => (
-                <button
-                  key={control.id}
-                  className={selectedTimeControl === control.id ? "active" : ""}
-                  type="button"
-                  onClick={() => setSelectedTimeControl(control.id)}
-                >
-                  {control.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {selectedGameMode === "ai" ? (
-            <button className="primary main-action-button" onClick={() => createRoom()}>{UI_TEXT.lobby.hostAIButton}</button>
-          ) : (
-            <div className="online-action-grid">
-              <button
-                className="primary main-action-button"
-                onClick={matchmakingSearching ? cancelQuickMatch : quickMatch}
-              >
-                {matchmakingSearching ? UI_TEXT.lobby.cancelSearchButton : UI_TEXT.lobby.findMatchButton}
-              </button>
-              <button className="secondary-action-button" onClick={() => createRoom({ gameMode: "online" })}>{UI_TEXT.lobby.hostPrivateButton}</button>
-            </div>
+            </>
           )}
 
-          <div className="join-row compact-join-row">
-            <input
-              value={roomInput}
-              onChange={(event) => setRoomInput(event.target.value.toUpperCase())}
-              placeholder={UI_TEXT.lobby.roomPlaceholder}
-              maxLength={6}
-            />
-            <button onClick={joinRoom}>{UI_TEXT.lobby.joinButton}</button>
-          </div>
-
-          <div className="lobby-footer-row">
+          <div className="lobby-footer-row lab-footer-row">
             <p className="notice">{notice}</p>
-            <SoundControls
-              enabled={soundEnabled}
-              volume={soundVolume}
-              compact
-              onToggle={() => { unlockAudio(); setSoundEnabled((value) => !value); }}
-              onVolume={(value) => { unlockAudio(); setSoundVolume(value); }}
-            />
+            <p className="subtle">Public Beta · Experiments may change while the lab is live.</p>
           </div>
         </section>
-        {shoutOverlay && <ShoutOverlay message={shoutOverlay.message} from={shoutOverlay.from} />}
-        {feedbackOverlay && <FeedbackOverlay text={feedbackOverlay.text} type={feedbackOverlay.type} />}
+        {shoutOverlay && <ShoutOverlay message={screenText(shoutOverlay.message)} from={screenText(shoutOverlay.from)} />}
+        {feedbackOverlay && <FeedbackOverlay text={screenText(feedbackOverlay.text)} type={feedbackOverlay.type} />}
         <DevFxLayer items={devFxItems} />
         <NetworkDashboardModal
           open={Boolean(networkDashboard)}
@@ -1489,6 +1566,16 @@ export default function App() {
 
   return (
     <main className={`app game-app ${devFxClass} ${devCosmetics.curses?.[color] ? `curse-${devCosmetics.curses[color]}` : ""}`}>
+      <SettingsButton
+        open={settingsOpen}
+        onToggle={() => setSettingsOpen((value) => !value)}
+        soundEnabled={soundEnabled}
+        soundVolume={soundVolume}
+        censorContent={censorContent}
+        onSoundToggle={() => { unlockAudio(); setSoundEnabled((value) => !value); }}
+        onVolume={(value) => { unlockAudio(); setSoundVolume(value); }}
+        onCensorToggle={() => setCensorContent((value) => !value)}
+      />
       <section className="top-bar">
         <div>
           <h1>{getVariantLabel(game.variant)} {game.variant !== "normal" && <button className="variant-info-button" type="button" onClick={() => { setShowVariantGuide(true); setGuideStep(0); }} aria-label="Show variant guide">i</button>}</h1>
@@ -1521,8 +1608,8 @@ export default function App() {
       <section className="game-shell">
         <aside className="side-panel">
           <h2>{UI_TEXT.headings.players}</h2>
-          <PlayerLine label={UI_TEXT.labels.white} player={game.players.white} active={!reviewMode && game.turn === "white"} />
-          <PlayerLine label={UI_TEXT.labels.black} player={game.players.black} active={!reviewMode && game.turn === "black"} />
+          <PlayerLine label={UI_TEXT.labels.white} player={game.players.white} active={!reviewMode && game.turn === "white"} formatText={screenText} />
+          <PlayerLine label={UI_TEXT.labels.black} player={game.players.black} active={!reviewMode && game.turn === "black"} formatText={screenText} />
           <div className="spectator-line">
             <span>{UI_TEXT.labels.spectators}</span>
             <strong>{game.spectators?.length || 0}</strong>
@@ -1558,6 +1645,7 @@ export default function App() {
             <GameChat
               chat={game.chat || []}
               draft={chatDraft}
+              formatText={screenText}
               onDraftChange={setChatDraft}
               onSend={sendChatMessage}
               onForfeit={requestForfeit}
@@ -1716,8 +1804,8 @@ export default function App() {
         />
       )}
 
-      {shoutOverlay && <ShoutOverlay message={shoutOverlay.message} from={shoutOverlay.from} />}
-      {feedbackOverlay && <FeedbackOverlay text={feedbackOverlay.text} type={feedbackOverlay.type} />}
+      {shoutOverlay && <ShoutOverlay message={screenText(shoutOverlay.message)} from={screenText(shoutOverlay.from)} />}
+      {feedbackOverlay && <FeedbackOverlay text={screenText(feedbackOverlay.text)} type={feedbackOverlay.type} />}
       <DevFxLayer items={devFxItems} />
       <NetworkDashboardModal
         open={Boolean(networkDashboard)}
@@ -1742,6 +1830,138 @@ export default function App() {
   );
 }
 
+
+
+function SettingsButton({ open, onToggle, soundEnabled, soundVolume, censorContent, onSoundToggle, onVolume, onCensorToggle }) {
+  return (
+    <div className="settings-cluster">
+      <button className="settings-cog" type="button" onClick={onToggle} aria-label="Open settings" title="Settings">⚙</button>
+      {open && (
+        <section className="settings-menu" aria-label="Settings">
+          <div className="settings-menu-head">
+            <strong>Settings</strong>
+            <button type="button" onClick={onToggle}>×</button>
+          </div>
+          <label className="settings-toggle-row">
+            <span>Sound</span>
+            <button type="button" className={soundEnabled ? "enabled" : ""} onClick={onSoundToggle}>{soundEnabled ? "On" : "Off"}</button>
+          </label>
+          {soundEnabled && (
+            <label className="settings-slider-row">
+              <span>Volume</span>
+              <input type="range" min="0" max="1" step="0.05" value={soundVolume} onChange={(event) => onVolume(Number(event.target.value))} />
+            </label>
+          )}
+          <label className="settings-toggle-row">
+            <span>Local censor</span>
+            <button type="button" className={censorContent ? "enabled" : ""} onClick={onCensorToggle}>{censorContent ? "On" : "Off"}</button>
+          </label>
+          <p>Filters names and chat on your screen only. Other players keep their own setting.</p>
+        </section>
+      )}
+    </div>
+  );
+}
+
+function ChoiceGallery({ title, subtitle, items, selectedId, getDescription, getMeta, onSelect, onBack }) {
+  return (
+    <div className="choice-gallery">
+      <header className="choice-gallery-header">
+        <div>
+          <span className="eyebrow">Experiment Gallery</span>
+          <h2>{title}</h2>
+          <p>{subtitle}</p>
+        </div>
+        <button type="button" onClick={onBack}>Back</button>
+      </header>
+      <div className="choice-card-grid">
+        {items.map((item, index) => (
+          <button
+            key={item.id}
+            className={`choice-card ${selectedId === item.id ? "selected" : ""}`}
+            type="button"
+            style={{ "--delay": `${index * 45}ms` }}
+            onClick={() => onSelect(item.id)}
+          >
+            <span>{getMeta(item.id)}</span>
+            <strong>{item.label}</strong>
+            <small>{getDescription(item.id)}</small>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function QueueSearchPanel({ variant, timeControl, scope, elapsed, onCancel }) {
+  return (
+    <div className="queue-search-panel">
+      <div className="queue-orbit" aria-hidden="true">
+        <span>♔</span><span>♞</span><span>♜</span><i />
+      </div>
+      <span className="eyebrow">Open Lab Queue</span>
+      <h2>Finding match...</h2>
+      <p>{scope === "any" ? "Searching every public experiment queue." : `Searching ${variant} · ${timeControl}.`}</p>
+      <strong className="queue-timer">{formatElapsed(elapsed)}</strong>
+      <button className="secondary-action-button" type="button" onClick={onCancel}>Cancel Search</button>
+    </div>
+  );
+}
+
+function formatElapsed(seconds) {
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins}:${String(secs).padStart(2, "0")}`;
+}
+
+function getTimeControlDescription(id) {
+  return {
+    classical: "Slow, deliberate games for deeper testing.",
+    rapid: "Balanced pace for most experiments.",
+    blitz: "Fast games with enough time to think.",
+    bullet: "Unstable speed tests. Expect chaos."
+  }[id] || "Custom experiment pace.";
+}
+
+function getAIDifficultyDescription(id) {
+  return {
+    easy: "Fast, light CPU use, good for testing rules.",
+    medium: "More tactical and moderately heavier.",
+    hard: "Deepest search, highest server load."
+  }[id] || "Bot difficulty.";
+}
+
+function getVariantCategory(id) {
+  return {
+    normal: "Classic",
+    chess960: "Classic",
+    crazyhouse: "Classic / Experimental",
+    kingOfTheHill: "Experimental",
+    atomic: "Chaos",
+    threeD: "3D",
+    nuke: "Chaos",
+    tycoon: "Experimental",
+    predict: "Experimental",
+    scooby: "Party / Chaos"
+  }[id] || "Experiment";
+}
+
+function censorText(value) {
+  const raw = String(value ?? "");
+  const blocked = [
+    "fuck", "shit", "cunt", "bitch", "bastard", "dick", "pussy", "asshole", "nigger", "nigga", "faggot", "retard", "slut", "whore", "kys"
+  ];
+  let output = raw;
+  for (const word of blocked) {
+    const pattern = new RegExp(`\\b${escapeRegExp(word)}\\b`, "gi");
+    output = output.replace(pattern, (match) => "#".repeat(match.length));
+  }
+  return output;
+}
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
 
 function SoundControls({ enabled, volume, onToggle, onVolume, compact = false }) {
   return (
@@ -2750,7 +2970,7 @@ function formatMoveEntry(move) {
   return <><strong>{move.pieceColor} {move.promotedTo ? "pawn" : move.pieceType}</strong> {move.drop ? "drop" : `(${move.from.x},${move.from.y},${move.from.z}) →`} ({move.to.x},{move.to.y},{move.to.z}){move.captured ? ` × ${move.captured.type}${move.shieldBlocked ? " shield" : ""}` : ""}{move.castle ? " castle" : ""}{move.enPassant ? " en passant" : ""}{move.promotedTo ? ` = ${move.promotedTo}` : ""}{move.scoobyTrap ? ` | trap: ${move.scoobyTrap.type}` : ""}{Array.isArray(move.atomicRemoved) && move.atomicRemoved.length ? ` explosion ${move.atomicRemoved.length}` : ""}</>;
 }
 
-function GameChat({ chat, draft, onDraftChange, onSend, onForfeit, canForfeit }) {
+function GameChat({ chat, draft, onDraftChange, onSend, onForfeit, canForfeit, formatText = (value) => value }) {
   const chatMessagesRef = useRef(null);
 
   useEffect(() => {
@@ -2771,8 +2991,8 @@ function GameChat({ chat, draft, onDraftChange, onSend, onForfeit, canForfeit })
         ) : (
           chat.slice(-80).map((message, index) => (
             <div key={message.id} className={`chat-line ${message.color} ${index % 2 === 0 ? "even" : "odd"}`}>
-              <span className="chat-prefix">[{formatChatTime(message.time)}] [{message.name}]:</span>
-              <span className="chat-body">{message.body}</span>
+              <span className="chat-prefix">[{formatChatTime(message.time)}] [{formatText(message.name)}]:</span>
+              <span className="chat-body">{formatText(message.body)}</span>
             </div>
           ))
         )}
@@ -3058,11 +3278,11 @@ function getClientMembership(game, socketId) {
   return null;
 }
 
-function PlayerLine({ label, player, active }) {
+function PlayerLine({ label, player, active, formatText = (value) => value }) {
   return (
     <div className={`player-line ${active ? "active" : ""}`}>
       <span>{label}</span>
-      <strong>{player?.name || UI_TEXT.labels.waiting}</strong>
+      <strong>{player?.name ? formatText(player.name) : UI_TEXT.labels.waiting}</strong>
     </div>
   );
 }
