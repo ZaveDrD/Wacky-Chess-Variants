@@ -7191,20 +7191,21 @@ select {
   overflow: hidden;
   text-align: center;
 }
-.badge-grid .badge-none-option {
-  min-width: 76px;
-  padding: 0 .65rem;
-  white-space: nowrap;
+.badge-grid .badge-clear-tile {
+  background: rgba(127, 29, 29, .42);
+  border-color: rgba(248, 113, 113, .45);
+  color: #fecaca;
+  font-size: 1.35rem;
+  line-height: 1;
 }
-.badge-empty {
-  min-height: 42px;
-  border-radius: 14px;
-  border: 1px solid rgba(238,238,210,.16);
-  background: rgba(0,0,0,.18);
-  color: rgba(238,238,210,.72);
-  display: grid;
-  place-items: center;
-  font-weight: 800;
+.badge-grid .badge-clear-tile:hover {
+  background: rgba(185, 28, 28, .52);
+  border-color: rgba(252, 165, 165, .75);
+  color: #fff1f2;
+}
+.badge-grid .badge-clear-tile.active {
+  border-color: #f87171;
+  box-shadow: 0 0 0 3px rgba(248,113,113,.18);
 }
 .badge-grid button.active {
   border-color: #84cc16;

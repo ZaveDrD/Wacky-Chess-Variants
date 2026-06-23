@@ -2378,6 +2378,14 @@ function AccountModal({
   if (!open) return null;
   const isRegister = accountMode === "register";
   const modeStats = getModeStats(account, selectedVariant);
+  const ownedBadges = Array.isArray(account?.badges)
+    ? account.badges.filter((badge) => {
+        if (typeof badge !== "string") return false;
+        const clean = badge.trim();
+        if (!clean) return false;
+        return !["none", "null", "false", "undefined"].includes(clean.toLowerCase());
+      })
+    : [];
   return (
     <div className="account-modal-backdrop">
       <section className="account-modal" role="dialog" aria-modal="true" aria-label={UI_TEXT.account.modalTitle}>
@@ -2420,18 +2428,22 @@ function AccountModal({
                   ))}
                 </div>
                 <label><span>{UI_TEXT.account.equippedBadgeLabel}</span></label>
-                {(account.badges || []).length > 0 ? (
-                  <div className="badge-grid" aria-label={UI_TEXT.account.equippedBadgeLabel}>
-                    <button type="button" className={`badge-none-option ${!accountEditForm.equippedBadge ? "active" : ""}`} onClick={() => onAccountEditForm("equippedBadge", "")}>{UI_TEXT.account.noBadgeOption}</button>
-                    {(account.badges || []).map((badge) => (
-                      <button key={badge} type="button" className={accountEditForm.equippedBadge === badge ? "active" : ""} onClick={() => onAccountEditForm("equippedBadge", badge)} title={badge}>
-                        <img src={badgeUrl(badge)} alt="" />
-                      </button>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="badge-empty" aria-label={UI_TEXT.account.equippedBadgeLabel}>{UI_TEXT.account.noBadges}</div>
-                )}
+                <div className="badge-grid" aria-label={UI_TEXT.account.equippedBadgeLabel}>
+                  <button
+                    type="button"
+                    className={`badge-clear-tile ${!accountEditForm.equippedBadge ? "active" : ""}`}
+                    onClick={() => onAccountEditForm("equippedBadge", "")}
+                    title={UI_TEXT.account.noBadgeOption}
+                    aria-label={UI_TEXT.account.noBadgeOption}
+                  >
+                    ×
+                  </button>
+                  {ownedBadges.map((badge) => (
+                    <button key={badge} type="button" className={accountEditForm.equippedBadge === badge ? "active" : ""} onClick={() => onAccountEditForm("equippedBadge", badge)} title={badge}>
+                      <img src={badgeUrl(badge)} alt="" />
+                    </button>
+                  ))}
+                </div>
                 <button type="submit">{UI_TEXT.account.saveProfile}</button>
               </form>
 
