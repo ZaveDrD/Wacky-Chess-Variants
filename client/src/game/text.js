@@ -17,30 +17,30 @@ export const UI_TEXT = {
     cancelSearchButton: "Cancel Search",
     hostPrivateButton: "Host Private",
     joinButton: "Join",
-    roomPlaceholder: "Lab Code",
-    guestAccessEyebrow: "Guest access",
-    playAsGuestTitle: "Play as guest",
+    roomPlaceholder: "Room Code",
+    guestAccessEyebrow: "Guest Access",
+    playAsGuestTitle: "Play as Guest",
     guestHelp: "Pick any display name and start testing, or sign into an account to save stats.",
-    displayNameLabel: "Display name",
+    displayNameLabel: "Display Name",
     displayNamePlaceholder: "Name yourself anything"
   },
   settings: {
     title: "Settings",
     sound: "Sound",
     volume: "Volume",
-    localCensor: "Local censor",
+    localCensor: "Streamer Mode",
     on: "On",
     off: "Off",
-    censorHelp: "Filters names and chat on your screen only. Other players keep their own setting."
+    censorHelp: "Filters names and chat."
   },
   support: {
     buttonLabel: "Support",
     title: "Become A Supporter",
     intro: "Supporter contributions help keep the servers running and make it easier to keep adding new variants, polish, and multiplayer features.",
-    benefitsTitle: "Supporter benefits",
+    benefitsTitle: "Supporter Benefits",
     benefits: [
       "Supporter role on your account",
-      "Customizable text colour",
+      "Blue text colour",
       "Supporter badge for your profile",
       "Your name in the supporter list"
     ],
@@ -198,9 +198,7 @@ export const UI_TEXT = {
       label: "3-Check",
       subtitle: "Win by checkmate or by giving three checks.",
       rules: [
-        "Normal chess rules apply.",
-        "Each check you give increases your check counter.",
-        "The first player to give 3 checks wins immediately.",
+        "Check the opponent 3 times to win.",
         "Checkmate still wins normally."
       ]
     },
@@ -218,10 +216,10 @@ export const UI_TEXT = {
       label: "Anarchy Chess",
       subtitle: "Forced en passant, Il Vaticano, Knooks, fire, zombies, and riots.",
       rules: [
-        "En passant is forced; declining it causes a brick penalty.",
-        "Bishops can perform Il Vaticano to swap and capture two trapped pieces.",
-        "Pawns can promote to Knooks, which move like knights or short rooks.",
-        "Vertical castling is legal when a king and rook share a clear file.",
+        "En passant is forced; declining it causes a penalty.",
+        "Bishops can perform Il Vaticano.",
+        "Pawns can promote to Knooks.",
+        "Vertical castling is legal.",
         "Special moves can trigger zombies, fire, new responses, and riots."
       ]
     },
@@ -230,9 +228,9 @@ export const UI_TEXT = {
       subtitle: "Cooperate to discover hidden rule mutations before time runs out.",
       rules: [
         "Both players work together against a shared 15-minute timer.",
-        "Hidden rules mutate the board and create anomaly logs.",
-        "Use clues and submit rule guesses to discover every hidden rule.",
-        "Solve all rules to win together; time expiry means both players lose."
+        "Hidden rules mutate the board.",
+        "Submit rule guesses to discover hidden rules.",
+        "Solve all rules to win together."
       ]
     }
   },
@@ -307,7 +305,7 @@ export const UI_TEXT = {
     message: "Message"
   },
   labels: {
-    room: "Lab Room",
+    room: "Room Code",
     copied: "Copied",
     youAre: "You are",
     playing: "Playing",
@@ -333,7 +331,7 @@ export const UI_TEXT = {
     offline: "Offline",
     inGame: "In game",
     messagePlaceholder: "Message your friend...",
-    challengeReceived: "Challenge received",
+    challengeReceived: "Challenge Received",
     accept: "Accept",
     deny: "Deny"
   },
@@ -395,6 +393,6 @@ export const UI_TEXT = {
     usePlaneView: "Use XY, XZ, or YZ view while this is fixed.",
     noChatYet: "No Messages Yet.",
     chatFailed: "Message could not be sent.",
-    roomCopied: "Lab Code Copied."
+    roomCopied: "Room Code Copied."
   }
 };
