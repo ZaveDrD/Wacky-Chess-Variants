@@ -8,11 +8,11 @@ export const DEV_COMMANDS = [
   { name: "clear", action: "clear", aliases: ["cls"], usage: "clear", summary: "Clears the developer console output." },
   { name: "room", action: "room", usage: "room [list|join|start|spectate|kick|lock|unlock|rename|exit|info] ...", summary: "Room and matchmaking commands." },
   { name: "player", action: "player", usage: "player [bot|takeover|find|count|override|colour|rename] ...", summary: "Player slot and identity commands." },
-  { name: "account", action: "account", aliases: ["accounts"], usage: "account [info|list|online|create|remove|icon|store] ...", summary: "Inspect and manage registered player accounts." },
+  { name: "account", action: "account", aliases: ["accounts"], usage: "account [info|list|online|create|remove|icon|wipe|store] ...", summary: "Inspect and manage registered player accounts." },
   { name: "report", action: "report", aliases: ["reports"], usage: "report [list|view|approve|deny|appeal] ...", summary: "Review and resolve report cases." },
   { name: "punish", action: "punish", aliases: ["punishment", "punishments"], usage: "punish [list|mute|ban|remove] ...", summary: "Create and remove mutes/bans." },
   { name: "friend", action: "friend", aliases: ["friends"], usage: "friend [list|send|accept] ...", summary: "Friend-system test commands." },
-  { name: "leaderboard", action: "leaderboard", aliases: ["leaderboards", "lb"], usage: "leaderboard show [variant] [month|allTime]", summary: "Inspect leaderboard standings." },
+  { name: "leaderboard", action: "leaderboard", aliases: ["leaderboards", "lb"], usage: "leaderboard [show|reset] [variant] [month|allTime|both]", summary: "Inspect and reset leaderboard standings." },
   { name: "profile", action: "profile", usage: "profile [username|email|id]", summary: "View a public player profile." },
   { name: "match", action: "match", usage: "match [end|turn|reset|validate|forfeit]", summary: "Match state commands." },
   { name: "chat", action: "chat", usage: "chat [shout|announce|system|sudo|whisper|quote] ...", summary: "Chat, announcements, and fake-message commands." },
@@ -79,6 +79,7 @@ const GROUPS = {
       ["create", "account create [email] [username] [password]", "Create an account from the console."],
       ["remove", "account remove [username|email|id]", "Remove an account and its sessions."],
       ["icon", "account icon [username|email|id] [icon-file]", "Set an account profile icon."],
+      ["wipe", "account wipe [username|email|id] [game|all]", "Reset stats, game history, ELO history, and leaderboard entries; all also clears hidden moderation history."],
       ["store", "account store", "Show the account JSON store path and available profile icons."]
     ]
   },
@@ -115,8 +116,13 @@ const GROUPS = {
   },
   leaderboard: {
     page: 1,
-    summary: "Leaderboard commands.",
-    subcommands: [["show", "leaderboard show [variant] [month|allTime]", "Show top 100 for a mode."]]
+    summary: "Leaderboard commands. Resets always target only the specified mode/variant.",
+    subcommands: [
+      ["show", "leaderboard show [variant] [month|allTime]", "Show top 100 for a mode."],
+      ["reset month", "leaderboard reset [variant] month", "Reset only the current monthly leaderboard for the specified mode."],
+      ["reset allTime", "leaderboard reset [variant] allTime", "Reset only the all-time leaderboard for the specified mode."],
+      ["reset both", "leaderboard reset [variant] both", "Reset monthly and all-time leaderboards for the specified mode."]
+    ]
   },
   profile: {
     page: 1,

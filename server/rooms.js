@@ -83,6 +83,7 @@ export function quickMatch(socket, playerName, options = {}) {
     const result = joinRoom(socket, existing.roomCode, playerName, { account: options.account });
     if (!result.ok) return result;
     existing.publicMatch = false;
+    existing.ranked = true;
     existing.matchmakingScope = options.scope === "any" ? "any" : "selected";
     return {
       ...result,
@@ -101,6 +102,7 @@ export function quickMatch(socket, playerName, options = {}) {
     publicMatch: true,
     account: options.account
   });
+  game.ranked = true;
   game.matchmakingScope = options.scope === "any" ? "any" : "selected";
   return {
     ok: true,

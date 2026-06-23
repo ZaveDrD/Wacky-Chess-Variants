@@ -10,8 +10,8 @@ import { chooseAIMove, evaluateAIPosition, isAITurn, runAIMove, scoreAICandidate
 import { cloneGame } from "./rules/utils.js";
 import { createHash, pbkdf2Sync, timingSafeEqual } from "crypto";
 import os from "os";
-import { createAccount, loginAccount, logoutAccount, getPublicAccountByToken, getAccountByToken, participantAccount, getAccountInfoLines, getAccountListLines, recordCompletedGameForAccounts, accountStorePath, isRegisteredUsername, updateAccount, deleteAccount, devCreateAccount, forceProfileIcon, findAccount } from "./accountStore.js";
-import { createReport, listReports, getReportCase, reportCaseLines, resolveReport, listAppeals, appealLines, resolveAppeal, submitAppeal, getActivePunishments, punishmentSummaryForClient, hasActivePunishment, listPunishments, addPunishmentForTarget, removePunishment, getSocialState, sendFriendRequest, respondFriendRequest, sendFriendMessage, createChallenge, respondChallenge, getLeaderboard, leaderboardLines, recordLeaderboardGame, publicProfile, socialStorePath } from "./socialStore.js";
+import { createAccount, loginAccount, logoutAccount, getPublicAccountByToken, getAccountByToken, participantAccount, getAccountInfoLines, getAccountListLines, recordCompletedGameForAccounts, accountStorePath, isRegisteredUsername, updateAccount, deleteAccount, devCreateAccount, forceProfileIcon, wipeAccountData, findAccount } from "./accountStore.js";
+import { createReport, listReports, getReportCase, reportCaseLines, resolveReport, listAppeals, appealLines, resolveAppeal, submitAppeal, getActivePunishments, punishmentSummaryForClient, hasActivePunishment, listPunishments, addPunishmentForTarget, removePunishment, getSocialState, sendFriendRequest, respondFriendRequest, sendFriendMessage, createChallenge, respondChallenge, getLeaderboard, getElo, leaderboardLines, resetLeaderboard, clearLeaderboardForAccount, recordLeaderboardGame, publicProfile, socialStorePath } from "./socialStore.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -814,6 +814,7 @@ function sanitiseScoobyHistoryForViewer(copy, viewerColor) {
 function sanitiseGameForViewer(game, socketId) {
   const copy = cloneGame(game);
   const viewerColor = getViewerColor(game, socketId);
+  attachPublicPlayerRatings(copy);
   if (copy.variant === "predict" && copy.predict) {
     const visiblePending = (entry, entryColor) => {
       if (!entry) return null;
@@ -840,6 +841,18 @@ function sanitiseGameForViewer(game, socketId) {
     sanitiseScoobyHistoryForViewer(copy, viewerColor);
   }
   return copy;
+}
+
+function attachPublicPlayerRatings(game) {
+  if (!game?.players) return;
+  const rankedEntries = getLeaderboard(game.variant || "normal", "month", 1000).entries || [];
+  for (const color of ["white", "black"]) {
+    const player = game.players[color];
+    if (!player?.accountId) continue;
+    player.elo = getElo(player.accountId, game.variant || "normal", "month");
+    const rankIndex = rankedEntries.findIndex((entry) => entry.accountId === player.accountId);
+    player.rank = rankIndex >= 0 ? rankIndex + 1 : null;
+  }
 }
 
 function captureReportSnapshot(game) {
@@ -1556,10 +1569,19 @@ function handleDevCommand(socket, payload = {}) {
       const result = forceProfileIcon(query, icon);
       return { response: { ok: result.ok, lines: [result.ok ? `Set ${result.account.username} icon to ${result.account.profile?.icon}.` : result.reason] } };
     }
+    if (["wipe", "resetdata", "reset"].includes(sub)) {
+      const query = args[1];
+      const mode = args[2] || "game";
+      if (!query) return { response: { ok: false, lines: ["Usage: account wipe [username|email|id] [game|all]"] } };
+      const result = wipeAccountData(query, mode);
+      if (!result.ok) return { response: { ok: false, lines: [result.reason] } };
+      const cleared = clearLeaderboardForAccount(result.accountId);
+      return { response: { ok: true, lines: [`Wiped ${result.account.username} ${result.mode} data. Cleared ${cleared} leaderboard entries.`] } };
+    }
     if (sub === "store") {
       return { response: { ok: true, lines: [`Account store: ${accountStorePath()}`, `Profile icons: ${getProfileIconList().join(", ")}`] } };
     }
-    return { response: { ok: false, lines: ["Usage: account info|list|online|create|remove|icon|store ..."] } };
+    return { response: { ok: false, lines: ["Usage: account info|list|online|create|remove|icon|wipe|store ..."] } };
   }
 
   if (action === "networkCommand") {
@@ -2013,7 +2035,12 @@ function handleDevCommand(socket, payload = {}) {
     const variant = args[1] || selectedVariant || "normal";
     const scope = args[2] || "month";
     if (["show", "list", "top"].includes(sub)) return { response: { ok: true, lines: leaderboardLines(variant, scope, 100) } };
-    return { response: { ok: false, lines: ["Usage: leaderboard show [variant] [month|allTime]"] } };
+    if (["reset", "clear", "wipe"].includes(sub)) {
+      if (!args[1]) return { response: { ok: false, lines: ["Usage: leaderboard reset [variant] [month|allTime|both]"] } };
+      const result = resetLeaderboard(args[1], args[2] || "month");
+      return { response: { ok: result.ok, lines: [result.ok ? `Reset ${result.variant} leaderboard (${result.scope}); removed ${result.resetCount} entries.` : result.reason] } };
+    }
+    return { response: { ok: false, lines: ["Usage: leaderboard show [variant] [month|allTime] | leaderboard reset [variant] [month|allTime|both]"] } };
   }
 
   if (action === "profileCommand") {

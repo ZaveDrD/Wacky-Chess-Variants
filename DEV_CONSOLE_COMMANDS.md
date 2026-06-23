@@ -557,3 +557,41 @@ friend accept [requestId|username]
 leaderboard show [variant] [month|allTime]
 profile [username|email|id]
 ```
+
+## Accounts / reports / friends / leaderboards
+
+```text
+account info [username|email|id]
+account list [limit]
+account online [username|email|id]
+account create [email] [username] [password]
+account remove [username|email|id]
+account icon [username|email|id] [icon-file]
+account wipe [username|email|id] [game|all]
+account store
+
+report list [date|strength|name]
+report view [caseId]
+report approve [caseId] [mute|ban] [duration|-1] [reason]
+report deny [caseId]
+report appeal list|view|approve|deny ...
+
+punish list
+punish all
+punish mute [target] [duration|-1] [reason]
+punish ban [target] [duration|-1] [reason]
+punish remove [punishmentId]
+
+friend list
+friend send [username]
+friend accept [requestId|username]
+
+leaderboard show [variant] [month|allTime]
+leaderboard reset [variant] month
+leaderboard reset [variant] allTime
+leaderboard reset [variant] both
+
+profile [username|email|id]
+```
+
+`leaderboard reset` only resets the mode/variant you specify. It does not wipe every leaderboard globally.

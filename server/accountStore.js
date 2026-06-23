@@ -307,6 +307,23 @@ export function forceProfileIcon(queryRaw, icon) {
   return { ok: true, account: publicAccount(account) };
 }
 
+export function wipeAccountData(queryRaw, mode = "game") {
+  const account = findAccount(queryRaw);
+  if (!account) return { ok: false, reason: "Account not found." };
+  const wipeMode = String(mode || "game").toLowerCase();
+  const now = Date.now();
+  account.stats = makeEmptyStats();
+  account.gameHistory = [];
+  account.eloHistory = [];
+  if (["all", "moderation", "full"].includes(wipeMode)) {
+    account.moderation = { credibility: 50, punishmentHistory: [] };
+  }
+  account.updatedAt = now;
+  state.auditLog.push({ type: "accountDataWiped", accountId: account.id, username: account.username, mode: wipeMode, at: now });
+  saveState();
+  return { ok: true, account: publicAccount(account), accountId: account.id, mode: wipeMode };
+}
+
 export function getAccountInfoLines(queryRaw) {
   const account = findAccount(queryRaw);
   if (!account) return { ok: false, lines: ["Account not found."] };

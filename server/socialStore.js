@@ -101,6 +101,11 @@ function containsHarmfulLanguage(text) {
   return patterns.some((pattern) => pattern.test(value));
 }
 
+function containsSevereHarmfulLanguage(text) {
+  const value = String(text || "").toLowerCase();
+  return /\bk+y+s+\b|\bkill yourself\b|\bn+i+g+g+e+r+\b|\bf+a+g+\b|\bc+u+n+t+\b/i.test(value);
+}
+
 function accountRef(account) {
   return account ? { accountId: account.id, username: account.username } : null;
 }
@@ -159,6 +164,12 @@ function makeEvidenceSummary(game, reporter, reported, reason) {
   score += illegalMoves.length * 10;
   score += Math.max(-20, Math.min(20, credibility - 50)) * 0.5;
   if (containsHarmfulLanguage(reason)) score += 10;
+
+  const severeChat = harmfulChat.filter((message) => containsSevereHarmfulLanguage(`${message.name} ${message.body}`));
+  const severeNames = harmfulNames.filter((name) => containsSevereHarmfulLanguage(name));
+  if (harmfulChat.length || harmfulNames.length) score = Math.max(score, 45);
+  if (severeChat.length || severeNames.length || harmfulChat.length >= 3 || illegalMoves.length >= 4) score = Math.max(score, 75);
+
   return {
     score: Math.round(score),
     strength: reportStrength(score),
@@ -476,6 +487,8 @@ export function getElo(accountId, variant, scope = "month") {
 export function recordLeaderboardGame(game) {
   if (!game || game.leaderboardRecorded) return false;
   if (!(game.status === "finished" || game.status === "abandoned")) return false;
+  const isRankedPublicMatch = Boolean(game.ranked || game.matchmakingScope) && game.gameMode !== "ai" && !game.ai?.enabled;
+  if (!isRankedPublicMatch) { game.leaderboardRecorded = true; return false; }
   const white = game.players?.white?.accountId;
   const black = game.players?.black?.accountId;
   if (!white || !black) { game.leaderboardRecorded = true; return false; }
@@ -531,6 +544,59 @@ export function leaderboardLines(variant = "normal", scope = "month", limit = 10
   const data = getLeaderboard(variant, scope, limit);
   if (!data.entries.length) return [`No leaderboard entries for ${variant} (${scope}).`];
   return data.entries.map((entry, index) => `${index + 1}. ${entry.username} | elo ${entry.elo} | ${entry.games}G ${entry.wins}W ${entry.losses}L ${entry.draws}D | id ${entry.accountId}`);
+}
+
+export function resetLeaderboard(variant, scope = "month") {
+  const mode = String(variant || "").trim();
+  if (!mode) return { ok: false, reason: "Specify a variant/mode to reset." };
+  const targetScope = String(scope || "month").trim();
+  const monthKey = nowMonth();
+  let resetCount = 0;
+  if (["month", "monthly", "current"].includes(targetScope)) {
+    if (state.leaderboards.months?.[monthKey]?.[mode]) {
+      resetCount = Object.keys(state.leaderboards.months[monthKey][mode]).length;
+      delete state.leaderboards.months[monthKey][mode];
+    }
+  } else if (["alltime", "allTime", "all-time", "all"].includes(targetScope)) {
+    if (state.leaderboards.allTime?.[mode]) {
+      resetCount = Object.keys(state.leaderboards.allTime[mode]).length;
+      delete state.leaderboards.allTime[mode];
+    }
+  } else if (["both", "everything"].includes(targetScope)) {
+    if (state.leaderboards.allTime?.[mode]) {
+      resetCount += Object.keys(state.leaderboards.allTime[mode]).length;
+      delete state.leaderboards.allTime[mode];
+    }
+    for (const month of Object.keys(state.leaderboards.months || {})) {
+      if (state.leaderboards.months[month]?.[mode]) {
+        resetCount += Object.keys(state.leaderboards.months[month][mode]).length;
+        delete state.leaderboards.months[month][mode];
+      }
+    }
+  } else {
+    return { ok: false, reason: "Scope must be month, allTime, or both." };
+  }
+  state.auditLog.push({ type: "leaderboardReset", variant: mode, scope: targetScope, resetCount, at: Date.now() });
+  saveState();
+  return { ok: true, variant: mode, scope: targetScope, resetCount };
+}
+
+export function clearLeaderboardForAccount(accountId) {
+  if (!accountId) return 0;
+  let cleared = 0;
+  for (const bucket of Object.values(state.leaderboards.allTime || {})) {
+    if (bucket?.[accountId]) { delete bucket[accountId]; cleared += 1; }
+  }
+  for (const month of Object.values(state.leaderboards.months || {})) {
+    for (const bucket of Object.values(month || {})) {
+      if (bucket?.[accountId]) { delete bucket[accountId]; cleared += 1; }
+    }
+  }
+  if (cleared) {
+    state.auditLog.push({ type: "leaderboardAccountCleared", accountId, cleared, at: Date.now() });
+    saveState();
+  }
+  return cleared;
 }
 
 export function getLeaderboard(variant = "normal", scope = "month", limit = 100) {

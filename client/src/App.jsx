@@ -194,7 +194,7 @@ export default function App() {
         setQueueStartedAt(null);
         if (status.match) {
           setMatchFoundOverlay(status.match);
-          window.setTimeout(() => setMatchFoundOverlay((current) => current?.roomCode === status.match.roomCode ? null : current), 2500);
+          window.setTimeout(() => setMatchFoundOverlay((current) => current?.roomCode === status.match.roomCode ? null : current), 4300);
         }
         setNotice(`Matched in Lab Room ${status.roomCode}.`);
       } else if (status.cancelled) {
@@ -236,6 +236,7 @@ export default function App() {
         localStorage.setItem("playerName", nextAccount.username);
       }
       setAccountMessage(accountMode === "register" ? UI_TEXT.account.created : UI_TEXT.account.loggedIn);
+      playSoundEffect("start", { enabled: soundEnabled, volume: soundVolume });
     });
 
     socket.on("accountUpdated", ({ account: nextAccount } = {}) => {
@@ -251,6 +252,7 @@ export default function App() {
         newPassword: ""
       }));
       setAccountMessage(UI_TEXT.account.updated);
+      playSoundEffect("ping", { enabled: soundEnabled, volume: soundVolume });
     });
 
     socket.on("profileIcons", ({ icons } = {}) => {
@@ -274,6 +276,7 @@ export default function App() {
       setAccountToken("");
       setAccount(null);
       setAccountMessage(UI_TEXT.account.loggedOut);
+      playSoundEffect("ping", { enabled: soundEnabled, volume: soundVolume });
     });
 
     socket.on("devKickedHome", ({ reason } = {}) => {
@@ -296,18 +299,28 @@ export default function App() {
 
     socket.on("punishmentNotice", (payload = {}) => {
       setPunishmentNotice(payload);
+      playSoundEffect("illegal", { enabled: soundEnabled, volume: soundVolume });
     });
     socket.on("appealSubmitted", () => {
       setAppealText("");
       setNotice(UI_TEXT.reports.appealSubmitted);
+      playSoundEffect("ping", { enabled: soundEnabled, volume: soundVolume });
     });
     socket.on("appealError", (message) => setNotice(message));
-    socket.on("socialState", (state = {}) => setSocialState(state));
-    socket.on("socialError", (message) => setNotice(message));
-    socket.on("socialNotice", (message) => setNotice(message));
-    socket.on("challengeNotice", ({ challenge } = {}) => setChallengeNotice(challenge));
-    socket.on("leaderboardData", (data = {}) => setLeaderboard(data));
-    socket.on("publicProfile", (profile = {}) => setPublicProfile(profile));
+    socket.on("socialState", (state = {}) => {
+      setSocialState((previous) => {
+        const previousMessages = previous?.messages?.length || 0;
+        const previousRequests = previous?.requests?.length || 0;
+        if ((state.messages?.length || 0) > previousMessages) playSoundEffect("chat", { enabled: soundEnabled, volume: soundVolume });
+        else if ((state.requests?.length || 0) > previousRequests) playSoundEffect("ping", { enabled: soundEnabled, volume: soundVolume });
+        return state;
+      });
+    });
+    socket.on("socialError", (message) => { setNotice(message); playSoundEffect("illegal", { enabled: soundEnabled, volume: soundVolume }); });
+    socket.on("socialNotice", (message) => { setNotice(message); playSoundEffect("ping", { enabled: soundEnabled, volume: soundVolume }); });
+    socket.on("challengeNotice", ({ challenge } = {}) => { setChallengeNotice(challenge); if (challenge) playSoundEffect("matchFound", { enabled: soundEnabled, volume: soundVolume }); });
+    socket.on("leaderboardData", (data = {}) => { setLeaderboard(data); playSoundEffect("ping", { enabled: soundEnabled, volume: soundVolume }); });
+    socket.on("publicProfile", (profile = {}) => { setPublicProfile(profile); playSoundEffect("ping", { enabled: soundEnabled, volume: soundVolume }); });
     socket.on("profileError", (message) => setNotice(message));
 
     socket.on("devForcedVisual", ({ kind, args = [], from } = {}) => {
@@ -1615,7 +1628,7 @@ export default function App() {
   if (!game) {
     const queueElapsed = queueStartedAt ? Math.max(0, Math.floor((clockTick - queueStartedAt) / 1000)) : 0;
     return (
-      <main className="app lobby lab-lobby">
+      <main className={`app lobby lab-lobby ${account && socialOpen ? "friends-open" : ""}`}>
         <div className="lobby-chess-bg" aria-hidden="true" />
         <SettingsButton
           open={settingsOpen}
@@ -1668,7 +1681,7 @@ export default function App() {
           <p>Experimental chess variants, playable instantly.</p>
         </section>
 
-        <section className="lab-home-card">
+        <section className={`lab-home-card ${matchmakingSearching ? "queue-active" : ""}`}>
           {homeChooser === "variant" ? (
             <ChoiceGallery
               title="Choose an experiment"
@@ -1762,7 +1775,7 @@ export default function App() {
                 <button
                   className="leaderboard-side-button"
                   type="button"
-                  onClick={() => setLeaderboardOpen(true)}
+                  onClick={() => { playUiSound("ping"); setLeaderboardOpen(true); }}
                 >
                   <span>♕</span>
                   <strong>{UI_TEXT.leaderboard.title}</strong>
@@ -1973,8 +1986,8 @@ export default function App() {
       <section className="game-shell">
         <aside className="side-panel">
           <h2>{UI_TEXT.headings.players}</h2>
-          <PlayerLine label={UI_TEXT.labels.white} player={game.players.white} active={!reviewMode && game.turn === "white"} formatText={screenText} />
-          <PlayerLine label={UI_TEXT.labels.black} player={game.players.black} active={!reviewMode && game.turn === "black"} formatText={screenText} />
+          <PlayerLine label={UI_TEXT.labels.white} player={game.players.white} active={!reviewMode && game.turn === "white"} formatText={screenText} onProfile={requestPublicProfile} />
+          <PlayerLine label={UI_TEXT.labels.black} player={game.players.black} active={!reviewMode && game.turn === "black"} formatText={screenText} onProfile={requestPublicProfile} />
           <div className="spectator-line">
             <span>{UI_TEXT.labels.spectators}</span>
             <strong>{game.spectators?.length || 0}</strong>
@@ -2569,9 +2582,15 @@ function FeedbackOverlay({ text, type }) {
 
 
 function FriendsDrawer({ open, account, socialState, friendTarget, onToggle, onTarget, onSendRequest, onRespondRequest, onProfile, onMessage, onChallenge }) {
+  const [menuFriendId, setMenuFriendId] = useState(null);
   if (!account) return null;
   const friends = socialState?.friends || [];
   const requests = socialState?.requests || [];
+  const toggleMenu = (friend) => setMenuFriendId((current) => current === friend.accountId ? null : friend.accountId);
+  const choose = (callback, friend) => {
+    callback(friend);
+    setMenuFriendId(null);
+  };
   return (
     <aside className={`friends-drawer ${open ? "open" : ""}`}>
       <button className="friends-tab" type="button" onClick={onToggle}>{UI_TEXT.social.friendsTitle}</button>
@@ -2583,9 +2602,9 @@ function FriendsDrawer({ open, account, socialState, friendTarget, onToggle, onT
         </div>
         <h3>{UI_TEXT.social.friendRequests}</h3>
         {requests.length ? requests.map((request) => (
-          <div className="friend-row" key={request.id}>
+          <div className="friend-row request-row" key={request.id}>
             <strong>{request.fromUsername}</strong>
-            <span>
+            <span className="request-actions">
               <button onClick={() => onRespondRequest(request.id, true)}>{UI_TEXT.social.accept}</button>
               <button onClick={() => onRespondRequest(request.id, false)}>{UI_TEXT.social.deny}</button>
             </span>
@@ -2593,14 +2612,18 @@ function FriendsDrawer({ open, account, socialState, friendTarget, onToggle, onT
         )) : <p className="subtle">{UI_TEXT.social.noRequests}</p>}
         <h3>{UI_TEXT.social.friendsTitle}</h3>
         {friends.length ? friends.map((friend) => (
-          <div className="friend-row" key={friend.accountId}>
-            <button className="friend-name" onClick={() => onProfile(friend.accountId)}>{friend.username}</button>
-            <small>{friend.online ? UI_TEXT.social.online : UI_TEXT.social.offline}{friend.inGame ? ` · ${UI_TEXT.social.inGame}` : ""}</small>
-            <span className="friend-actions">
-              <button onClick={() => onProfile(friend.accountId)}>{UI_TEXT.buttons.viewProfile}</button>
-              <button onClick={() => onChallenge(friend)}>{UI_TEXT.buttons.challenge}</button>
-              <button onClick={() => onMessage(friend)}>{UI_TEXT.buttons.message}</button>
-            </span>
+          <div className={`friend-row friend-context-row ${menuFriendId === friend.accountId ? "menu-open" : ""}`} key={friend.accountId}>
+            <button className="friend-name" onClick={() => toggleMenu(friend)}>
+              <span>{friend.username}</span>
+              <small>{friend.online ? UI_TEXT.social.online : UI_TEXT.social.offline}{friend.inGame ? ` · ${UI_TEXT.social.inGame}` : ""}</small>
+            </button>
+            {menuFriendId === friend.accountId && (
+              <div className="friend-context-menu" role="menu">
+                <button onClick={() => choose((item) => onProfile(item.accountId), friend)}>{UI_TEXT.buttons.viewProfile}</button>
+                <button onClick={() => choose(onChallenge, friend)}>{UI_TEXT.buttons.challenge}</button>
+                <button onClick={() => choose(onMessage, friend)}>{UI_TEXT.buttons.message}</button>
+              </div>
+            )}
           </div>
         )) : <p className="subtle">{UI_TEXT.social.noFriends}</p>}
       </div>
@@ -2611,16 +2634,28 @@ function FriendsDrawer({ open, account, socialState, friendTarget, onToggle, onT
 function FriendMessageWindow({ friend, messages, draft, onDraft, onSend, onClose }) {
   if (!friend) return null;
   const relevant = (messages || []).filter((message) => message.fromAccountId === friend.accountId || message.toAccountId === friend.accountId).slice(-40);
+  function submit(event) {
+    event.preventDefault();
+    onSend();
+  }
   return (
-    <section className="friend-chat-window">
-      <header><strong>{friend.username}</strong><button onClick={onClose}>×</button></header>
-      <div className="friend-chat-messages">
-        {relevant.map((message) => <p key={message.id} className={message.fromAccountId === friend.accountId ? "incoming" : "outgoing"}>{message.body}</p>)}
+    <section className="friend-chat-window game-chat-panel">
+      <header className="friend-chat-header game-chat-header">
+        <h2>{friend.username}</h2>
+        <button className="friend-chat-close" type="button" onClick={onClose} aria-label="Close friend chat">×</button>
+      </header>
+      <div className="friend-chat-messages chat-messages" aria-live="polite">
+        {relevant.length ? relevant.map((message, index) => (
+          <div key={message.id} className={`chat-line ${message.fromAccountId === friend.accountId ? "black" : "white"} ${index % 2 === 0 ? "even" : "odd"}`}>
+            <span className="chat-prefix">{message.fromAccountId === friend.accountId ? friend.username : "You"}:</span>
+            <span className="chat-body">{message.body}</span>
+          </div>
+        )) : <p className="chat-empty">No messages yet.</p>}
       </div>
-      <footer>
+      <form className="chat-form friend-chat-form" onSubmit={submit}>
         <input value={draft} onChange={(event) => onDraft(event.target.value)} placeholder={UI_TEXT.social.messagePlaceholder} />
-        <button onClick={onSend}>{UI_TEXT.buttons.sendChat}</button>
-      </footer>
+        <button type="submit">{UI_TEXT.buttons.sendChat}</button>
+      </form>
     </section>
   );
 }
@@ -3013,7 +3048,8 @@ function DevConsole({ open, input, lines, unlocked, history, historyIndex, onHis
         {lines.length === 0 ? <div className="dev-console-line muted">type help</div> : lines.map((line, index) => {
           const text = String(line);
           const tone = text.startsWith("!") ? "error" : text.startsWith(">") ? "command" : "result";
-          return <div key={`${text}-${index}`} className={`dev-console-line ${tone}`}>{text}</div>;
+          const strength = /\|\s*(weak|medium|strong)\s*\|/i.exec(text)?.[1]?.toLowerCase();
+          return <div key={`${text}-${index}`} className={`dev-console-line ${tone} ${strength ? `report-strength-${strength}` : ""}`}>{text}</div>;
         })}
       </div>
       <form className="dev-console-input-row" onSubmit={onSubmit}>
@@ -3889,7 +3925,7 @@ function GameOverModal({ game, color, onReturnHome, onReplay, onRematch, onRevie
           <button onClick={onReturnHome}>{UI_TEXT.buttons.returnHome}</button>
           <button className="primary" onClick={onReplay}>{UI_TEXT.buttons.newRoom}</button>
           <button onClick={onRematch}>{game.rematchRequests?.[color] ? UI_TEXT.buttons.rematchRequested : UI_TEXT.buttons.rematch}</button>
-          <button onClick={onReview}>{UI_TEXT.buttons.reviewMatch}</button>
+          <button className="spectate-review-button" onClick={onReview}>{UI_TEXT.buttons.reviewMatch}</button>
         </div>
       </section>
     </div>
@@ -4024,11 +4060,20 @@ function getClientMembership(game, socketId) {
   return null;
 }
 
-function PlayerLine({ label, player, active, formatText = (value) => value }) {
+function PlayerLine({ label, player, active, formatText = (value) => value, onProfile = null }) {
+  const canOpenProfile = Boolean(player?.accountId && onProfile);
+  const name = player?.name ? formatText(player.name) : UI_TEXT.labels.waiting;
+  const detail = player?.accountId ? `${player.elo ? `ELO ${player.elo}` : "ELO 800"}${player.rank ? ` · #${player.rank}` : ""}` : (player?.id?.startsWith?.("AI:") ? "Bot" : "Guest");
+  const body = (
+    <>
+      <strong>{name}</strong>
+      <small>{detail}</small>
+    </>
+  );
   return (
-    <div className={`player-line ${active ? "active" : ""}`}>
+    <div className={`player-line ${active ? "active" : ""} ${canOpenProfile ? "clickable" : ""}`}>
       <span>{label}</span>
-      <strong>{player?.name ? formatText(player.name) : UI_TEXT.labels.waiting}</strong>
+      {canOpenProfile ? <button type="button" onClick={() => onProfile(player.accountId)}>{body}</button> : <div className="player-line-static">{body}</div>}
     </div>
   );
 }

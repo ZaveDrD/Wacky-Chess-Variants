@@ -6763,3 +6763,245 @@ select {
   border-color: rgba(250,204,21,0.55);
   background: linear-gradient(135deg, rgba(250,204,21,0.18), rgba(132,204,22,0.08));
 }
+
+/* Polish pass: modal closes, friends, queue, VS, report labels */
+.modal-close,
+.friend-chat-close {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 0 !important;
+  line-height: 1 !important;
+  font-size: 0 !important;
+  text-align: center !important;
+}
+
+.modal-close::before,
+.friend-chat-close::before {
+  content: "×";
+  display: block;
+  font-size: 1.35rem;
+  line-height: 1;
+  transform: translateY(-0.04em);
+}
+
+.leaderboard-modal .modal-close {
+  background: rgba(23,22,20,0.98) !important;
+  border: 1px solid rgba(238,238,210,0.24) !important;
+  box-shadow: none !important;
+}
+
+.lab-home-card.queue-active {
+  min-height: auto;
+  max-height: min(500px, calc(100dvh - 7rem));
+}
+
+.lab-home-card.queue-active .queue-search-panel {
+  min-height: 0;
+  height: auto;
+  max-height: min(360px, calc(100dvh - 12rem));
+  padding-block: 0.55rem;
+  gap: 0.45rem;
+}
+
+.lab-home-card.queue-active .queue-orbit {
+  width: 112px;
+  height: 112px;
+}
+
+.lab-home-card.queue-active .queue-timer {
+  font-size: 1.55rem;
+}
+
+.lab-home-card.queue-active .queue-search-panel h2 {
+  font-size: 1.2rem;
+}
+
+.lab-home-card.queue-active .queue-search-panel p {
+  margin: 0;
+  font-size: 0.92rem;
+}
+
+@media (min-width: 1040px) {
+  .lab-lobby.friends-open .lab-home-card {
+    width: min(920px, calc(96vw - 260px));
+    transform: translateX(-120px);
+    transition: width 180ms ease, transform 180ms ease;
+  }
+}
+
+.friends-drawer {
+  top: clamp(7rem, 17vh, 12rem);
+}
+
+.friends-panel {
+  width: min(300px, 86vw);
+  animation: friendsPanelIn 220ms ease both;
+}
+
+.friends-drawer.open .friends-tab {
+  right: min(300px, 86vw);
+}
+
+@keyframes friendsPanelIn {
+  from { opacity: 0.88; filter: blur(2px); }
+  to { opacity: 1; filter: blur(0); }
+}
+
+.friend-context-row {
+  position: relative;
+  padding: 0.25rem;
+}
+
+.friend-context-row .friend-name {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.55rem 0.65rem;
+  border-radius: 12px;
+  background: rgba(255,255,255,0.035);
+  border: 1px solid transparent;
+}
+
+.friend-context-row .friend-name small {
+  font-weight: 700;
+  color: rgba(238,238,210,0.58);
+}
+
+.friend-context-row.menu-open .friend-name {
+  border-color: rgba(132,204,22,0.45);
+  background: rgba(132,204,22,0.08);
+}
+
+.friend-context-menu {
+  position: relative;
+  display: grid;
+  gap: 0.25rem;
+  margin: 0.35rem 0 0.1rem 0.35rem;
+  padding: 0.35rem;
+  border: 1px solid rgba(238,238,210,0.14);
+  border-radius: 12px;
+  background: rgba(17,17,15,0.96);
+  box-shadow: 0 12px 34px rgba(0,0,0,0.35);
+  animation: contextMenuIn 140ms ease both;
+}
+
+.friend-context-menu button {
+  width: 100%;
+  text-align: left;
+  justify-content: start;
+  border-radius: 9px;
+  border: 0;
+  background: transparent;
+  padding: 0.52rem 0.6rem;
+}
+
+.friend-context-menu button:hover {
+  background: rgba(238,238,210,0.08);
+}
+
+@keyframes contextMenuIn {
+  from { opacity: 0; transform: translateY(-4px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.request-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.friend-chat-window.game-chat-panel {
+  width: min(370px, 94vw);
+  min-height: 330px;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  padding: 0;
+  animation: friendChatPop 180ms ease both;
+}
+
+.friend-chat-window .game-chat-header {
+  padding: 0.65rem 0.7rem;
+}
+
+.friend-chat-window .game-chat-header h2 {
+  margin: 0;
+  font-size: 0.98rem;
+}
+
+.friend-chat-window .chat-messages {
+  max-height: 260px;
+  padding: 0.6rem;
+}
+
+.friend-chat-form {
+  padding: 0.65rem;
+  background: rgba(255,255,255,0.035);
+  border-top: 1px solid rgba(238,238,210,0.08);
+}
+
+@keyframes friendChatPop {
+  from { opacity: 0; transform: translateY(12px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.challenge-toast,
+.leaderboard-modal,
+.public-profile-modal,
+.punishment-modal {
+  animation: polishPop 180ms ease both;
+}
+
+@keyframes polishPop {
+  from { opacity: 0; transform: translateY(8px) scale(0.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.versus-card {
+  animation: versusPopReadable 4.2s ease forwards !important;
+}
+
+@keyframes versusPopReadable {
+  0% { opacity: 0; transform: scale(0.92); }
+  10% { opacity: 1; transform: scale(1.015); }
+  18% { transform: scale(1); }
+  84% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(0.99); }
+}
+
+.modal-actions .spectate-review-button {
+  grid-column: 1 / -1;
+}
+
+.player-line {
+  gap: 0.25rem;
+}
+
+.player-line button,
+.player-line-static {
+  width: 100%;
+  display: grid;
+  gap: 0.15rem;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  color: inherit;
+}
+
+.player-line.clickable button:hover strong {
+  color: #84cc16;
+  text-decoration: underline;
+}
+
+.player-line small {
+  color: rgba(238,238,210,0.58);
+  font-size: 0.76rem;
+  font-weight: 750;
+}
+
+.dev-console-line.report-strength-weak { color: #84cc16; }
+.dev-console-line.report-strength-medium { color: #f59e0b; }
+.dev-console-line.report-strength-strong { color: #ff3b30; font-weight: 850; text-shadow: 0 0 10px rgba(255,59,48,0.22); }
