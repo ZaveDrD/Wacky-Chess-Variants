@@ -416,3 +416,8 @@ account store
 ```
 
 `account online` / `account locate` reports whether the account has active sockets and which room, colour, or spectator slot it is currently using.
+
+## UI cleanup note
+
+- Settings account panel is now a single compact clickable row.
+- Guest home row no longer has a separate Open Account button; clicking the guest avatar opens account login.

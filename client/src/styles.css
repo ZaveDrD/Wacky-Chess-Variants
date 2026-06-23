@@ -6561,3 +6561,69 @@ select {
     padding: 0.75rem;
   }
 }
+
+/* Settings/profile cleanup after account UI pass */
+.settings-account-panel.compact-account-panel.settings-account-clickable {
+  width: 100%;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  text-align: left;
+  border: 0;
+  border-top: 1px solid rgba(238,238,210,0.14);
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  padding: 0.72rem 0 0;
+  margin-top: 0.65rem;
+  cursor: pointer;
+}
+
+.settings-account-panel.compact-account-panel.settings-account-clickable:hover strong {
+  color: #84cc16;
+}
+
+.settings-account-panel.compact-account-panel.settings-account-clickable .eyebrow {
+  display: block;
+  line-height: 1.05;
+  margin-bottom: 0.1rem;
+}
+
+.settings-account-panel.compact-account-panel.settings-account-clickable strong,
+.settings-account-panel.compact-account-panel.settings-account-clickable small {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.settings-account-panel.compact-account-panel.settings-account-clickable strong {
+  line-height: 1.1;
+  white-space: nowrap;
+}
+
+.settings-account-panel.compact-account-panel.settings-account-clickable small {
+  line-height: 1.25;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.guest-home-strip {
+  grid-template-columns: minmax(180px, 0.78fr) minmax(280px, 1.35fr);
+}
+
+.guest-name-input {
+  width: 100%;
+}
+
+@media (max-width: 900px) {
+  .guest-home-strip {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .guest-name-input {
+    grid-column: auto;
+    order: 0;
+  }
+}

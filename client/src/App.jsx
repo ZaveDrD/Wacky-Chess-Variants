@@ -1601,10 +1601,7 @@ export default function App() {
                       <span>{UI_TEXT.lobby.displayNameLabel}</span>
                       <input value={name} onChange={(event) => setName(event.target.value)} placeholder={UI_TEXT.lobby.displayNamePlaceholder} />
                     </label>
-                    <button className="compact-account-button" type="button" onClick={() => setAccountModalOpen(true)} title={UI_TEXT.account.signedOutBody}>
-                      <strong>{UI_TEXT.account.openAccount}</strong>
-                      <small>{UI_TEXT.account.signedOutBody}</small>
-                    </button>
+
                   </div>
                 )}
               </div>
@@ -2217,15 +2214,14 @@ function SettingsButton({
           </label>
           <p>{UI_TEXT.settings.censorHelp}</p>
 
-          <div className="settings-account-panel compact-account-panel">
+          <button className="settings-account-panel compact-account-panel settings-account-clickable" type="button" onClick={onAccountOpen} title={account ? UI_TEXT.account.manageAccountHelp : UI_TEXT.account.signedOutBody}>
             {account ? <ProfileAvatar account={account} /> : <GuestAvatar />}
-            <div>
+            <span className="settings-account-copy">
               <span className="eyebrow">{account ? UI_TEXT.account.accountBadge : UI_TEXT.account.guestBadge}</span>
               <strong>{account ? account.username : UI_TEXT.account.signedOutTitle}</strong>
               <small>{account ? UI_TEXT.account.manageAccountHelp : UI_TEXT.account.signedOutBody}</small>
-            </div>
-            <button type="button" onClick={onAccountOpen}>{account ? UI_TEXT.account.manageAccount : UI_TEXT.account.openAccount}</button>
-          </div>
+            </span>
+          </button>
         </section>
       )}
     </div>
