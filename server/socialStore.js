@@ -453,7 +453,7 @@ export function createChallenge(fromAccountId, targetQuery, options = {}) {
   if (!target) return { ok: false, reason: "Account not found." };
   const key = pairKey(fromAccountId, target.id);
   if (!state.friendships.some((f) => f.key === key)) return { ok: false, reason: "You can only challenge friends." };
-  const challenge = { id: `CH-${randomUUID().slice(0, 8).toUpperCase()}`, fromAccountId, toAccountId: target.id, variant: options.variant || "normal", timeControl: options.timeControl || "rapid", status: "pending", createdAt: Date.now() };
+  const challenge = { id: `CH-${randomUUID().slice(0, 8).toUpperCase()}`, fromAccountId, toAccountId: target.id, variant: options.variant || "normal", timeControl: options.timeControl || "rapid", ruleLabDifficulty: options.ruleLabDifficulty || "medium", status: "pending", createdAt: Date.now() };
   state.challenges.push(challenge);
   saveState();
   return { ok: true, challenge, targetAccount: publicAccount(target) };
@@ -492,12 +492,37 @@ export function recordLeaderboardGame(game) {
   const white = game.players?.white?.accountId;
   const black = game.players?.black?.accountId;
   if (!white || !black) { game.leaderboardRecorded = true; return false; }
+  if (game.variant === "ruleLab") {
+    updateRuleLabRating(game, white);
+    updateRuleLabRating(game, black);
+    game.leaderboardRecorded = true;
+    saveState();
+    return true;
+  }
   const result = !game.winner ? "draw" : game.winner === "white" ? "white" : "black";
   updateEloPair(game.variant, white, black, result, game);
   updateEloPairAllTime(game.variant, white, black, result, game);
   game.leaderboardRecorded = true;
   saveState();
   return true;
+}
+
+function updateRuleLabRating(game, accountId) {
+  const won = game.winner === "both";
+  const lab = game.ruleLab || {};
+  const base = won ? (Number(lab.winBase) || 20) : 0;
+  const minutesLeft = won ? Math.max(0, Math.floor((Number(lab.endsAt || 0) - Date.now()) / 60000)) : 0;
+  const perfect = won && !(lab.guesses || []).some((guess) => !guess.correct) ? 5 : 0;
+  const delta = base + minutesLeft + perfect;
+  for (const scope of ["month", "allTime"]) {
+    const entry = playerEntry(boardBucket(scope, "ruleLab"), accountId);
+    const before = entry.elo;
+    entry.games += 1;
+    if (won) entry.wins += 1; else entry.losses += 1;
+    entry.elo = Math.max(100, before + delta);
+    entry.peak = Math.max(entry.peak || BASE_ELO, entry.elo);
+  }
+  recordAccountEloHistory(accountId, { roomCode: game.roomCode, variant: "ruleLab", before: null, after: getElo(accountId, "ruleLab", "month"), delta, opponentId: null, cooperative: true, at: Date.now() });
 }
 
 function expectedScore(ratingA, ratingB) { return 1 / (1 + Math.pow(10, (ratingB - ratingA) / 400)); }

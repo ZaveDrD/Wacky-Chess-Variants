@@ -37,3 +37,7 @@ ACCOUNT_STORE_PATH=/persistent-data/accounts.json
 ```
 
 Accounts use PBKDF2-SHA256 password hashing with per-account salts. Session tokens are sent to clients once and only token hashes are stored server-side.
+
+## Launch variant update
+
+Added 3-Check, Anti-Chess, Anarchy Chess, and Rule Lab. Rule Lab uses a difficulty selector instead of normal time controls and a shared 15-minute timer. Anarchy Chess uses a side event feed so special rules can be referenced without crowding the rules list.

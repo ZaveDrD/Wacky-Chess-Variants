@@ -20,7 +20,8 @@ export const PIECE_SYMBOLS = {
     rook: "♖\ufe0e",
     bishop: "♗\ufe0e",
     knight: "♘\ufe0e",
-    pawn: "♙\ufe0e"
+    pawn: "♙\ufe0e",
+    knook: "♘♖"
   },
   black: {
     king: "♚\ufe0e",
@@ -28,6 +29,7 @@ export const PIECE_SYMBOLS = {
     rook: "♜\ufe0e",
     bishop: "♝\ufe0e",
     knight: "♞\ufe0e",
-    pawn: "♟\ufe0e"
+    pawn: "♟\ufe0e",
+    knook: "♞♜"
   }
 };

@@ -28,6 +28,7 @@ function isHillCenter(pos) {
 }
 
 function getMissingKingEndState(game) {
+  if (["antichess", "ruleLab"].includes(game?.variant)) return null;
   const whiteKing = getKing(game, "white");
   const blackKing = getKing(game, "black");
   if (whiteKing && blackKing) return null;
@@ -48,6 +49,7 @@ function getHillEndState(game) {
 }
 
 export function isKingInCheck(game, color) {
+  if (["antichess", "ruleLab"].includes(game?.variant)) return false;
   const king = getKing(game, color);
   if (!king) return true;
   return isSquareAttacked(game, king, opponent(color));
@@ -56,17 +58,28 @@ export function isKingInCheck(game, color) {
 export function getLegalMoves(game, piece) {
   if (!piece || piece.type === "wall") return [];
   if (piece.purchasedTurnToken != null && piece.purchasedTurnToken === game.turnToken) return [];
+  if (piece.anarchyVacationUntil != null && piece.anarchyVacationUntil > (Number(game.turnToken) || 0)) return [];
   if (isPieceFrozenBySmoke(game, piece)) return [];
 
-  const pseudoMoves = getPseudoLegalMoves(game, piece);
-  const withCastling = piece.type === "king" ? [...pseudoMoves, ...getCastleMoves(game, piece)] : pseudoMoves;
+  let pseudoMoves = getPseudoLegalMoves(game, piece);
+  if (game.variant === "ruleLab") pseudoMoves = applyRuleLabMoveRestrictions(game, piece, pseudoMoves);
+  let withSpecial = piece.type === "king" ? [...pseudoMoves, ...getCastleMoves(game, piece)] : pseudoMoves;
+  if (game.variant === "anarchy") withSpecial = [...withSpecial, ...getAnarchySpecialMoves(game, piece)];
 
-  return withCastling.filter((move) => {
-    const testGame = cloneGame(game);
-    const result = applyMoveUnchecked(testGame, piece.id, move, { promotion: "queen", dryRun: true });
-    if (!result?.ok) return false;
-    return !isKingInCheck(testGame, piece.color);
-  });
+  const legal = game.variant === "antichess"
+    ? withSpecial
+    : withSpecial.filter((move) => {
+      const testGame = cloneGame(game);
+      const result = applyMoveUnchecked(testGame, piece.id, move, { promotion: "queen", dryRun: true });
+      if (!result?.ok) return false;
+      return !isKingInCheck(testGame, piece.color);
+    });
+
+  if (game.variant === "antichess") {
+    const captureMoves = legal.filter((move) => move.capture || move.enPassant);
+    if (captureMoves.length) return captureMoves;
+  }
+  return legal;
 }
 
 export function hasAnyLegalMove(game, color) {
@@ -76,6 +89,12 @@ export function hasAnyLegalMove(game, color) {
 }
 
 export function getGameEndState(game, colorToMove) {
+  const antiState = getAntiChessEndState(game, colorToMove);
+  if (antiState) return antiState;
+  const ruleLabState = getRuleLabEndState(game);
+  if (ruleLabState) return ruleLabState;
+  const threeCheckState = getThreeCheckEndState(game);
+  if (threeCheckState) return threeCheckState;
   const missingKing = getMissingKingEndState(game);
   if (missingKing) return missingKing;
   const hillState = getHillEndState(game);
@@ -118,6 +137,7 @@ export function getGameEndState(game, colorToMove) {
 
 export function applyAutomaticDrawRules(game) {
   if (!game || game.status !== "playing") return game;
+  if (["antichess", "ruleLab", "anarchy"].includes(game.variant)) return game;
 
   const repeatCount = recordCurrentPosition(game);
   if (repeatCount >= 3) {
@@ -202,6 +222,8 @@ function getCastleMoves(game, king) {
   if (king.hasMoved || king.y !== y || king.z !== z) return moves;
   if (isKingInCheck(game, king.color)) return moves;
 
+  if (game.variant === "anarchy") addVerticalCastleMoves(game, king, moves);
+
   for (const side of ["kingSide", "queenSide"]) {
     const isKingSide = side === "kingSide";
     const kingTargetX = isKingSide ? 6 : 2;
@@ -273,7 +295,7 @@ export function applyMoveUnchecked(game, pieceId, move, options = {}) {
 
   const originalType = piece.type;
   const from = { x: piece.x, y: piece.y, z: piece.z };
-  const to = { x: move.x, y: move.y, z: move.z };
+  const to = move.kingTo ? { x: move.kingTo.x, y: move.kingTo.y, z: move.kingTo.z } : { x: move.x, y: move.y, z: move.z };
   if (!inBounds(to)) return { ok: false, reason: "Target out of bounds." };
 
   let captured = null;
@@ -281,6 +303,8 @@ export function applyMoveUnchecked(game, pieceId, move, options = {}) {
   const targetBefore = move.enPassant
     ? getPieceAt(game, { x: to.x, y: to.y, z: to.z - pawnZDir(piece.color) })
     : getPieceAt(game, to);
+
+  if (move.ilVaticano) return applyIlVaticanoUnchecked(game, piece, move);
 
   if (targetBefore?.god && targetBefore.id !== piece.id) {
     return { ok: false, reason: "That piece is protected by god mode." };
@@ -344,8 +368,10 @@ export function applyMoveUnchecked(game, pieceId, move, options = {}) {
 
   let promotedTo = null;
   if (isPromotionSquare(piece, to, game)) {
-    promotedTo = ["queen", "rook", "bishop", "knight"].includes(options.promotion) ? options.promotion : "queen";
+    const allowedPromotions = game.variant === "anarchy" ? ["queen", "rook", "bishop", "knight", "knook"] : ["queen", "rook", "bishop", "knight"];
+    promotedTo = allowedPromotions.includes(options.promotion) ? options.promotion : "queen";
     piece.type = promotedTo;
+    if (game.variant === "anarchy" && ["knight", "knook"].includes(promotedTo)) ensureAnarchy(game).pendingBoost = { pieceId: piece.id, color: piece.color, createdAtTurn: Number(game.turnToken) || 0 };
   }
 
   let atomicRemoved = [];
@@ -380,6 +406,8 @@ export function applyMoveUnchecked(game, pieceId, move, options = {}) {
 
   game.lastMove = moveRecord;
   game.moveHistory.push(moveRecord);
+  if (game.variant === "ruleLab") applyRuleLabAfterMove(game, moveRecord, piece);
+  if (game.variant === "anarchy") applyAnarchyAfterMove(game, moveRecord, piece, captured);
   if (atomicRemoved.length) addExplosionEffect(game, to, 1, "atomic");
 
   return { ok: true, moveRecord };
@@ -1125,12 +1153,284 @@ export function attemptLegalMove(game, playerId, pieceId, to, options = {}) {
   }
 
   const legalMoves = getLegalMoves(game, piece);
+  const forcedEnPassantAvailable = game.variant === "anarchy" && legalMoves.some((move) => move.enPassant);
   chosen = legalMoves.find((move) => move.x === to.x && move.y === to.y && move.z === to.z);
   if (!chosen) return { ok: false, reason: "Illegal move." };
 
   const result = applyMoveUnchecked(game, pieceId, chosen, options);
   if (!result.ok) return result;
+  if (game.variant === "anarchy" && forcedEnPassantAvailable && !chosen.enPassant) applyBrickPenalty(game, movingColor, "Declined forced en passant");
 
   advanceTurn(game, movingColor);
+  afterVariantTurnAdvanced(game, movingColor);
   return { ok: true, game };
+}
+
+
+function getAntiChessEndState(game, colorToMove) {
+  if (game?.variant !== "antichess") return null;
+  const whitePieces = (game.pieces || []).filter((p) => p.color === "white" && p.type !== "wall");
+  const blackPieces = (game.pieces || []).filter((p) => p.color === "black" && p.type !== "wall");
+  if (!whitePieces.length && !blackPieces.length) return { check: null, checkmate: false, stalemate: true, winner: null, status: "finished", message: "Draw: both sides lost all pieces." };
+  if (!whitePieces.length) return { check: null, checkmate: false, stalemate: false, winner: "white", status: "finished", message: "white wins Anti-Chess by losing all pieces." };
+  if (!blackPieces.length) return { check: null, checkmate: false, stalemate: false, winner: "black", status: "finished", message: "black wins Anti-Chess by losing all pieces." };
+  const legal = (game.pieces || []).filter((p) => p.color === colorToMove).flatMap((p) => getLegalMoves(game, p));
+  if (!legal.length) return { check: null, checkmate: false, stalemate: false, winner: colorToMove, status: "finished", message: `${colorToMove} wins Anti-Chess by having no legal moves.` };
+  return null;
+}
+
+function getThreeCheckEndState(game) {
+  if (game?.variant !== "threeCheck") return null;
+  const checks = game.threeCheck?.checks || {};
+  if ((checks.white || 0) >= 3) return { check: null, checkmate: false, stalemate: false, winner: "white", status: "finished", message: "white wins by giving three checks." };
+  if ((checks.black || 0) >= 3) return { check: null, checkmate: false, stalemate: false, winner: "black", status: "finished", message: "black wins by giving three checks." };
+  return null;
+}
+
+function getRuleLabEndState(game) {
+  if (game?.variant !== "ruleLab" || !game.ruleLab) return null;
+  if ((game.ruleLab.discovered || []).length >= (game.ruleLab.hiddenRules || []).length) {
+    return { check: null, checkmate: false, stalemate: false, winner: "both", status: "finished", message: "Rule Lab solved. Both players win." };
+  }
+  if (Date.now() >= Number(game.ruleLab.endsAt || 0)) {
+    return { check: null, checkmate: false, stalemate: false, winner: null, status: "finished", message: "Rule Lab failed. Time expired before every hidden rule was found." };
+  }
+  return null;
+}
+
+function afterVariantTurnAdvanced(game, movingColor) {
+  if (game.variant === "threeCheck" && game.check === opponent(movingColor)) {
+    if (!game.threeCheck) game.threeCheck = { checks: { white: 0, black: 0 }, target: 3 };
+    game.threeCheck.checks[movingColor] = (game.threeCheck.checks[movingColor] || 0) + 1;
+    const end = getThreeCheckEndState(game);
+    if (end) Object.assign(game, end);
+  }
+  if (game.variant === "anarchy") {
+    const state = ensureAnarchy(game);
+    if (game.check === opponent(movingColor)) state.checkPressure = { by: movingColor, triggerAt: (Number(game.turnToken) || 0) + 6 };
+    if (state.checkPressure && (Number(game.turnToken) || 0) >= state.checkPressure.triggerAt && game.status === "playing") {
+      applyRiot(game, "Checkmate or Riot");
+      state.checkPressure = null;
+    }
+    applyAnarchyFireCleanup(game);
+  }
+}
+
+function ensureAnarchy(game) {
+  if (!game.anarchy) game.anarchy = { events: [], specialEvents: 0, fires: [], responses: [], zombies: [], vacations: {}, queenCompensation: { white: false, black: false }, pendingBoost: null, checkPressure: null };
+  return game.anarchy;
+}
+
+function logAnarchy(game, text, type = "event") {
+  const state = ensureAnarchy(game);
+  state.events.push({ at: Date.now(), turnToken: Number(game.turnToken) || 0, type, text });
+  state.events = state.events.slice(-40);
+}
+
+function getAnarchySpecialMoves(game, piece) {
+  const moves = [];
+  if (piece.type === "bishop") {
+    for (const other of (game.pieces || []).filter((p) => p.id !== piece.id && p.type === "bishop" && p.color === piece.color)) {
+      const info = ilVaticanoInfo(game, piece, other);
+      if (info.ok) moves.push({ x: other.x, y: other.y, z: other.z, capture: true, ilVaticano: true, bishopA: piece.id, bishopB: other.id, capturedIds: info.captured.map((p) => p.id) });
+    }
+  }
+  if (piece.type === "king") addVerticalCastleMoves(game, piece, moves);
+  return moves;
+}
+
+function ilVaticanoInfo(game, a, b) {
+  const dx = Math.sign(b.x - a.x), dy = Math.sign(b.y - a.y), dz = Math.sign(b.z - a.z);
+  const aligned = (a.x === b.x || a.y === b.y || a.z === b.z || (Math.abs(b.x-a.x) === Math.abs(b.z-a.z) && a.y === b.y));
+  if (!aligned) return { ok: false, captured: [] };
+  const between = [];
+  let x=a.x+dx, y=a.y+dy, z=a.z+dz;
+  while (!(x===b.x && y===b.y && z===b.z)) { between.push({x,y,z}); x+=dx; y+=dy; z+=dz; if (between.length>8) break; }
+  const pieces = between.map((pos)=>getPieceAt(game,pos)).filter(Boolean);
+  const captured = pieces.filter((p)=>p.color!==a.color && p.type!=="king");
+  if (pieces.length !== 2 || captured.length !== 2) return { ok: false, captured: [] };
+  return { ok: true, captured };
+}
+
+function applyIlVaticanoUnchecked(game, bishop, move) {
+  const other = getPieceAt(game, { x: move.x, y: move.y, z: move.z });
+  if (!other || other.type !== "bishop" || other.color !== bishop.color || other.id === bishop.id) return { ok: false, reason: "Il Vaticano needs two friendly bishops." };
+  const info = ilVaticanoInfo(game, bishop, other);
+  if (!info.ok) return { ok: false, reason: "Il Vaticano pattern not available." };
+  const from = { x: bishop.x, y: bishop.y, z: bishop.z };
+  const to = { x: other.x, y: other.y, z: other.z };
+  const removed = [];
+  for (const victim of info.captured) {
+    const r = removePieceAt(game, victim);
+    if (r) removed.push({ id: r.id, type: r.type, color: r.color });
+  }
+  bishop.x = to.x; bishop.y = to.y; bishop.z = to.z; bishop.hasMoved = true;
+  other.x = from.x; other.y = from.y; other.z = from.z; other.hasMoved = true;
+  const state = ensureAnarchy(game);
+  bishop.anarchyVacationUntil = (Number(game.turnToken) || 0) + 4;
+  other.anarchyVacationUntil = (Number(game.turnToken) || 0) + 4;
+  const moveRecord = { pieceId: bishop.id, pieceColor: bishop.color, pieceType: "bishop", from, to, captured: null, ilVaticano: true, anarchyRemoved: removed, time: Date.now() };
+  game.lastMove = moveRecord; game.moveHistory.push(moveRecord); game.halfmoveClock = 0;
+  state.specialEvents += 1;
+  logAnarchy(game, `Il Vaticano: ${bishop.color} bishops captured ${removed.map((p)=>p.type).join(" and ")}.`, "ilVaticano");
+  triggerNewResponse(game);
+  return { ok: true, moveRecord };
+}
+
+function addVerticalCastleMoves(game, king, moves) {
+  if (game.variant !== "anarchy" || king.hasMoved) return;
+  for (const rook of (game.pieces || []).filter((p) => p.type === "rook" && p.color === king.color && !p.hasMoved && p.x === king.x && p.y === king.y)) {
+    const dz = Math.sign(rook.z - king.z);
+    if (!dz) continue;
+    const clear = [];
+    for (let z = king.z + dz; z !== rook.z; z += dz) clear.push({ x: king.x, y: king.y, z });
+    if (!clear.every((pos) => !getPieceAt(game, pos))) continue;
+    const kingTo = { x: king.x, y: king.y, z: king.z + dz * 2 };
+    const rookTo = { x: king.x, y: king.y, z: king.z + dz };
+    if (!inBounds(kingTo) || getPieceAt(game, kingTo)) continue;
+    moves.push({ ...kingTo, capture: false, castle: true, verticalCastle: true, rookId: rook.id, rookTo });
+    moves.push({ x: rook.x, y: rook.y, z: rook.z, capture: false, castle: true, verticalCastle: true, rookId: rook.id, rookTo, kingTo });
+  }
+}
+
+function applyBrickPenalty(game, color, reason) {
+  const candidates = (game.pieces || []).filter((p) => p.color === color && p.type !== "king" && p.type !== "wall" && !p.god);
+  if (!candidates.length) return;
+  const victim = candidates[(Number(game.turnToken) || 0) % candidates.length];
+  const removed = removePieceAt(game, victim);
+  if (removed) {
+    logAnarchy(game, `Brick penalty: ${color} ${removed.type} was crushed. (${reason})`, "brick");
+    ensureAnarchy(game).specialEvents += 1;
+    maybeIgniteBoard(game);
+  }
+}
+
+function applyAnarchyAfterMove(game, moveRecord, movedPiece, captured) {
+  const state = ensureAnarchy(game);
+  if (moveRecord.enPassant) { state.specialEvents += 1; logAnarchy(game, "Forced en passant was played. New response dropped.", "enPassant"); triggerNewResponse(game); }
+  if (moveRecord.castle && moveRecord.verticalCastle) { state.specialEvents += 1; logAnarchy(game, "Vertical castling completed.", "verticalCastle"); triggerNewResponse(game); }
+  if (moveRecord.promotedTo === "knook") { state.specialEvents += 1; logAnarchy(game, "A Knook entered the board.", "knook"); triggerNewResponse(game); }
+  if (captured?.type === "queen") { state.queenCompensation[captured.color] = true; logAnarchy(game, `${captured.color} queen was sacrificed. Knook compensation is available.`, "queenSacrifice"); }
+  if (captured && ["knight", "knook"].includes(movedPiece?.type)) applyKnightmare(game, movedPiece.color, moveRecord.to);
+  if (captured && captured.type !== "king" && Math.random() < 0.25) spawnZombie(game, captured);
+  if ((state.specialEvents || 0) >= 5) maybeIgniteBoard(game);
+}
+
+function triggerNewResponse(game) {
+  const responses = ["Sideways Pawns", "Slippery Bishops", "Queen Tax", "Pawn Echo", "Rook Drift"];
+  const state = ensureAnarchy(game);
+  const name = responses[(state.specialEvents || 0) % responses.length];
+  state.responses.push({ name, expiresAtTurn: (Number(game.turnToken) || 0) + 2 });
+  state.responses = state.responses.filter((r) => r.expiresAtTurn >= (Number(game.turnToken) || 0)).slice(-4);
+  logAnarchy(game, `New response dropped: ${name}.`, "response");
+}
+
+function applyKnightmare(game, color, centre) {
+  const enemies = (game.pieces || []).filter((p) => p.color !== color && p.type !== "king" && Math.max(Math.abs(p.x-centre.x), Math.abs(p.z-centre.z), Math.abs((p.y||0)-(centre.y||0))) <= 1);
+  if (!enemies.length) return;
+  const victim = enemies[(Number(game.turnToken) || 0) % enemies.length];
+  const removed = removePieceAt(game, victim);
+  if (removed) logAnarchy(game, `Knightmare fuel: ${removed.color} ${removed.type} vanished.`, "knightmare");
+}
+
+function spawnZombie(game, captured) {
+  const z = captured.color === "white" ? 1 : 6;
+  const pos = { x: captured.x, y: 0, z };
+  if (getPieceAt(game, pos)) return;
+  const zombie = { id: `${captured.color}_zombie_${Date.now()}_${Math.random().toString(36).slice(2,5)}`, type: "pawn", color: captured.color, x: pos.x, y: 0, z: pos.z, hasMoved: true, zombie: true };
+  game.pieces.push(zombie);
+  ensureAnarchy(game).zombies.push(zombie.id);
+  logAnarchy(game, `Actual zombie: ${captured.color} ${captured.type} returned as a pawn.`, "zombie");
+}
+
+function maybeIgniteBoard(game) {
+  const state = ensureAnarchy(game);
+  if (state.fires?.some((f) => f.expiresAtTurn > (Number(game.turnToken) || 0))) return;
+  const kind = (Number(game.turnToken) || 0) % 2 ? "file" : "rank";
+  const index = (Number(game.turnToken) || 0) % 8;
+  state.fires = [{ kind, index, expiresAtTurn: (Number(game.turnToken) || 0) + 6 }];
+  logAnarchy(game, `Ignite the chessboard: ${kind} ${index + 1} is burning.`, "fire");
+}
+
+function onFire(game, piece) {
+  return (ensureAnarchy(game).fires || []).some((fire) => fire.expiresAtTurn > (Number(game.turnToken) || 0) && ((fire.kind === "file" && piece.x === fire.index) || (fire.kind === "rank" && piece.z === fire.index)));
+}
+
+function applyAnarchyFireCleanup(game) {
+  const burning = (game.pieces || []).filter((p) => p.type !== "king" && p.type !== "wall" && onFire(game, p));
+  for (const piece of burning) { const r = removePieceAt(game, piece); if (r) logAnarchy(game, `Fire consumed ${r.color} ${r.type}.`, "fire"); }
+  const state = ensureAnarchy(game);
+  state.fires = (state.fires || []).filter((f) => f.expiresAtTurn > (Number(game.turnToken) || 0));
+}
+
+function applyRiot(game, reason) {
+  const dirs = [{x:1,y:0,z:0},{x:-1,y:0,z:0},{x:0,y:0,z:1},{x:0,y:0,z:-1},{x:1,y:0,z:1},{x:1,y:0,z:-1},{x:-1,y:0,z:1},{x:-1,y:0,z:-1}];
+  const pieces = [...(game.pieces || [])].filter((p) => p.type !== "king" && p.type !== "wall").sort((a,b)=>a.id.localeCompare(b.id));
+  let moved = 0, captured = 0;
+  for (const piece of pieces) {
+    if (!getPieceById(game, piece.id)) continue;
+    const dir = dirs[Math.abs(hashString(`${game.roomCode}-${game.turnToken}-${piece.id}`)) % dirs.length];
+    const to = { x: piece.x + dir.x, y: piece.y, z: piece.z + dir.z };
+    if (!inBounds(to)) continue;
+    const target = getPieceAt(game, to);
+    if (target?.type === "king" || target?.color === piece.color || target?.type === "wall") continue;
+    if (target) { removePieceAt(game, target); captured += 1; }
+    piece.x = to.x; piece.z = to.z; moved += 1;
+  }
+  logAnarchy(game, `${reason}: riot shifted ${moved} pieces and captured ${captured}.`, "riot");
+}
+
+function hashString(text) { let h = 0; for (const ch of String(text)) h = ((h << 5) - h + ch.charCodeAt(0)) | 0; return h; }
+
+function applyRuleLabMoveRestrictions(game, piece, moves) {
+  if (!game.ruleLab?.hiddenRules) return moves;
+  let next = moves;
+  if (game.ruleLab.hiddenRules.includes("heavy_rooks") && piece.type === "rook") next = next.filter((m) => Math.max(Math.abs(m.x-piece.x), Math.abs(m.z-piece.z)) <= 3 || m.capture);
+  if (game.ruleLab.hiddenRules.includes("colourbound_curse") && isDarkSquare(piece) && next.some((m)=>m.capture)) next = next.filter((m)=>!m.capture);
+  return next;
+}
+
+function applyRuleLabAfterMove(game, moveRecord, movedPiece) {
+  const lab = game.ruleLab;
+  if (!lab) return;
+  const add = (text) => { lab.anomalyLog.push({ at: Date.now(), turnToken: Number(game.turnToken) || 0, text }); lab.anomalyLog = lab.anomalyLog.slice(-50); };
+  if (lab.hiddenRules.includes("knight_echo") && movedPiece.type === "knight") { autoAdvanceNearestPawn(game, movedPiece.color, movedPiece, add, "Knight Echo"); }
+  if (lab.hiddenRules.includes("fragile_queens") && movedPiece.type === "queen" && moveRecord.captured) { const r = removePieceAt(game, movedPiece); if (r) add("Fragile Queens anomaly: the capturing queen vanished."); }
+  if (lab.hiddenRules.includes("mirror_pawns") && moveRecord.pieceType === "pawn") { mirrorPawnMove(game, moveRecord, add); }
+  if (lab.hiddenRules.includes("bishop_portals") && movedPiece.type === "bishop" && [3,4].includes(movedPiece.x) && [3,4].includes(movedPiece.z)) { movedPiece.x = 7 - movedPiece.x; movedPiece.z = 7 - movedPiece.z; add("Bishop Portals anomaly: a bishop teleported through the centre."); }
+  if (lab.hiddenRules.includes("pawn_infection") && moveRecord.pieceType === "pawn" && moveRecord.captured) { removeAdjacentEnemyPawns(game, movedPiece, add); }
+  if (lab.hiddenRules.includes("delayed_capture") && moveRecord.captured) add("Delayed Capture anomaly: the capture was flagged for delayed resolution.");
+  if (lab.hiddenRules.includes("gravity_file") && movedPiece.x === 3) { gravityFileShift(game, 3, add); }
+  if (lab.hiddenRules.includes("board_decay") && (Number(game.turnToken)||0) % 10 === 0) add("Board Decay anomaly: the board destabilised after ten turns.");
+  revealRuleLabClues(game);
+}
+
+function isDarkSquare(piece) { return ((piece.x + piece.z) % 2) === 1; }
+function autoAdvanceNearestPawn(game, color, origin, add, label) { const pawns=(game.pieces||[]).filter((p)=>p.color===color&&p.type==="pawn").sort((a,b)=>(Math.abs(a.x-origin.x)+Math.abs(a.z-origin.z))-(Math.abs(b.x-origin.x)+Math.abs(b.z-origin.z))); for (const pawn of pawns) { const to={x:pawn.x,y:pawn.y,z:pawn.z+pawnZDir(color)}; if (inBounds(to)&&!getPieceAt(game,to)) { pawn.z=to.z; add(`${label} anomaly: a nearby pawn advanced.`); return; } } }
+function mirrorPawnMove(game, move, add) { const mirror=(game.pieces||[]).find((p)=>p.type==="pawn"&&p.color!==move.pieceColor&&p.x===move.to.x); if (!mirror) return; const to={x:mirror.x,y:mirror.y,z:mirror.z+pawnZDir(mirror.color)}; if (inBounds(to)&&!getPieceAt(game,to)) { mirror.z=to.z; add("Mirror Pawns anomaly: the opposite pawn copied the movement."); } }
+function removeAdjacentEnemyPawns(game, piece, add) { let n=0; for (const p of [...game.pieces]) { if (p.color!==piece.color&&p.type==="pawn"&&Math.abs(p.x-piece.x)<=1&&Math.abs(p.z-piece.z)<=1) { removePieceAt(game,p); n++; } } if (n) add(`Pawn Infection anomaly: ${n} nearby pawn(s) disappeared.`); }
+function gravityFileShift(game, file, add) { let n=0; for (const p of game.pieces||[]) { if (p.x===file&&p.type!=="king") { const z=Math.max(0,p.z-1); if (z!==p.z&&!getPieceAt(game,{x:p.x,y:p.y,z})) { p.z=z;n++; } } } if(n) add(`Gravity File anomaly: ${n} piece(s) slid along file ${file+1}.`); }
+function revealRuleLabClues(game) { const lab=game.ruleLab; const elapsed=Date.now()-(lab.startedAt||Date.now()); const interval={easy:180000,medium:240000,hard:300000,chaos:300000}[lab.difficulty]||240000; const revealCount=Math.min(lab.clues.length,1+Math.floor(elapsed/interval)); for(let i=0;i<revealCount;i++){ if(lab.clues[i]&&!lab.clues[i].revealed){ lab.clues[i].revealed=true; lab.clues[i].at=Date.now(); lab.anomalyLog.push({at:Date.now(),text:`Clue revealed: ${lab.clues[i].clue}`}); } } }
+
+export function submitRuleLabGuess(game, accountOrSocketId, guessId) {
+  if (!game || game.variant !== "ruleLab" || !game.ruleLab) return { ok: false, reason: "Rule Lab is not active." };
+  const lab = game.ruleLab;
+  const guess = String(guessId || "").trim();
+  const available = lab.availableGuesses?.find((g) => g.id === guess || g.name.toLowerCase() === guess.toLowerCase());
+  if (!available) return { ok: false, reason: "Unknown rule guess." };
+  const correct = lab.hiddenRules.includes(available.id);
+  const already = lab.discovered.includes(available.id);
+  lab.guesses.push({ id: available.id, name: available.name, correct, already, by: accountOrSocketId || null, at: Date.now() });
+  if (correct && !already) {
+    lab.discovered.push(available.id);
+    lab.anomalyLog.push({ at: Date.now(), text: `Rule discovered: ${available.name}.` });
+  } else if (!correct && lab.wrongGuessPenaltyMs) {
+    lab.endsAt = Math.max(Date.now(), lab.endsAt - lab.wrongGuessPenaltyMs);
+    lab.anomalyLog.push({ at: Date.now(), text: `Incorrect hypothesis: ${available.name}. Time penalty applied.` });
+  } else {
+    lab.anomalyLog.push({ at: Date.now(), text: already ? `${available.name} was already discovered.` : `Incorrect hypothesis: ${available.name}.` });
+  }
+  const end = getRuleLabEndState(game);
+  if (end) Object.assign(game, end);
+  return { ok: true, correct, already, game, message: correct ? `Rule discovered: ${available.name}` : `Incorrect hypothesis: ${available.name}` };
 }

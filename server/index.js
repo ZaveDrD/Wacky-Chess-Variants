@@ -5,7 +5,7 @@ import fs from "fs";
 import { fileURLToPath } from "url";
 import { Server } from "socket.io";
 import { addPieceToRoom, appendChatMessage, cancelQuickMatch, cleanupExpiredRooms, createDevMatch, createRoom, createRoomShout, endMatchByDev, findPlayersByName, forfeitGame, getDetailedRoomLines, getLegalMovesForSocket, getOpenMatches, getPlayerCountSnapshot, getRoomSnapshot, hasDeveloperMoveOverride, joinRoom, leaveCurrentRooms, listPiecesInRoom, removePieceFromRoom, removeSocketFromRooms, replacePlayerWithBotInRoom, quickMatch, replacePlayerWithRequesterInRoom, ROOM_CLEANUP_INTERVAL_MS, rooms, runDevUtilityCommand, setPlayerColourInRoom, setSpectatorOverride, setTimerForRoom, setTurnInRoom, spectateRoom, tickAllRoomClocks, tickGameClock } from "./rooms.js";
-import { attemptLegalMove, attemptLegalDrop, attemptLaunchNuke, attemptTycoonAction, attemptScoobyAction } from "./rules/check.js";
+import { attemptLegalMove, attemptLegalDrop, attemptLaunchNuke, attemptTycoonAction, attemptScoobyAction, submitRuleLabGuess } from "./rules/check.js";
 import { chooseAIMove, evaluateAIPosition, isAITurn, runAIMove, scoreAICandidates } from "./rules/ai.js";
 import { cloneGame } from "./rules/utils.js";
 import { createHash, pbkdf2Sync, timingSafeEqual } from "crypto";
@@ -716,6 +716,7 @@ function startAcceptedChallenge(acceptingSocket, challenge, acceptingName = "Pla
   const game = createRoom(fromSocket, hostName, {
     variant: challenge.variant || "normal",
     timeControl: challenge.timeControl || "rapid",
+    ruleLabDifficulty: challenge.ruleLabDifficulty || "medium",
     gameMode: "online",
     publicMatch: false,
     account: participantAccount(fromAccount)
@@ -835,8 +836,19 @@ function sanitiseGameForViewer(game, socketId) {
       }
     };
   }
-  if (copy.variant === "scooby" && copy.scooby) {
-    copy.scooby.traps = visibleScoobyTraps(game, viewerColor);
+  if (copy.variant === "ruleLab" && copy.ruleLab) {
+    copy.ruleLab = {
+      difficulty: copy.ruleLab.difficulty,
+      ruleTarget: copy.ruleLab.ruleTarget || (copy.ruleLab.hiddenRules || []).length,
+      endsAt: copy.ruleLab.endsAt,
+      discovered: [...(copy.ruleLab.discovered || [])],
+      clues: (copy.ruleLab.clues || []).map((clue) => clue.revealed ? clue : { id: clue.id, revealed: false }),
+      anomalyLog: copy.ruleLab.anomalyLog || [],
+      guesses: copy.ruleLab.guesses || [],
+      availableGuesses: copy.ruleLab.availableGuesses || []
+    };
+  }
+  if (copy.variant === "scooby" && copy.scooby) {    copy.scooby.traps = visibleScoobyTraps(game, viewerColor);
     copy.pieces = copy.pieces.filter((piece) => !isInsideScoobySmoke(game, piece));
     sanitiseScoobyHistoryForViewer(copy, viewerColor);
   }
@@ -1013,7 +1025,7 @@ io.on("connection", (socket) => {
     socket.emit("accountLoggedOut");
   });
 
-  socket.on("createRoom", ({ name, variant, timeControl, gameMode, aiDifficulty } = {}) => {
+  socket.on("createRoom", ({ name, variant, timeControl, gameMode, aiDifficulty, ruleLabDifficulty } = {}) => {
     updateConnectedClient(socket.id, name, null);
     const ban = getBlockingPunishment(socket, "ban");
     if (ban) { socket.emit("joinError", punishmentBlockedMessage(ban)); sendPunishmentNotice(socket); return; }
@@ -1025,7 +1037,7 @@ io.on("connection", (socket) => {
       socket.emit("joinError", `${capitalise(normaliseDevDifficulty(aiDifficulty))} AI is currently disabled by the server.`);
       return;
     }
-    const game = createRoom(socket, name, { variant, timeControl, gameMode, aiDifficulty, account: participantAccount(socket.data.account) });
+    const game = createRoom(socket, name, { variant, timeControl, gameMode, aiDifficulty, ruleLabDifficulty, account: participantAccount(socket.data.account) });
     updateConnectedClient(socket.id, name, game.roomCode);
     socket.emit("roomCreated", { roomCode: game.roomCode, color: "white", role: "player", game: sanitiseGameForViewer(game, socket.id) });
     emitGameStateToRoom(io, game);
@@ -1053,7 +1065,7 @@ io.on("connection", (socket) => {
   });
 
 
-  socket.on("quickMatch", ({ name, variant, timeControl, scope } = {}) => {
+  socket.on("quickMatch", ({ name, variant, timeControl, scope, ruleLabDifficulty } = {}) => {
     updateConnectedClient(socket.id, name, null);
     const ban = getBlockingPunishment(socket, "ban");
     if (ban) { socket.emit("matchmakingError", punishmentBlockedMessage(ban)); sendPunishmentNotice(socket); return; }
@@ -1061,7 +1073,7 @@ io.on("connection", (socket) => {
       socket.emit("matchmakingError", "That name belongs to an account. Sign in or choose another guest name.");
       return;
     }
-    const result = quickMatch(socket, name, { variant, timeControl, scope, account: participantAccount(socket.data.account) });
+    const result = quickMatch(socket, name, { variant, timeControl, scope, ruleLabDifficulty, account: participantAccount(socket.data.account) });
     if (!result.ok) {
       socket.emit("matchmakingError", result.reason || "Quick match failed.");
       return;
@@ -1339,10 +1351,10 @@ io.on("connection", (socket) => {
     else emitSocialStateForAccounts([account.id, toAccountId]);
   });
 
-  socket.on("friendChallenge", ({ token, target, variant, timeControl } = {}) => {
+  socket.on("friendChallenge", ({ token, target, variant, timeControl, ruleLabDifficulty } = {}) => {
     const account = getAccountByToken(token) || socket.data.account;
     if (!account) { socket.emit("socialError", "Log in first."); return; }
-    const result = createChallenge(account.id, target, { variant, timeControl });
+    const result = createChallenge(account.id, target, { variant, timeControl, ruleLabDifficulty });
     if (!result.ok) socket.emit("socialError", result.reason);
     else {
       emitSocialStateForAccounts([account.id, result.targetAccount.id]);
@@ -1357,6 +1369,19 @@ io.on("connection", (socket) => {
     if (!result.ok) { socket.emit("socialError", result.reason); return; }
     emitSocialStateForAccounts([result.challenge.fromAccountId, result.challenge.toAccountId]);
     if (accept) startAcceptedChallenge(socket, result.challenge, name || account.username);
+  });
+
+
+  socket.on("ruleLabGuess", ({ roomCode, guessId } = {}) => {
+    const game = rooms.get(String(roomCode || "").toUpperCase());
+    if (!game) { socket.emit("chatError", "Rule Lab room not found."); return; }
+    const result = submitRuleLabGuess(game, socket.data.account?.id || socket.id, guessId);
+    if (!result.ok) socket.emit("chatError", result.reason);
+    else {
+      socket.emit("chatError", result.message);
+      emitGameStateToRoom(io, game);
+      scheduleAIMoveIfNeeded(game);
+    }
   });
 
   socket.on("requestLeaderboard", ({ variant = "normal", scope = "month" } = {}) => {
@@ -2184,6 +2209,10 @@ function routeStructuredDevCommand(action, args = []) {
   }
 
   if (action === "chaos") return { action: "chaosCommand", args };
+  if (action === "threecheck") return { action: "threeCheckCommand", args };
+  if (action === "antichess") return { action: "antichessCommand", args };
+  if (action === "anarchy") return { action: "anarchyCommand", args };
+  if (action === "rulelab") return { action: "ruleLabCommand", args };
   if (action === "predict") return { action: "predictCommand", args };
   if (action === "scooby") return { action: "scoobyCommand", args };
   if (action === "tycoon") return { action: "tycoonCommand", args };

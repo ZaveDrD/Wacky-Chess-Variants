@@ -1,6 +1,6 @@
 import { customAlphabet } from "nanoid";
 import { createGame, TIME_CONTROLS } from "./rules/setup.js";
-import { getGameEndState, getLegalMoves, isKingInCheck, isSquareAttacked, resolvePredictRound } from "./rules/check.js";
+import { getGameEndState, getLegalMoves, isKingInCheck, isSquareAttacked, resolvePredictRound, submitRuleLabGuess } from "./rules/check.js";
 import { cloneGame, getPieceAt, getPieceById, inBounds, opponent, recordCurrentPosition, removePieceAt } from "./rules/utils.js";
 
 const nanoid = customAlphabet("ABCDEFGHJKLMNPQRSTUVWXYZ23456789", 6);
@@ -27,6 +27,15 @@ function displayParticipantName(participant) {
   return `${participant.name}${participant.accountId ? "" : " (guest)"}`;
 }
 
+function startRuleLabTimer(game) {
+  if (game?.variant !== "ruleLab" || !game.ruleLab) return;
+  const now = Date.now();
+  game.ruleLab.startedAt = now;
+  game.ruleLab.endsAt = now + 15 * 60 * 1000;
+  game.clocks = { white: 15 * 60 * 1000, black: 15 * 60 * 1000 };
+  game.timerStarted = true;
+}
+
 export function createRoom(hostSocket, hostName, options = {}) {
   let roomCode = nanoid();
   while (rooms.has(roomCode)) roomCode = nanoid();
@@ -50,6 +59,7 @@ export function createRoom(hostSocket, hostName, options = {}) {
     game.status = "playing";
     game.publicMatch = false;
     game.message = "white to move.";
+    startRuleLabTimer(game);
     game.lastTurnStartedAt = Date.now();
     ensureInitialPositionRecorded(game);
   }
@@ -98,6 +108,7 @@ export function quickMatch(socket, playerName, options = {}) {
   const game = createRoom(socket, playerName, {
     variant: options.variant,
     timeControl: options.timeControl,
+    ruleLabDifficulty: options.ruleLabDifficulty,
     gameMode: "online",
     publicMatch: true,
     account: options.account
@@ -135,6 +146,7 @@ export function createDevMatch(socket, playerName, options = {}) {
   const game = createGame(roomCode, {
     variant: options.variant,
     timeControl: options.timeControl,
+    ruleLabDifficulty: options.ruleLabDifficulty,
     gameMode: botCount > 0 ? "ai" : "online",
     aiDifficulty: options.aiDifficulty
   });
@@ -154,6 +166,7 @@ export function createDevMatch(socket, playerName, options = {}) {
     game.spectators.push(makeParticipant(socket.id, playerName, "Developer", options.account));
     game.status = "playing";
     game.message = "white to move.";
+    startRuleLabTimer(game);
     game.lastTurnStartedAt = Date.now();
     ensureInitialPositionRecorded(game);
     rooms.set(roomCode, game);
@@ -173,6 +186,7 @@ export function createDevMatch(socket, playerName, options = {}) {
     };
     game.status = "playing";
     game.message = "white to move.";
+    startRuleLabTimer(game);
     game.lastTurnStartedAt = Date.now();
     ensureInitialPositionRecorded(game);
   }
@@ -297,6 +311,7 @@ export function joinRoom(socket, roomCodeRaw, playerName, options = {}) {
     game.status = "playing";
     game.publicMatch = false;
     game.message = "white to move.";
+    startRuleLabTimer(game);
     game.lastTurnStartedAt = Date.now();
     ensureInitialPositionRecorded(game);
     return { ok: true, game, color: "black", role: "player" };
@@ -790,6 +805,19 @@ export function appendChatMessage(socketId, roomCodeRaw, bodyRaw) {
 export function tickGameClock(game) {
   if (!game || game.status !== "playing" || game.timerPaused || !game.timerStarted || !game.lastTurnStartedAt) return false;
   const now = Date.now();
+  if (game.variant === "ruleLab" && game.ruleLab?.endsAt) {
+    const left = Math.max(0, game.ruleLab.endsAt - now);
+    game.clocks = { white: left, black: left };
+    if (left <= 0) {
+      game.status = "finished";
+      markRoomClosed(game);
+      game.timeout = true;
+      game.winner = null;
+      game.message = "Rule Lab failed. Time expired before every hidden rule was found.";
+      game.lastTurnStartedAt = null;
+    }
+    return true;
+  }
   const elapsed = Math.max(0, now - game.lastTurnStartedAt);
   if (elapsed <= 0) return false;
 
@@ -1059,6 +1087,45 @@ export function runDevUtilityCommand(roomCodeRaw, action, args = [], requesterSo
   }
 
 
+
+
+  if (action === "threeCheckCommand") {
+    if (game.variant !== "threeCheck") return { ok: false, reason: "3-Check commands need a 3-Check game." };
+    const sub = String(args[0] || "state").toLowerCase();
+    if (!game.threeCheck) game.threeCheck = { checks: { white: 0, black: 0 }, target: 3 };
+    if (sub === "set") { const color = normaliseColour(args[1]) || game.turn; const n = Math.max(0, Math.min(3, Number.parseInt(args[2], 10) || 0)); game.threeCheck.checks[color] = n; Object.assign(game, getGameEndState(game, game.turn)); return { ok: true, game, lines: [`${color} checks set to ${n}/3.`] }; }
+    if (sub === "add") { const color = normaliseColour(args[1]) || game.turn; game.threeCheck.checks[color] = Math.min(3, (game.threeCheck.checks[color] || 0) + 1); Object.assign(game, getGameEndState(game, game.turn)); return { ok: true, game, lines: [`${color} checks now ${game.threeCheck.checks[color]}/3.`] }; }
+    return { ok: true, game, lines: [`3-Check: white ${game.threeCheck.checks.white || 0}/3, black ${game.threeCheck.checks.black || 0}/3.`] };
+  }
+
+  if (action === "antichessCommand") {
+    if (game.variant !== "antichess") return { ok: false, reason: "Anti-Chess commands need an Anti-Chess game." };
+    const lines = ["Anti-Chess state:", ...["white", "black"].map((c) => `${c}: ${game.pieces.filter((p) => p.color === c && p.type !== "wall").length} pieces, ${game.pieces.filter((p) => p.color === c).reduce((n,p)=>n+getLegalMoves(game,p).length,0)} legal moves`)];
+    return { ok: true, game, lines };
+  }
+
+  if (action === "anarchyCommand") {
+    if (game.variant !== "anarchy") return { ok: false, reason: "Anarchy commands need an Anarchy Chess game." };
+    if (!game.anarchy) game.anarchy = { events: [], specialEvents: 0, fires: [], responses: [], zombies: [] };
+    const sub = String(args[0] || "state").toLowerCase();
+    if (sub === "event") { const text = args.slice(1).join(" ") || "Developer anomaly."; game.anarchy.events.push({ at: Date.now(), text, type: "dev" }); return { ok: true, game, lines: [`Added anarchy event: ${text}`] }; }
+    if (sub === "fire") { const kind = ["rank", "file"].includes(String(args[1]).toLowerCase()) ? String(args[1]).toLowerCase() : "file"; const index = Math.max(0, Math.min(7, (Number.parseInt(args[2], 10) || 1) - 1)); game.anarchy.fires = [{ kind, index, expiresAtTurn: (game.turnToken || 0) + 6 }]; game.anarchy.events.push({ at: Date.now(), type: "fire", text: `Developer ignited ${kind} ${index + 1}.` }); return { ok: true, game, lines: [`Ignited ${kind} ${index + 1}.`] }; }
+    if (sub === "riot") { const before = game.pieces.length; for (const p of game.pieces.filter((p)=>p.type!=="king"&&p.type!=="wall")) { const nx = Math.max(0, Math.min(7, p.x + (Math.random()<0.5?-1:1))); if (!getPieceAt(game,{x:nx,y:p.y,z:p.z})) p.x=nx; } game.anarchy.events.push({ at: Date.now(), type: "riot", text: "Developer triggered Checkmate or Riot." }); return { ok: true, game, lines: [`Riot attempted shifts across ${before} pieces.`] }; }
+    if (sub === "clear") { game.anarchy.events = []; game.anarchy.fires = []; game.anarchy.responses = []; return { ok: true, game, lines: ["Anarchy event state cleared."] }; }
+    return { ok: true, game, lines: ["Anarchy state:", `events=${game.anarchy.events.length}`, `specialEvents=${game.anarchy.specialEvents || 0}`, `fires=${game.anarchy.fires.length}`, ...game.anarchy.events.slice(-10).map((e)=>`- ${e.text}`)] };
+  }
+
+  if (action === "ruleLabCommand") {
+    if (game.variant !== "ruleLab") return { ok: false, reason: "Rule Lab commands need a Rule Lab game." };
+    const lab = game.ruleLab;
+    const sub = String(args[0] || "state").toLowerCase();
+    if (sub === "reveal") { for (const clue of lab.clues || []) { clue.revealed = true; clue.at = Date.now(); } return { ok: true, game, lines: ["All Rule Lab clues revealed."] }; }
+    if (sub === "solve") { lab.discovered = [...(lab.hiddenRules || [])]; Object.assign(game, getGameEndState(game, game.turn)); return { ok: true, game, lines: ["Rule Lab solved by developer."] }; }
+    if (sub === "guess") { const result = submitRuleLabGuess(game, requesterSocketId, args.slice(1).join(" ")); return { ok: result.ok, game, lines: [result.message || result.reason] }; }
+    if (sub === "fail") { lab.endsAt = Date.now(); Object.assign(game, getGameEndState(game, game.turn)); return { ok: true, game, lines: ["Rule Lab failed by developer."] }; }
+    return { ok: true, game, lines: ["Rule Lab state:", `difficulty=${lab.difficulty}`, `discovered=${(lab.discovered||[]).length}/${(lab.hiddenRules||[]).length}`, `hidden=${(lab.ruleNames||[]).join(", ")}`, ...((lab.anomalyLog||[]).slice(-10).map((e)=>`- ${e.text}`))] };
+  }
+
   if (action === "clearBoard") {
     game.pieces = [];
     game.lastMove = null;
@@ -1140,7 +1207,7 @@ export function runDevUtilityCommand(roomCodeRaw, action, args = [], requesterSo
   }
 
   if (action === "resetMatch") {
-    const reset = createGame(game.roomCode, { variant: game.variant, timeControl: game.timeControl, gameMode: game.gameMode, aiDifficulty: game.ai?.difficulty });
+    const reset = createGame(game.roomCode, { variant: game.variant, timeControl: game.timeControl, ruleLabDifficulty: game.ruleLabDifficulty, gameMode: game.gameMode, aiDifficulty: game.ai?.difficulty });
     reset.players = game.players;
     reset.spectators = game.spectators || [];
     reset.ai = game.ai;

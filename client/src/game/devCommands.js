@@ -26,6 +26,10 @@ export const DEV_COMMANDS = [
   { name: "fx", action: "fx", usage: "fx [effect] ...", summary: "Visual-only troll effects and board chaos." },
   { name: "cosmetic", action: "cosmetic", usage: "cosmetic [piece|player|icon|curse|clear] ...", summary: "Visual-only piece/player cosmetics." },
   { name: "chaos", action: "chaos", usage: "chaos [move|swap|shuffle|yeet|clone|mutate|promote|downgrade|king|pawnstorm|civilwar|tax|blessing] ...", summary: "Dangerous state-changing chaos commands." },
+  { name: "threecheck", action: "threecheck", aliases: ["3check", "three-check"], usage: "threecheck [state|set|add] ...", summary: "3-Check variant commands." },
+  { name: "antichess", action: "antichess", aliases: ["anti"], usage: "antichess state", summary: "Anti-Chess variant commands." },
+  { name: "anarchy", action: "anarchy", aliases: ["anarchychess"], usage: "anarchy [state|event|fire|riot|clear] ...", summary: "Anarchy Chess variant commands." },
+  { name: "rulelab", action: "rulelab", aliases: ["rule", "rules"], usage: "rulelab [state|reveal|guess|solve|fail] ...", summary: "Rule Lab cooperative commands." },
   { name: "predict", action: "predict", usage: "predict [state|reveal|clear|lock|resolve|round|ghost|peek|test|fake|panic] ...", summary: "Predict variant commands." },
   { name: "scooby", action: "scooby", usage: "scooby [state|reveal|visible|trap|smoke|control|test] ...", summary: "Scooby trap/smoke/control commands." },
   { name: "tycoon", action: "tycoon", usage: "tycoon [state|money|upgrade|income|wall|bomb|shield|silo|buyout] ...", summary: "Tycoon economy/building commands." },
@@ -290,6 +294,42 @@ const GROUPS = {
       ["blessing", "chaos blessing [colour]", "Shield/buff random piece."]
     ]
   },
+  threecheck: {
+    page: 4,
+    summary: "3-Check controls.",
+    subcommands: [
+      ["state", "threecheck state", "Show check counters."],
+      ["set", "threecheck set [white|black] [0-3]", "Set a counter."],
+      ["add", "threecheck add [white|black]", "Add one check to a counter."]
+    ]
+  },
+  antichess: {
+    page: 4,
+    summary: "Anti-Chess controls.",
+    subcommands: [["state", "antichess state", "Show piece counts and legal move counts."]]
+  },
+  anarchy: {
+    page: 4,
+    summary: "Anarchy Chess event controls.",
+    subcommands: [
+      ["state", "anarchy state", "Show recent anarchy events."],
+      ["event", "anarchy event [text]", "Add an event-log entry."],
+      ["fire", "anarchy fire [rank|file] [1-8]", "Ignite a rank or file."],
+      ["riot", "anarchy riot", "Trigger a board-shift riot."],
+      ["clear", "anarchy clear", "Clear anarchy events/fires/responses."]
+    ]
+  },
+  rulelab: {
+    page: 4,
+    summary: "Rule Lab controls.",
+    subcommands: [
+      ["state", "rulelab state", "Show hidden rules and anomaly log."],
+      ["reveal", "rulelab reveal", "Reveal all clues."],
+      ["guess", "rulelab guess [rule id/name]", "Submit a dev rule guess."],
+      ["solve", "rulelab solve", "Mark every rule as discovered."],
+      ["fail", "rulelab fail", "Expire the shared timer."]
+    ]
+  },
   predict: {
     page: 4,
     summary: "Predict variant debug and fun.",
@@ -405,6 +445,7 @@ const LEGACY = {
   confetti: ["fx", "confetti"], flashboard: ["fx", "flashboard"], invertboard: ["fx", "invertboard"], drunkboard: ["fx", "drunkboard"], earthquake: ["fx", "earthquake"], emoji: ["fx", "emoji"], rain: ["fx", "rain"], freezeui: ["fx", "freeze"], fakecheck: ["fx", "fakecheck"], fakewin: ["fx", "fakewin"], dramaticpause: ["fx", "pause", "dramatic"], bonk: ["fx", "bonk"], jumpscare: ["fx", "jumpscare"], toasty: ["fx", "toasty"], laser: ["fx", "laser"], rainbowboard: ["fx", "board", "rainbow"], disco: ["fx", "board", "disco"], fog: ["fx", "board", "fog"], snow: ["fx", "board", "snow"], fireworks: ["fx", "fireworks"], bloodmoon: ["fx", "board", "bloodmoon"], nightmode: ["fx", "board", "night"], mirrorvisual: ["fx", "board", "mirror"], tiltboard: ["fx", "board", "tilt"], squishboard: ["fx", "board", "squish"], boardtheme: ["fx", "board", "theme"], clearvisuals: ["fx", "clear"],
   bigpiece: ["cosmetic", "piece", null, "size", "big"], tinypiece: ["cosmetic", "piece", null, "size", "tiny"], spinpiece: ["cosmetic", "piece", null, "spin"], jigglepiece: ["cosmetic", "piece", null, "jiggle"], glowpiece: ["cosmetic", "piece", null, "glow"], hat: ["cosmetic", "piece", null, "hat"], mustache: ["cosmetic", "piece", null, "mustache"], renamepiece: ["cosmetic", "piece", null, "name"], swapicons: ["cosmetic", "icon"], duckify: ["cosmetic", "player", null, "duckify"], clownpiece: ["cosmetic", "piece", null, "clown"], ghostpiece: ["cosmetic", "piece", null, "ghost"], curse: ["cosmetic", "curse"], uncurse: ["cosmetic", "curse", null, "clear"], clearcosmetics: ["cosmetic", "clear"],
   chaosmove: ["chaos", "move"], swapkings: ["chaos", "swap", "kings"], swapqueens: ["chaos", "swap", "queens"], shufflepieces: ["chaos", "shuffle"], yeet: ["chaos", "yeet"], clonepiece: ["chaos", "clone"], mutatepiece: ["chaos", "mutate"], randompromote: ["chaos", "promote", "random"], downgrade: ["chaos", "downgrade"], teleportking: ["chaos", "king", "teleport"], pawnstorm: ["chaos", "pawnstorm"], civilwar: ["chaos", "civilwar"], tax: ["chaos", "tax"], blessing: ["chaos", "blessing"],
+  threecheckstate: ["threecheck", "state"], anarchyfire: ["anarchy", "fire"], anarchystate: ["anarchy", "state"], rulelabstate: ["rulelab", "state"], rulelabsolve: ["rulelab", "solve"],
   predictstate: ["predict", "state"], predictreveal: ["predict", "reveal"], predictclear: ["predict", "clear"], predictlock: ["predict", "lock"], predictresolve: ["predict", "resolve"], predictround: ["predict", "round"], predictghost: ["predict", "ghost"], predicttestcapture: ["predict", "test", "capture"], predicttestillegal: ["predict", "test", "illegal"], predicttestmate: ["predict", "test", "mate"], predictpeek: ["predict", "peek"], fakepredict: ["predict", "fake"], misdirect: ["predict", "misdirect"], doubleblind: ["predict", "doubleblind"], spoiler: ["predict", "spoiler"], mindread: ["predict", "mindread"], predictpanic: ["predict", "panic"], confidence: ["predict", "confidence"], fakeunlock: ["predict", "fakeunlock"], predicttaunt: ["predict", "taunt"],
   scoobystate: ["scooby", "state"], scoobyreveal: ["scooby", "reveal"], scoobyhide: ["scooby", "hide"], scoobyvisible: ["scooby", "visible"], scoobydetected: ["scooby", "detected"], scoobyowners: ["scooby", "owners"], listtraps: ["scooby", "trap", "list"], trapcounts: ["scooby", "trap", "counts"], settraplimit: ["scooby", "trap", "limit"], resettraplimits: ["scooby", "trap", "limits", "reset"], addtrap: ["scooby", "trap", "add"], removetrap: ["scooby", "trap", "remove"], cleartraps: ["scooby", "trap", "clear"], triggertrap: ["scooby", "trap", "trigger"], defusetrap: ["scooby", "trap", "defuse"], randomtrap: ["scooby", "trap", "random"], trapstorm: ["scooby", "trap", "storm"], allmines: ["scooby", "trap", "convert", "mines"], allfake: ["scooby", "trap", "convert", "decoys"], springtrap: ["scooby", "trap", "spring"], addsmoke: ["scooby", "smoke", "add"], clearsmoke: ["scooby", "smoke", "clear"], listsmoke: ["scooby", "smoke", "list"], expiresmoke: ["scooby", "smoke", "expire"], smoketurns: ["scooby", "smoke", "turns"], smokebomb: ["scooby", "smoke", "bomb"], controlpiece: ["scooby", "control", "add"], releasepiece: ["scooby", "control", "release"], listcontrolled: ["scooby", "control", "list"], expirecontrol: ["scooby", "control", "expire"], controlturns: ["scooby", "control", "turns"], mindzap: ["scooby", "control", "zap"],
   tycoonstate: ["tycoon", "state"], setmoney: ["tycoon", "money", "set"], addmoney: ["tycoon", "money", "add"], givemoney: ["tycoon", "money", "add"], takemoney: ["tycoon", "money", "remove"], bankrupt: ["tycoon", "money", "bankrupt"], setstorage: ["tycoon", "upgrade", "storage"], setproduction: ["tycoon", "upgrade", "production"], forceincome: ["tycoon", "income"], placewall: ["tycoon", "wall", "place"], freewall: ["tycoon", "wall", "place", null, null, "free"], clearwalls: ["tycoon", "wall", "clear"], evict: ["tycoon", "wall", "remove"], placebomb: ["tycoon", "bomb", "place"], explodebomb: ["tycoon", "bomb", "explode"], clearbombs: ["tycoon", "bomb", "clear"], bombparty: ["tycoon", "bomb", "party"], shield: ["tycoon", "shield", "add"], unshield: ["tycoon", "shield", "remove"], listsilos: ["tycoon", "silo", "list"], freequeen: ["tycoon", "buy", "queen", null, null, "free"], hostilebuyout: ["tycoon", "buyout"],
@@ -464,7 +505,7 @@ export function getDevCommandListLines(page = null) {
       "1 room / player / account / report / punish / friend / leaderboard / profile / match / chat",
       "2 board / piece / view / mark / ai / clock",
       "3 network / fx / cosmetic",
-      "4 chaos / predict",
+      "4 chaos / 3check / antichess / anarchy / rulelab / predict",
       "5 scooby / tycoon",
       "6 nuke / crazyhouse / atomic / hill"
     ];

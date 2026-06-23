@@ -8,7 +8,11 @@ export const VARIANT_OPTIONS = [
   { id: "nuke", label: "Nuke" },
   { id: "tycoon", label: "Tycoon" },
   { id: "predict", label: "Predict" },
-  { id: "scooby", label: "Scooby" }
+  { id: "scooby", label: "Scooby" },
+  { id: "threeCheck", label: "3-Check" },
+  { id: "antichess", label: "Anti-Chess" },
+  { id: "anarchy", label: "Anarchy Chess" },
+  { id: "ruleLab", label: "Rule Lab" }
 ];
 
 export const TIME_CONTROL_OPTIONS = [
@@ -31,6 +35,13 @@ export const GAME_MODE_OPTIONS = [
   { id: "ai", label: "Vs AI" }
 ];
 
+export const RULE_LAB_DIFFICULTY_OPTIONS = [
+  { id: "easy", label: "Easy" },
+  { id: "medium", label: "Medium" },
+  { id: "hard", label: "Hard" },
+  { id: "chaos", label: "Chaos" }
+];
+
 export const AI_DIFFICULTY_OPTIONS = [
   { id: "easy", label: "Easy" },
   { id: "medium", label: "Medium" },
@@ -43,4 +54,8 @@ export function getGameModeLabel(id) {
 
 export function getAIDifficultyLabel(id) {
   return AI_DIFFICULTY_OPTIONS.find((difficulty) => difficulty.id === id)?.label || AI_DIFFICULTY_OPTIONS[1].label;
+}
+
+export function getRuleLabDifficultyLabel(id) {
+  return RULE_LAB_DIFFICULTY_OPTIONS.find((difficulty) => difficulty.id === id)?.label || RULE_LAB_DIFFICULTY_OPTIONS[1].label;
 }

@@ -363,7 +363,7 @@ export function recordCompletedGameForAccounts(game) {
     if (!player?.accountId) continue;
     const account = state.accounts.find((item) => item.id === player.accountId);
     if (!account) continue;
-    const result = !game.winner ? "draw" : game.winner === color ? "win" : "loss";
+    const result = game.winner === "both" ? "win" : (!game.winner ? "draw" : game.winner === color ? "win" : "loss");
     entries.push({ account, color, result, player });
   }
   if (!entries.length) {

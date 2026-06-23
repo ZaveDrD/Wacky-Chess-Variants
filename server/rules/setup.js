@@ -10,7 +10,11 @@ export const VARIANTS = {
   nuke: { id: "nuke", label: "Nuke", boardMode: "2d" },
   tycoon: { id: "tycoon", label: "Tycoon", boardMode: "2d" },
   predict: { id: "predict", label: "Predict", boardMode: "2d" },
-  scooby: { id: "scooby", label: "Scooby", boardMode: "2d" }
+  scooby: { id: "scooby", label: "Scooby", boardMode: "2d" },
+  threeCheck: { id: "threeCheck", label: "3-Check", boardMode: "2d" },
+  antichess: { id: "antichess", label: "Anti-Chess", boardMode: "2d" },
+  anarchy: { id: "anarchy", label: "Anarchy Chess", boardMode: "2d" },
+  ruleLab: { id: "ruleLab", label: "Rule Lab", boardMode: "2d" }
 };
 
 export const TIME_CONTROLS = {
@@ -18,6 +22,13 @@ export const TIME_CONTROLS = {
   rapid: { id: "rapid", label: "Rapid", seconds: 10 * 60 },
   blitz: { id: "blitz", label: "Blitz", seconds: 5 * 60 },
   bullet: { id: "bullet", label: "Bullet", seconds: 60 }
+};
+
+export const RULE_LAB_DIFFICULTIES = {
+  easy: { id: "easy", label: "Easy", rules: 2, clueEveryMs: 3 * 60 * 1000, wrongGuessPenaltyMs: 0, winBase: 10 },
+  medium: { id: "medium", label: "Medium", rules: 3, clueEveryMs: 4 * 60 * 1000, wrongGuessPenaltyMs: 15 * 1000, winBase: 20 },
+  hard: { id: "hard", label: "Hard", rules: 4, clueEveryMs: 5 * 60 * 1000, wrongGuessPenaltyMs: 30 * 1000, winBase: 35 },
+  chaos: { id: "chaos", label: "Chaos", rules: 5, clueEveryMs: 5 * 60 * 1000, wrongGuessPenaltyMs: 45 * 1000, winBase: 50 }
 };
 
 const standardBackRank = ["rook", "knight", "bishop", "queen", "king", "bishop", "knight", "rook"];
@@ -40,6 +51,10 @@ export function normaliseGameMode(gameMode) {
 
 export function normaliseAIDifficulty(aiDifficulty) {
   return ["easy", "medium", "hard"].includes(aiDifficulty) ? aiDifficulty : "medium";
+}
+
+export function normaliseRuleLabDifficulty(difficulty) {
+  return RULE_LAB_DIFFICULTIES[difficulty] ? difficulty : "medium";
 }
 
 export function createInitialPieces(variant = "normal") {
@@ -86,7 +101,8 @@ export function createGame(roomCode, options = {}) {
   const variant = normaliseVariant(options.variant);
   const timeControl = normaliseTimeControl(options.timeControl);
   const gameMode = normaliseGameMode(options.gameMode);
-  const timeMs = TIME_CONTROLS[timeControl].seconds * 1000;
+  const ruleLabDifficulty = normaliseRuleLabDifficulty(options.ruleLabDifficulty || options.difficulty);
+  const timeMs = variant === "ruleLab" ? 15 * 60 * 1000 : TIME_CONTROLS[timeControl].seconds * 1000;
   const pieces = createInitialPieces(variant);
 
   return {
@@ -95,7 +111,8 @@ export function createGame(roomCode, options = {}) {
     variantName: VARIANTS[variant].label,
     boardMode: VARIANTS[variant].boardMode,
     timeControl,
-    timeControlName: TIME_CONTROLS[timeControl].label,
+    timeControlName: variant === "ruleLab" ? `${RULE_LAB_DIFFICULTIES[ruleLabDifficulty].label} difficulty` : TIME_CONTROLS[timeControl].label,
+    ruleLabDifficulty,
     gameMode,
     ai: {
       enabled: gameMode === "ai",
@@ -137,6 +154,19 @@ export function createGame(roomCode, options = {}) {
       smokes: [],
       trapLimits: { mine: 1, pitfall: 2, smoke: 1, decoy: 2, mindControl: 1 }
     } : null,
+    threeCheck: variant === "threeCheck" ? { checks: { white: 0, black: 0 }, target: 3 } : null,
+    anarchy: variant === "anarchy" ? {
+      events: [],
+      specialEvents: 0,
+      fires: [],
+      responses: [],
+      zombies: [],
+      vacations: {},
+      queenCompensation: { white: false, black: false },
+      pendingBoost: null,
+      checkPressure: null
+    } : null,
+    ruleLab: variant === "ruleLab" ? createRuleLabState(ruleLabDifficulty) : null,
     effects: { explosions: [], income: [] },
     turnToken: 0,
     moveHistory: [],
@@ -153,5 +183,48 @@ export function createGame(roomCode, options = {}) {
     lastTurnStartedAt: null,
     timeout: false,
     createdAt: Date.now()
+  };
+}
+
+
+const RULE_LAB_RULE_POOL = [
+  { id: "knight_echo", name: "Knight Echo", difficulty: "easy", clue: "One hidden rule involves knights helping pawns.", summary: "When a knight moves, the nearest friendly pawn may advance." },
+  { id: "heavy_rooks", name: "Heavy Rooks", difficulty: "easy", clue: "One hidden rule limits a major piece's distance.", summary: "Rooks can only move up to 3 squares." },
+  { id: "fragile_queens", name: "Fragile Queens", difficulty: "easy", clue: "One hidden rule punishes queen captures.", summary: "Queens vanish after capturing." },
+  { id: "mirror_pawns", name: "Mirror Pawns", difficulty: "easy", clue: "One hidden rule mirrors pawn movement.", summary: "When a pawn moves, the opposite pawn on the file may move too." },
+  { id: "colourbound_curse", name: "Colourbound Curse", difficulty: "medium", clue: "One hidden rule cares about square colour.", summary: "Pieces on dark squares cannot capture." },
+  { id: "bishop_portals", name: "Bishop Portals", difficulty: "medium", clue: "One hidden rule involves bishops and the centre.", summary: "Bishops reaching the centre teleport across it." },
+  { id: "pawn_infection", name: "Pawn Infection", difficulty: "medium", clue: "One hidden rule triggers after pawn captures.", summary: "Pawn captures remove nearby enemy pawns." },
+  { id: "delayed_capture", name: "Delayed Capture", difficulty: "medium", clue: "One hidden rule delays consequences of captures.", summary: "Captures are logged as delayed anomalies." },
+  { id: "parity_law", name: "Parity Law", difficulty: "hard", clue: "One hidden rule depends on odd and even turns.", summary: "Turn parity affects which square colours are stable." },
+  { id: "gravity_file", name: "Gravity File", difficulty: "hard", clue: "One hidden rule pulls pieces along a file.", summary: "One hidden file has gravity-like movement." },
+  { id: "memory_board", name: "Memory Board", difficulty: "hard", clue: "One hidden rule remembers previous board states.", summary: "The board remembers where pieces recently stood." },
+  { id: "board_decay", name: "Board Decay", difficulty: "chaos", clue: "One hidden rule changes the board itself.", summary: "Some empty squares become unstable over time." }
+];
+
+function createRuleLabState(difficultyId) {
+  const difficulty = RULE_LAB_DIFFICULTIES[difficultyId] || RULE_LAB_DIFFICULTIES.medium;
+  const allowed = RULE_LAB_RULE_POOL.filter((rule) => {
+    if (difficultyId === "easy") return rule.difficulty === "easy";
+    if (difficultyId === "medium") return ["easy", "medium"].includes(rule.difficulty);
+    if (difficultyId === "hard") return ["easy", "medium", "hard"].includes(rule.difficulty);
+    return true;
+  });
+  const shuffled = [...allowed].sort(() => Math.random() - 0.5);
+  const selected = shuffled.slice(0, difficulty.rules);
+  return {
+    difficulty: difficultyId,
+    ruleTarget: difficulty.rules,
+    startedAt: Date.now(),
+    endsAt: Date.now() + 15 * 60 * 1000,
+    wrongGuessPenaltyMs: difficulty.wrongGuessPenaltyMs,
+    winBase: difficulty.winBase,
+    hiddenRules: selected.map((rule) => rule.id),
+    ruleNames: selected.map((rule) => rule.name),
+    discovered: [],
+    guesses: [],
+    clues: selected.map((rule, index) => ({ id: rule.id, clue: rule.clue, revealed: index === 0, at: index === 0 ? Date.now() : null })),
+    anomalyLog: [{ at: Date.now(), text: `Rule Lab started: find ${difficulty.rules} hidden rules in 15 minutes.` }],
+    availableGuesses: RULE_LAB_RULE_POOL.map(({ id, name, summary, difficulty }) => ({ id, name, summary, difficulty }))
   };
 }

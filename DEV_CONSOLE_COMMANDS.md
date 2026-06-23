@@ -595,3 +595,39 @@ profile [username|email|id]
 ```
 
 `leaderboard reset` only resets the mode/variant you specify. It does not wipe every leaderboard globally.
+
+## Launch variant commands
+
+### 3-Check
+
+```text
+threecheck state
+threecheck set [white|black] [0-3]
+threecheck add [white|black]
+```
+
+### Anti-Chess
+
+```text
+antichess state
+```
+
+### Anarchy Chess
+
+```text
+anarchy state
+anarchy event [text]
+anarchy fire [rank|file] [1-8]
+anarchy riot
+anarchy clear
+```
+
+### Rule Lab
+
+```text
+rulelab state
+rulelab reveal
+rulelab guess [rule id/name]
+rulelab solve
+rulelab fail
+```

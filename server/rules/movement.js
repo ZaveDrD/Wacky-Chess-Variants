@@ -54,6 +54,10 @@ function isNormalChess(game) {
   return game?.variant !== "threeD";
 }
 
+function isAntiChess(game) {
+  return game?.variant === "antichess";
+}
+
 function buildKnightDeltas3D() {
   const deltas = [];
   const add = (delta) => {
@@ -101,7 +105,7 @@ function addStepMove(game, piece, moves, to, opts = {}) {
   const target = getPieceAt(game, to);
   if (target?.type === "wall") return;
   if (target?.color === piece.color) return;
-  if (target?.type === "king") return;
+  if (target?.type === "king" && !isAntiChess(game)) return;
   moves.push(makeMoveDescriptor(to, { ...opts, capture: Boolean(target) || opts.capture }));
 }
 
@@ -114,7 +118,7 @@ function slidingMoves(game, piece, directions) {
       if (isNormalChess(game) && to.y !== 0) break;
       const target = getPieceAt(game, to);
       if (target) {
-        if (target.type !== "wall" && target.color !== piece.color && target.type !== "king") {
+        if (target.type !== "wall" && target.color !== piece.color && (target.type !== "king" || isAntiChess(game))) {
           moves.push(makeMoveDescriptor(to, { capture: true }));
         }
         break;
@@ -143,6 +147,11 @@ export function getAttackSquares(game, piece) {
         .filter((pos) => inBounds(pos) && (!isNormalChess(game) || pos.y === 0));
     case "knight":
       return knightDeltas.map((delta) => addDelta(piece, delta)).filter((pos) => inBounds(pos) && (!isNormalChess(game) || pos.y === 0));
+    case "knook":
+      return [
+        ...knightDeltas.map((delta) => addDelta(piece, delta)),
+        ...attackSliding(game, piece, axisDirs).filter((square) => Math.abs(square.x - piece.x) + Math.abs(square.z - piece.z) <= 2)
+      ].filter((pos) => inBounds(pos) && (!isNormalChess(game) || pos.y === 0));
     case "pawn":
       return pawnAttackSquares(game, piece).filter((pos) => inBounds(pos) && (!isNormalChess(game) || pos.y === 0));
     default:
@@ -224,7 +233,7 @@ function pawnMoves(game, piece) {
     if (!inBounds(attack)) continue;
     if (normalChess && attack.y !== 0) continue;
     const target = getPieceAt(game, attack);
-    if (target && target.type !== "wall" && target.color !== piece.color && target.type !== "king") {
+    if (target && target.type !== "wall" && target.color !== piece.color && (target.type !== "king" || isAntiChess(game))) {
       moves.push(makeMoveDescriptor(attack, { capture: true }));
     }
   }
@@ -277,6 +286,18 @@ export function getPseudoLegalMoves(game, piece) {
       const moves = [];
       for (const delta of knightDeltas) {
         addStepMove(game, piece, moves, addDelta(piece, delta));
+      }
+      return moves;
+    }
+    case "knook": {
+      const moves = [];
+      for (const delta of knightDeltas) addStepMove(game, piece, moves, addDelta(piece, delta));
+      for (const dir of axisDirs) {
+        for (let distance = 1; distance <= 2; distance += 1) {
+          const before = moves.length;
+          addStepMove(game, piece, moves, addDelta(piece, dir, distance));
+          if (before === moves.length && getPieceAt(game, addDelta(piece, dir, distance))) break;
+        }
       }
       return moves;
     }

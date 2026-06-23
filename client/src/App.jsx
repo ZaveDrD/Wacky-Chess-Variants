@@ -9,10 +9,12 @@ import {
   TIME_CONTROL_OPTIONS,
   GAME_MODE_OPTIONS,
   AI_DIFFICULTY_OPTIONS,
+  RULE_LAB_DIFFICULTY_OPTIONS,
   getVariantLabel,
   getTimeControlLabel,
   getGameModeLabel,
-  getAIDifficultyLabel
+  getAIDifficultyLabel,
+  getRuleLabDifficultyLabel
 } from "./game/variants.js";
 import { buildReviewTimeline } from "./game/replay.js";
 import { DEV_CONSOLE_UNLOCK_SEQUENCE, findDevCommand, applyCommandPrefix, getDevCommandHelp, getDevCommandListLines } from "./game/devCommands.js";
@@ -67,6 +69,7 @@ export default function App() {
   const [censorContent, setCensorContent] = useState(localStorage.getItem("censorContent") === "true");
   const [queueStartedAt, setQueueStartedAt] = useState(null);
   const [selectedAIDifficulty, setSelectedAIDifficulty] = useState(localStorage.getItem("selectedAIDifficulty") || "medium");
+  const [selectedRuleLabDifficulty, setSelectedRuleLabDifficulty] = useState(localStorage.getItem("selectedRuleLabDifficulty") || "medium");
   const [aiAvailability, setAIAvailability] = useState({ easy: true, medium: true, hard: true });
   const [networkDashboard, setNetworkDashboard] = useState(null);
   const [networkMetrics, setNetworkMetrics] = useState(null);
@@ -1324,6 +1327,7 @@ export default function App() {
     localStorage.setItem("selectedTimeControl", selectedTimeControl);
     localStorage.setItem("selectedGameMode", selectedGameMode);
     localStorage.setItem("selectedAIDifficulty", selectedAIDifficulty);
+    localStorage.setItem("selectedRuleLabDifficulty", selectedRuleLabDifficulty);
     localStorage.setItem("matchmakingScope", matchmakingScope);
     return clean;
   }
@@ -1342,7 +1346,8 @@ export default function App() {
       variant: override.variant || selectedVariant,
       timeControl: override.timeControl || selectedTimeControl,
       gameMode: nextGameMode,
-      aiDifficulty: nextDifficulty
+      aiDifficulty: nextDifficulty,
+      ruleLabDifficulty: override.ruleLabDifficulty || selectedRuleLabDifficulty
     });
   }
 
@@ -1361,7 +1366,8 @@ export default function App() {
       name: cleanName,
       variant: selectedVariant,
       timeControl: selectedTimeControl,
-      scope: matchmakingScope
+      scope: matchmakingScope,
+      ruleLabDifficulty: selectedRuleLabDifficulty
     });
   }
 
@@ -1411,7 +1417,7 @@ export default function App() {
       const cleanName = saveName();
       setMatchmakingSearching(true);
       setQueueStartedAt(Date.now());
-      socket.emit("quickMatch", { name: cleanName, variant: nextVariant, timeControl: nextTimeControl, scope: matchmakingScope });
+      socket.emit("quickMatch", { name: cleanName, variant: nextVariant, timeControl: nextTimeControl, scope: matchmakingScope, ruleLabDifficulty: selectedRuleLabDifficulty });
       return;
     }
     createRoom({ variant: nextVariant, timeControl: nextTimeControl, gameMode: nextGameMode, aiDifficulty: nextAIDifficulty });
@@ -1467,7 +1473,7 @@ export default function App() {
   }
 
   function sendFriendChallenge(friend) {
-    socket.emit("friendChallenge", { token: accountToken, target: friend.username || friend.accountId, variant: selectedVariant, timeControl: selectedTimeControl });
+    socket.emit("friendChallenge", { token: accountToken, target: friend.username || friend.accountId, variant: selectedVariant, timeControl: selectedTimeControl, ruleLabDifficulty: selectedRuleLabDifficulty });
   }
 
   function respondToChallenge(accept) {
@@ -1524,7 +1530,7 @@ export default function App() {
       roomCode,
       pieceId: selectedPieceId,
       to,
-      promotion: "queen"
+      promotion: game?.variant === "anarchy" ? "knook" : "queen"
     });
   }
 
@@ -1604,6 +1610,16 @@ export default function App() {
     if (selectedDropType && !piece) {
       attemptDrop(coord);
       return;
+    }
+
+    if (piece && selectedPieceId && game.variant === "anarchy") {
+      const selected = game.pieces.find((candidate) => candidate.id === selectedPieceId);
+      const bishopSpecial = selected?.type === "bishop" && piece.type === "bishop" && selected.color === piece.color && selected.id !== piece.id;
+      const verticalCastleSpecial = selected?.type === "king" && piece.type === "rook" && selected.color === piece.color && selected.id !== piece.id;
+      if (bishopSpecial || verticalCastleSpecial) {
+        attemptMove(coord);
+        return;
+      }
     }
 
     if (piece && ((piece.color === color && game.turn === color) || hasDevMoveOverride)) {
@@ -1695,19 +1711,19 @@ export default function App() {
             />
           ) : homeChooser === "time" ? (
             <ChoiceGallery
-              title="Choose time control"
-              subtitle="Select the pace for the lab room."
-              items={TIME_CONTROL_OPTIONS}
-              selectedId={selectedTimeControl}
-              getDescription={(id) => getTimeControlDescription(id)}
-              getMeta={(id) => `${TIME_CONTROL_OPTIONS.find((control) => control.id === id)?.seconds || 0}s each`}
-              onSelect={(id) => { setSelectedTimeControl(id); setHomeChooser(null); }}
+              title={selectedVariant === "ruleLab" ? "Choose Rule Lab difficulty" : "Choose time control"}
+              subtitle={selectedVariant === "ruleLab" ? "Rule Lab always uses a shared 15-minute timer." : "Select the pace for the lab room."}
+              items={selectedVariant === "ruleLab" ? RULE_LAB_DIFFICULTY_OPTIONS : TIME_CONTROL_OPTIONS}
+              selectedId={selectedVariant === "ruleLab" ? selectedRuleLabDifficulty : selectedTimeControl}
+              getDescription={(id) => selectedVariant === "ruleLab" ? getRuleLabDifficultyDescription(id) : getTimeControlDescription(id)}
+              getMeta={(id) => selectedVariant === "ruleLab" ? "15 min shared timer" : `${TIME_CONTROL_OPTIONS.find((control) => control.id === id)?.seconds || 0}s each`}
+              onSelect={(id) => { if (selectedVariant === "ruleLab") setSelectedRuleLabDifficulty(id); else setSelectedTimeControl(id); setHomeChooser(null); }}
               onBack={() => setHomeChooser(null)}
             />
           ) : matchmakingSearching ? (
             <QueueSearchPanel
               variant={getVariantLabel(selectedVariant)}
-              timeControl={getTimeControlLabel(selectedTimeControl)}
+              timeControl={selectedVariant === "ruleLab" ? getRuleLabDifficultyLabel(selectedRuleLabDifficulty) : getTimeControlLabel(selectedTimeControl)}
               scope={matchmakingScope}
               elapsed={queueElapsed}
               onCancel={cancelQuickMatch}
@@ -1749,9 +1765,9 @@ export default function App() {
                   <small>{UI_TEXT.variants[selectedVariant]?.subtitle}</small>
                 </button>
                 <button className="lab-big-select time-select" type="button" onClick={() => setHomeChooser("time")}>
-                  <span>Time control</span>
-                  <strong>{getTimeControlLabel(selectedTimeControl)}</strong>
-                  <small>{getTimeControlDescription(selectedTimeControl)}</small>
+                  <span>{selectedVariant === "ruleLab" ? UI_TEXT.lobby.ruleLabDifficultyLabel : UI_TEXT.lobby.timeControlLabel}</span>
+                  <strong>{selectedVariant === "ruleLab" ? getRuleLabDifficultyLabel(selectedRuleLabDifficulty) : getTimeControlLabel(selectedTimeControl)}</strong>
+                  <small>{selectedVariant === "ruleLab" ? getRuleLabDifficultyDescription(selectedRuleLabDifficulty) : getTimeControlDescription(selectedTimeControl)}</small>
                 </button>
               </div>
 
@@ -1792,7 +1808,7 @@ export default function App() {
                     <label className="queue-scope-select polished-select">
                       <span>Queue scope</span>
                       <select value={matchmakingScope} onChange={(event) => setMatchmakingScope(event.target.value)}>
-                        <option value="selected">Selected experiment + time</option>
+                        <option value="selected">Selected experiment + {selectedVariant === "ruleLab" ? "difficulty" : "time"}</option>
                         <option value="any">Any public experiment</option>
                       </select>
                     </label>
@@ -1965,7 +1981,7 @@ export default function App() {
           <p className="subtle">
             {UI_TEXT.labels.room}{" "}
             <strong className="room-code-copy" onClick={copyRoomCode} title="Click to copy room code">{roomCode}</strong>
-            {" · "}{getTimeControlLabel(game.timeControl)}
+            {" · "}{game.variant === "ruleLab" ? getRuleLabDifficultyLabel(game.ruleLabDifficulty) : getTimeControlLabel(game.timeControl)}
             {" · "}{getGameModeLabel(game.gameMode)}
             {game.ai?.enabled ? ` (${getAIDifficultyLabel(game.ai.difficulty)})` : ""}
             {" · "}{UI_TEXT.labels.youAre} <strong>{color === "spectator" ? UI_TEXT.labels.roleSpectator : color}</strong>
@@ -2506,6 +2522,15 @@ function getAIDifficultyDescription(id) {
   }[id] || "Bot difficulty.";
 }
 
+function getRuleLabDifficultyDescription(id) {
+  return {
+    easy: "2 hidden rules, frequent clues, no wrong-guess penalty.",
+    medium: "3 hidden rules and a small wrong-guess penalty.",
+    hard: "4 hidden rules, slower clues, stronger penalties.",
+    chaos: "5 hidden rules with the least stability."
+  }[id] || "Rule Lab difficulty.";
+}
+
 function getVariantCategory(id) {
   return {
     normal: "Classic",
@@ -2517,7 +2542,11 @@ function getVariantCategory(id) {
     nuke: "Chaos",
     tycoon: "Experimental",
     predict: "Experimental",
-    scooby: "Party / Chaos"
+    scooby: "Party / Chaos",
+    threeCheck: "Classic / Competitive",
+    antichess: "Classic / Variant",
+    anarchy: "Chaos",
+    ruleLab: "Co-op"
   }[id] || "Experiment";
 }
 
@@ -3095,7 +3124,7 @@ function VariantControls({
   onTycoonInstant,
   onScoobySelect
 }) {
-  if (!game || !["crazyhouse", "nuke", "tycoon", "predict", "scooby"].includes(game.variant)) return null;
+  if (!game || !["crazyhouse", "nuke", "tycoon", "predict", "scooby", "threeCheck", "anarchy", "ruleLab"].includes(game.variant)) return null;
   return (
     <section className="variant-side-panel">
       {game.variant === "crazyhouse" && (
@@ -3130,6 +3159,81 @@ function VariantControls({
           onSelect={onScoobySelect}
         />
       )}
+      {game.variant === "threeCheck" && <ThreeCheckPanel game={game} />}
+      {game.variant === "anarchy" && <AnarchyPanel game={game} />}
+      {game.variant === "ruleLab" && <RuleLabPanel game={game} roomCode={game.roomCode} />}
+    </section>
+  );
+}
+
+
+function ThreeCheckPanel({ game }) {
+  const checks = game.threeCheck?.checks || { white: 0, black: 0 };
+  return (
+    <section className="variant-control-card three-check-panel">
+      <h2>3-Check</h2>
+      <div className="check-counters"><span>White {checks.white || 0}/3</span><span>Black {checks.black || 0}/3</span></div>
+      <p className="subtle">Checkmate still wins, but the third check also ends the game.</p>
+    </section>
+  );
+}
+
+function AnarchyPanel({ game }) {
+  const anarchy = game.anarchy || {};
+  const events = (anarchy.events || []).slice(-7).reverse();
+  const fires = (anarchy.fires || []).filter((fire) => fire.expiresAtTurn > (game.turnToken || 0));
+  const responses = (anarchy.responses || []).filter((response) => response.expiresAtTurn >= (game.turnToken || 0));
+  return (
+    <section className="variant-control-card anarchy-panel">
+      <h2>Anarchy Feed</h2>
+      <div className="anarchy-badges">
+        {fires.map((fire, index) => <span key={`fire-${index}`} className="danger-text">🔥 {fire.kind} {fire.index + 1}</span>)}
+        {responses.map((response, index) => <span key={`response-${index}`}>New response: {response.name}</span>)}
+        {anarchy.pendingBoost && <span>Boost ready</span>}
+      </div>
+      <details open>
+        <summary>Core rules</summary>
+        <ul className="compact-rule-list">
+          <li>Forced en passant.</li>
+          <li>Il Vaticano between bishops.</li>
+          <li>Knook promotion and vertical castling.</li>
+          <li>Special events can cause zombies, fire and riots.</li>
+        </ul>
+      </details>
+      <div className="anarchy-log">
+        {events.length ? events.map((event, index) => <p key={`${event.at}-${index}`}>{event.text}</p>) : <p className="subtle">No anarchy events yet.</p>}
+      </div>
+    </section>
+  );
+}
+
+function RuleLabPanel({ game, roomCode }) {
+  const lab = game.ruleLab || {};
+  const discovered = new Set(lab.discovered || []);
+  const clues = (lab.clues || []).filter((clue) => clue.revealed);
+  const log = (lab.anomalyLog || []).slice(-7).reverse();
+  const options = lab.availableGuesses || [];
+  return (
+    <section className="variant-control-card rule-lab-panel">
+      <h2>Rule Lab</h2>
+      <p className="subtle">Discovered {discovered.size}/{(lab.hiddenRules || []).length || lab.ruleTarget || "?"} · {getRuleLabDifficultyLabel(lab.difficulty)}</p>
+      <details open>
+        <summary>Revealed clues</summary>
+        {clues.length ? clues.map((clue) => <p key={clue.id}>• {clue.clue}</p>) : <p className="subtle">More clues will reveal over time.</p>}
+      </details>
+      <details>
+        <summary>Submit rule guess</summary>
+        <div className="rule-lab-guess-grid">
+          {options.map((option) => (
+            <button key={option.id} type="button" disabled={discovered.has(option.id)} onClick={() => socket.emit("ruleLabGuess", { roomCode, guessId: option.id })}>
+              {discovered.has(option.id) ? "✓ " : ""}{option.name}
+            </button>
+          ))}
+        </div>
+      </details>
+      <div className="anarchy-log rule-lab-log">
+        {log.length ? log.map((event, index) => <p key={`${event.at}-${index}`}>{event.text}</p>) : <p className="subtle">No anomalies yet.</p>}
+      </div>
     </section>
   );
 }
@@ -3409,6 +3513,30 @@ function getVariantGuideSteps(variant) {
       { title: "Pawns sniff out danger", body: "Your pawns detect traps in a 4-square cross around them. Mines, pitfalls, smoke, decoys, and mind control all have different payoffs.", art: "scoobyDetect" }
     ];
   }
+  if (variant === "threeCheck") {
+    return [
+      { title: "3-Check: every check matters", body: "Normal chess rules apply, but every check you give is counted. The third check wins immediately.", art: "threeCheck" },
+      { title: "Mate still wins", body: "You can still win by normal checkmate before reaching three checks.", art: "normalGoal" }
+    ];
+  }
+  if (variant === "antichess") {
+    return [
+      { title: "Anti-Chess: lose to win", body: "The goal is to lose every piece. Captures are mandatory whenever you have one.", art: "antichess" },
+      { title: "Kings are ordinary", body: "There is no check or checkmate. Kings can be captured like other pieces.", art: "antiKing" }
+    ];
+  }
+  if (variant === "anarchy") {
+    return [
+      { title: "Anarchy Chess", body: "Forced en passant, Il Vaticano, Knooks, vertical castling, fire, zombies, and riots all modify normal chess.", art: "anarchy" },
+      { title: "Special events", body: "Special moves create entries in the Anarchy Feed so players can track what happened without crowding the board.", art: "anarchyFeed" }
+    ];
+  }
+  if (variant === "ruleLab") {
+    return [
+      { title: "Rule Lab: cooperate", body: "Both players work together against a shared 15-minute timer. Hidden rules mutate the game.", art: "ruleLab" },
+      { title: "Find every rule", body: "Read anomaly logs, use clues, and submit guesses from the Rule Lab panel. Find all hidden rules before time expires.", art: "ruleLabGuess" }
+    ];
+  }
   return [
     { title: "1. Choose a slice", body: "Pick XZ, XY, or YZ. Each button shows a different 2D board slice through the 3D cube.", art: "planes" },
     { title: "2. Scroll layers", body: "Use the scroll wheel to flick through the stacked layers like sheets of paper.", art: "layers" },
@@ -3418,6 +3546,10 @@ function getVariantGuideSteps(variant) {
 }
 
 function TutorialArt({ art }) {
+  if (["threeCheck", "antichess", "antiKing", "anarchy", "anarchyFeed", "ruleLab", "ruleLabGuess"].includes(art)) {
+    const labels = { threeCheck: "Check 1 · Check 2 · Check 3", antichess: "Lose pieces to win", antiKing: "No royal check", anarchy: "♝ ✝ ♞♜ 🔥", anarchyFeed: "Event log stays visible", ruleLab: "Find hidden rules", ruleLabGuess: "Clues + guesses" };
+    return <div className={`tutorial-art variant-art ${art}-art`}><span>{labels[art]}</span><strong>{art}</strong></div>;
+  }
   if (art === "chess960") {
     const row = ["♗", "♞", "♕", "♜", "♔", "♝", "♞", "♖"];
     return <div className="tutorial-art variant-art variant-art-board">{row.map((piece, i) => <span key={i}>{piece}</span>)}</div>;
@@ -3593,8 +3725,17 @@ function buildVariantHighlights(game) {
     }
   }
 
-  if (game.variant === "scooby") {
-    const iconMap = { mine: "✹", pitfall: "◌", smoke: "☁", decoy: "◇", mindControl: "◈" };
+  if (game.variant === "anarchy") {
+    for (const fire of game.anarchy?.fires || []) {
+      if (fire.expiresAtTurn <= (game.turnToken || 0)) continue;
+      for (let i = 0; i < 8; i += 1) {
+        const pos = fire.kind === "file" ? { x: fire.index, y: 0, z: i } : { x: i, y: 0, z: fire.index };
+        add(pos, "anarchy-fire-highlight", "🔥", "anarchy-fire-marker");
+      }
+    }
+  }
+
+  if (game.variant === "scooby") {    const iconMap = { mine: "✹", pitfall: "◌", smoke: "☁", decoy: "◇", mindControl: "◈" };
     for (const trap of game.scooby?.traps || []) {
       const type = trap.displayType || trap.type;
       const isOwnTrap = Boolean(trap.viewerOwned);

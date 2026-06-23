@@ -5,6 +5,7 @@ export const UI_TEXT = {
   lobby: {
     variantLabel: "Experiment",
     timeControlLabel: "Time Control",
+    ruleLabDifficultyLabel: "Rule Lab Difficulty",
     gameModeLabel: "Game Mode",
     privateModeLabel: "Host / Join Private",
     aiDifficultyLabel: "AI Difficulty",
@@ -174,6 +175,47 @@ export const UI_TEXT = {
         "Mines, pitfalls, smoke, decoys, and mind-control traps are all friendly-fire enabled.",
         "Defusing succeeds only if a trap is on the chosen square; otherwise your turn is spent."
       ]
+    },
+    threeCheck: {
+      label: "3-Check",
+      subtitle: "Win by checkmate or by giving three checks.",
+      rules: [
+        "Normal chess rules apply.",
+        "Each check you give increases your check counter.",
+        "The first player to give 3 checks wins immediately.",
+        "Checkmate still wins normally."
+      ]
+    },
+    antichess: {
+      label: "Anti-Chess",
+      subtitle: "Lose all your pieces to win.",
+      rules: [
+        "The goal is to lose all your pieces.",
+        "Captures are mandatory when available.",
+        "Kings are not royal: no check or checkmate.",
+        "You win if you have no pieces or no legal moves."
+      ]
+    },
+    anarchy: {
+      label: "Anarchy Chess",
+      subtitle: "Forced en passant, Il Vaticano, Knooks, fire, zombies, and riots.",
+      rules: [
+        "En passant is forced; declining it causes a brick penalty.",
+        "Bishops can perform Il Vaticano to swap and capture two trapped pieces.",
+        "Pawns can promote to Knooks, which move like knights or short rooks.",
+        "Vertical castling is legal when a king and rook share a clear file.",
+        "Special moves can trigger zombies, fire, new responses, and riots."
+      ]
+    },
+    ruleLab: {
+      label: "Rule Lab",
+      subtitle: "Cooperate to discover hidden rule mutations before time runs out.",
+      rules: [
+        "Both players work together against a shared 15-minute timer.",
+        "Hidden rules mutate the board and create anomaly logs.",
+        "Use clues and submit rule guesses to discover every hidden rule.",
+        "Solve all rules to win together; time expiry means both players lose."
+      ]
     }
   },
   timeControls: {
@@ -181,6 +223,12 @@ export const UI_TEXT = {
     rapid: "Rapid",
     blitz: "Blitz",
     bullet: "Bullet"
+  },
+  ruleLabDifficulty: {
+    easy: "Easy",
+    medium: "Medium",
+    hard: "Hard",
+    chaos: "Chaos"
   },
   gameModes: {
     online: "Online Multiplayer",
