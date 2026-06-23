@@ -547,6 +547,66 @@ function sanitiseGameForViewer(game, socketId) {
   return copy;
 }
 
+function captureReportSnapshot(game) {
+  if (!game?.roomCode) return;
+
+  const moveCount = game.moveHistory?.length || 0;
+  const chatCount = game.chat?.length || 0;
+  const status = game.status || "unknown";
+  const key = `${moveCount}:${chatCount}:${game.turn || ""}:${status}:${game.winner || ""}:${game.message || ""}`;
+  const now = Date.now();
+
+  // emitGameStateToRoom can run several times for the same visible state. Keep one
+  // report snapshot per meaningful state unless a few seconds have passed.
+  if (game._lastReportSnapshotKey === key && now - (game._lastReportSnapshotAt || 0) < 5000) return;
+
+  game._lastReportSnapshotKey = key;
+  game._lastReportSnapshotAt = now;
+
+  if (!Array.isArray(game.reportSnapshots)) game.reportSnapshots = [];
+  game.reportSnapshots.push({
+    at: now,
+    roomCode: game.roomCode,
+    variant: game.variant,
+    variantName: game.variantName,
+    timeControl: game.timeControl,
+    status,
+    turn: game.turn,
+    winner: game.winner || null,
+    check: Boolean(game.check),
+    moveCount,
+    chatCount,
+    message: game.message || "",
+    clocks: game.clocks ? JSON.parse(JSON.stringify(game.clocks)) : null,
+    lastMove: game.lastMove ? JSON.parse(JSON.stringify(game.lastMove)) : null,
+    players: {
+      white: game.players?.white ? {
+        name: game.players.white.name,
+        accountId: game.players.white.accountId || null,
+        accountName: game.players.white.accountName || null,
+        guest: !game.players.white.accountId
+      } : null,
+      black: game.players?.black ? {
+        name: game.players.black.name,
+        accountId: game.players.black.accountId || null,
+        accountName: game.players.black.accountName || null,
+        guest: !game.players.black.accountId
+      } : null
+    },
+    pieces: (game.pieces || []).map((piece) => ({
+      id: piece.id,
+      type: piece.type,
+      color: piece.color,
+      owner: piece.owner || null,
+      x: piece.x,
+      y: piece.y,
+      z: piece.z
+    }))
+  });
+
+  game.reportSnapshots = game.reportSnapshots.slice(-80);
+}
+
 function emitGameStateToSocket(socket, game) {
   const payload = sanitiseGameForViewer(game, socket.id);
   recordOutgoing("gameState", payload, game?.roomCode, 1);
