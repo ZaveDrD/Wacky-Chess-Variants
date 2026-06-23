@@ -1741,22 +1741,31 @@ export default function App() {
                 </button>
               </div>
 
-              <div className="lab-mode-tabs" role="tablist" aria-label="Play mode">
-                {[
-                  ["online", "Online Multiplayer"],
-                  ["ai", "Vs. AI"],
-                  ["private", "Host / Join Private"],
-                  ["leaderboard", UI_TEXT.leaderboard.title]
-                ].map(([id, label]) => (
-                  <button
-                    key={id}
-                    className={homePanel === id ? "active" : ""}
-                    type="button"
-                    onClick={() => { setHomePanel(id); if (id !== "leaderboard") setSelectedGameMode(id === "ai" ? "ai" : "online"); }}
-                  >
-                    {label}
-                  </button>
-                ))}
+              <div className="lab-mode-tabs-row">
+                <div className="lab-mode-tabs" role="tablist" aria-label="Play mode">
+                  {[
+                    ["online", UI_TEXT.gameModes.online],
+                    ["ai", UI_TEXT.gameModes.ai],
+                    ["private", UI_TEXT.lobby.privateModeLabel || "Host / Join Private"]
+                  ].map(([id, label]) => (
+                    <button
+                      key={id}
+                      className={homePanel === id ? "active" : ""}
+                      type="button"
+                      onClick={() => { setHomePanel(id); setSelectedGameMode(id === "ai" ? "ai" : "online"); }}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  className={`leaderboard-side-button ${homePanel === "leaderboard" ? "active" : ""}`}
+                  type="button"
+                  onClick={() => setHomePanel("leaderboard")}
+                >
+                  <span>♕</span>
+                  <strong>{UI_TEXT.leaderboard.title}</strong>
+                </button>
               </div>
 
               <div className="lab-mode-panel">

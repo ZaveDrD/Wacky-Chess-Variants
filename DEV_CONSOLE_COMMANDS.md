@@ -503,3 +503,10 @@ Home screen has a leaderboard tab. Only registered accounts appear. Monthly lead
 - Public-queue games use New Game to re-enter the queue with the same mode/time.
 - Private games use New Game to create a new private room with the same mode/time.
 - Game-over modal has a Rematch button; both players must request rematch to restart the same room.
+
+## Social v1 bugfix update
+
+- Added missing `normaliseDeviceId()` server helper so `identifyDevice` no longer crashes the Render process.
+- Moved Leaderboards out of the main Online/Vs AI/Private mode tab group.
+- Leaderboards now appears as a separate side button beside the play-mode tabs.
+- Added `UI_TEXT.lobby.privateModeLabel` so the private-mode tab text remains editable in `client/src/game/text.js`.

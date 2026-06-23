@@ -6,6 +6,7 @@ export const UI_TEXT = {
     variantLabel: "Experiment",
     timeControlLabel: "Time Control",
     gameModeLabel: "Game Mode",
+    privateModeLabel: "Host / Join Private",
     aiDifficultyLabel: "AI Difficulty",
     nameLabel: "Player Name",
     namePlaceholder: "Enter Name",

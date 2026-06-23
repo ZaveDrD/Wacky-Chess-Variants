@@ -1928,6 +1928,14 @@ function normaliseDevDifficulty(value) {
   return ["easy", "medium", "hard"].includes(text) ? text : "medium";
 }
 
+function normaliseDeviceId(value) {
+  const text = String(value || "").trim();
+  if (!text) return null;
+  const cleaned = text.replace(/[^a-zA-Z0-9:_-]/g, "").slice(0, 128);
+  if (cleaned.length >= 8) return cleaned;
+  return createHash("sha256").update(text).digest("hex").slice(0, 32);
+}
+
 const pendingAITimers = new Map();
 
 function scheduleAIMoveIfNeeded(game) {
