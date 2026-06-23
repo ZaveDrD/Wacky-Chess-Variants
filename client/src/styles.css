@@ -7167,26 +7167,35 @@ select {
   border: 2px solid rgba(23,22,20,.96);
   background: rgba(238,238,210,.95);
   object-fit: contain;
+  object-position: center;
+  display: block;
+  box-sizing: border-box;
   padding: 1px;
   box-shadow: 0 5px 12px rgba(0,0,0,.35);
 }
 .badge-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(42px, 1fr));
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 0.45rem;
   max-height: 140px;
   overflow: auto;
   padding: 0.15rem;
 }
 .badge-grid button {
+  width: 42px;
+  height: 42px;
+  min-width: 42px;
   min-height: 42px;
+  padding: 0;
   border-radius: 14px;
   border: 1px solid rgba(238,238,210,.16);
   background: rgba(0,0,0,.22);
   color: #eeeed2;
   cursor: pointer;
-  display: grid;
-  place-items: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   font-weight: 800;
   overflow: hidden;
   text-align: center;
@@ -7211,7 +7220,15 @@ select {
   border-color: #84cc16;
   box-shadow: 0 0 0 3px rgba(132,204,22,.16);
 }
-.badge-grid img { width: 30px; height: 30px; object-fit: contain; }
+.badge-grid img {
+  display: block;
+  width: 30px;
+  height: 30px;
+  object-fit: contain;
+  object-position: center;
+  margin: 0;
+  flex: 0 0 auto;
+}
 .player-line button,
 .player-line-static {
   display: flex;
