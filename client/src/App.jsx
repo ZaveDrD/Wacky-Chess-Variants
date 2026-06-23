@@ -2419,16 +2419,19 @@ function AccountModal({
                     </button>
                   ))}
                 </div>
-                <label><span>Equipped badge</span></label>
-                <div className="badge-grid" aria-label="Equipped badge">
-                  <button type="button" className={!accountEditForm.equippedBadge ? "active" : ""} onClick={() => onAccountEditForm("equippedBadge", "")}>None</button>
-                  {(account.badges || []).map((badge) => (
-                    <button key={badge} type="button" className={accountEditForm.equippedBadge === badge ? "active" : ""} onClick={() => onAccountEditForm("equippedBadge", badge)} title={badge}>
-                      <img src={badgeUrl(badge)} alt="" />
-                    </button>
-                  ))}
-                </div>
-                {(account.badges || []).length === 0 && <small className="subtle">No badges granted yet.</small>}
+                <label><span>{UI_TEXT.account.equippedBadgeLabel}</span></label>
+                {(account.badges || []).length > 0 ? (
+                  <div className="badge-grid" aria-label={UI_TEXT.account.equippedBadgeLabel}>
+                    <button type="button" className={`badge-none-option ${!accountEditForm.equippedBadge ? "active" : ""}`} onClick={() => onAccountEditForm("equippedBadge", "")}>{UI_TEXT.account.noBadgeOption}</button>
+                    {(account.badges || []).map((badge) => (
+                      <button key={badge} type="button" className={accountEditForm.equippedBadge === badge ? "active" : ""} onClick={() => onAccountEditForm("equippedBadge", badge)} title={badge}>
+                        <img src={badgeUrl(badge)} alt="" />
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="badge-empty" aria-label={UI_TEXT.account.equippedBadgeLabel}>{UI_TEXT.account.noBadges}</div>
+                )}
                 <button type="submit">{UI_TEXT.account.saveProfile}</button>
               </form>
 

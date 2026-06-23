@@ -7188,6 +7188,23 @@ select {
   display: grid;
   place-items: center;
   font-weight: 800;
+  overflow: hidden;
+  text-align: center;
+}
+.badge-grid .badge-none-option {
+  min-width: 76px;
+  padding: 0 .65rem;
+  white-space: nowrap;
+}
+.badge-empty {
+  min-height: 42px;
+  border-radius: 14px;
+  border: 1px solid rgba(238,238,210,.16);
+  background: rgba(0,0,0,.18);
+  color: rgba(238,238,210,.72);
+  display: grid;
+  place-items: center;
+  font-weight: 800;
 }
 .badge-grid button.active {
   border-color: #84cc16;

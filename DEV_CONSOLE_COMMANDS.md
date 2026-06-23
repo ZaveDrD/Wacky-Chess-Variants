@@ -1,0 +1,706 @@
+# Developer Console Commands
+
+Open the hidden developer console:
+
+```text
+Shift → Up → Down → Left → Right → Shift
+```
+
+Unlock with the developer password.
+
+The console has been refactored into broad command groups. Use:
+
+```text
+help
+help 1
+help 2
+help chat
+help whisper
+help fx
+help variants
+help timecontrols
+```
+
+`help` explains the paged help system. `help 1` to `help 6` list categories. `help [category]` lists subcommands and parameters. Legacy aliases still work, so commands such as `sudo`, `shout`, `kickplayer`, `god`, `spotlight`, and `ping` still resolve to the new grouped form.
+
+## Top-level groups
+
+```text
+help
+clear
+variants
+timecontrols
+room
+player
+match
+chat
+board
+piece
+view
+mark
+ai
+clock
+fx
+cosmetic
+chaos
+predict
+scooby
+tycoon
+nuke
+crazyhouse
+atomic
+hill
+```
+
+## Examples
+
+```text
+chat sudo black I definitely meant that
+chat announce Sudden death starts now
+chat whisper white check the queen
+chat quote blunder
+
+variants
+timecontrols
+room start 3d 1 medium 3+2
+room start scooby 1 hard unlimited
+clock preset 10+5
+clock preset unlimited
+room kick Ben
+
+piece god e4 on
+piece god e4 off
+piece replace e4 queen black
+
+mark spotlight e4
+mark ping d5
+
+fx earthquake
+fx board theme lava
+fx scooby ghosttrap e4
+fx clear
+
+cosmetic piece e4 size big
+cosmetic piece e4 hat crown
+cosmetic curse black haunted
+cosmetic clear
+
+chaos yeet e4
+chaos clone e4 e5
+chaos mutate d4 queen
+chaos pawnstorm white
+
+predict state
+predict reveal
+predict lock white e2 e4
+predict resolve
+
+scooby trap add mine e4 white
+scooby trap storm black 5
+scooby smoke bomb e4
+scooby control zap e4 black
+
+tycoon money set white 50
+tycoon wall place e4 white
+tycoon bomb party 5
+
+nuke charge max black
+nuke oops e4
+
+crazyhouse reserve gift white queen
+crazyhouse reserve bomb black
+
+atomic explode e4
+atomic chainreaction
+```
+
+
+## Variant and time-control references
+
+Use these commands in the console when you need exact codes:
+
+```text
+help variants
+variants
+help timecontrols
+timecontrols
+```
+
+Common variant examples:
+
+```text
+threeD           3D Chess        aliases: 3d, threed, three, 3dchess
+normal           Normal Chess    aliases: 2d, standard, normalchess
+kingOfTheHill    King of the Hill aliases: koth, hill
+threeCheck       3-Check         aliases: 3check, three-check
+```
+
+Common time-control examples:
+
+```text
+unlimited        Unlimited / no clock
+bullet           Bullet 1+0
+bullet1_1        Bullet 1+1
+blitz3           Blitz 3+0
+blitz3_2         Blitz 3+2
+blitz            Blitz 5+0
+blitz5_3         Blitz 5+3
+rapid            Rapid 10+0
+rapid10_5        Rapid 10+5
+rapid15_10       Rapid 15+10
+rapid30          Rapid 30+0
+classical        Classical 30+20
+classical45_45   Classical 45+45
+classical60      Classical 60+0
+classical90_30   Classical 90+30
+```
+
+The console accepts shorthand aliases such as `3d`, `3+2`, `10+5`, `90+30`, and `unlimited`.
+
+## Notes
+
+- `[VISUAL]` commands such as `fx` and `cosmetic` are local visual effects unless explicitly stated.
+- `[DANGEROUS]` commands such as `chaos`, `tycoon bomb party`, `scooby trap storm`, and `atomic explode` modify actual game state.
+- `room kick [name]` now sends the kicked client back to the home screen.
+- `piece god [square] on` makes a piece unkillable by normal captures/explosions.
+
+
+## FX completion update
+
+The previously placeholder FX commands are now implemented with visible overlays/animations:
+
+```text
+fx confetti
+fx fireworks
+fx emoji 🤡
+fx rain pawns
+fx freeze 2
+fx fakecheck
+fx fakewin black
+fx pause dramatic
+fx bonk white
+fx jumpscare all
+fx toasty
+fx laser a1 h8
+fx board theme lava
+fx board theme ice
+fx board theme graveyard
+fx board theme scooby
+fx board theme nuke
+fx board theme gold
+fx board theme void
+fx scooby mysterymachine
+fx scooby traproulette
+fx scooby ghosttrap e4
+fx scooby smoke e4
+fx scooby jinkies e4
+fx scooby haunt e4
+fx scooby boo e4
+```
+
+## Cosmetics completion update
+
+The cosmetic commands are now implemented as persistent local visual changes:
+
+```text
+cosmetic piece e4 size big
+cosmetic piece e4 size tiny
+cosmetic piece e4 spin
+cosmetic piece e4 jiggle
+cosmetic piece e4 glow red
+cosmetic piece e4 hat crown
+cosmetic piece e4 mustache
+cosmetic piece e4 name Gary
+cosmetic piece e4 clown
+cosmetic piece e4 ghost
+cosmetic piece e4 clear
+
+cosmetic icon white queen 🦆
+cosmetic player black duckify
+cosmetic player white scoobydoo
+cosmetic curse black haunted
+cosmetic clear
+```
+
+Legacy aliases also work:
+
+```text
+bigpiece e4
+tinypiece e4
+spinpiece e4
+jigglepiece e4
+glowpiece e4 red
+hat e4 crown
+mustache e4
+renamepiece e4 Gary
+duckify black
+scoobydoo white
+clearcosmetics
+```
+
+
+## Forced lobby FX/cosmetics
+
+You can now force visual effects or cosmetics onto other connected clients. Targets include:
+
+```text
+self
+room
+others
+opponent
+white
+black
+spectators
+lobby
+home
+all
+[player name]
+```
+
+Examples:
+
+```text
+fx force lobby jumpscare all
+fx force lobby confetti
+fx force all board theme void
+fx force opponent bonk black
+fx force Ben scooby mysterymachine
+
+cosmetic force lobby curse white haunted
+cosmetic force lobby player white duckify
+cosmetic force all icon white queen 🦆
+cosmetic force opponent piece e4 hat crown
+cosmetic force lobby clear
+```
+
+`lobby` and `home` target clients currently on the home/lobby screen. `all` targets everyone connected except the developer running the command.
+
+## FX particle fix
+
+The particle effects now use explicit per-particle positions instead of unsupported CSS modulo calculations.
+
+Fixed commands:
+
+```text
+fx confetti
+fx fireworks
+fx rain pawns
+fx rain queen
+fx rain duck
+fx force lobby confetti
+fx force lobby fireworks
+fx force lobby rain pawns
+```
+
+Changes:
+- `confetti` now fills the whole screen with many pieces.
+- `fireworks` now creates multiple bursts across the screen.
+- `rain` now repeats the requested item across the whole screen.
+- common chess words such as `pawns`, `queen`, `rooks`, `knights`, etc. now map to chess symbols.
+
+
+## Mobile developer console unlock
+
+The developer console can now be opened on phones with a viewport-based tap sequence:
+
+```text
+top-left → top-right → bottom-left → bottom-right → centre
+```
+
+Notes:
+- The hit zones are based on the visible browser window using pointer `clientX/clientY`, not page scroll position.
+- You do not need to scroll to reach the bottom corners.
+- The sequence must be completed within about 5 seconds.
+- It only opens the locked console; the dev password is still required.
+
+
+## Room closure and reason messages
+
+```text
+room close [code=current] [reason]
+room kick [player] [reason]
+kickplayer [player] [reason]
+```
+
+Examples:
+
+```text
+room close ABC123 server load test
+room close too much lag
+room kick black inactive
+kickplayer Sam network abuse
+```
+
+Players are returned to the home screen and see either:
+
+```text
+Your room was closed.
+Your room was closed for [reason].
+You've been kicked.
+You've been kicked for [reason].
+```
+
+## AI availability controls
+
+Use these to disable expensive AI levels for online players:
+
+```text
+ai availability
+ai disable hard
+ai enable hard
+ai disable medium
+ai enable medium
+```
+
+When disabled, the matching AI button on the home screen is crossed out and cannot be selected.
+
+## Network diagnostics
+
+```text
+network summary
+network server
+network rooms
+network room [code]
+network ai [all|code]
+network dashboard [overall|code]
+```
+
+Examples:
+
+```text
+network summary
+network rooms
+network room ABC123
+network ai ABC123
+network dashboard overall
+network dashboard ABC123
+```
+
+The dashboard opens a live modal with real-time graphs for CPU, heap memory, bandwidth, room bandwidth, room memory, and AI timing.
+
+Notes:
+- Bandwidth is approximate and based on Socket.IO payload byte estimates.
+- Per-room memory is approximate and based on serialised room state size.
+- Per-room CPU is not directly available from Node/Render, so AI CPU is tracked with measured AI move wall time and reported as an AI CPU proxy.
+- Host max bandwidth is shown only if `MAX_SERVER_BANDWIDTH_BPS` is set in the server environment.
+
+## The Chess Lab home / public queue update
+
+Home screen:
+- Main public title is now `The Chess Lab`.
+- Browser title starts as `The Chess Lab - Home` and changes to the active experiment/room while playing.
+- Normal Chess is the default experiment for new players.
+- Variant selection is now an animated `Experiment Gallery` card grid.
+- Time controls now use the same large-card selection style.
+- Home actions are split into `Online Multiplayer`, `Vs. AI`, and `Host / Join Private` tabs.
+- Settings cog is available from the corner and contains sound and local censor controls.
+
+Public/private room behaviour:
+- `Host Private` creates a private Lab Room with a Lab Code.
+- `Find Match` creates or joins only public queue rooms.
+- Private rooms are not eligible for public matchmaking.
+- While waiting in public matchmaking, the client remains on the lobby screen with a chess loading animation, timer, and cancel button.
+- Dev room listings now include `public` / `private` room visibility.
+
+Local censor:
+- Settings -> Local censor filters names and chat on that player's screen only.
+- Raw names and messages are still sent/stored normally.
+- Censoring is local and does not affect the other player.
+
+## Account system v1
+
+Player accounts are now available from the settings cog.
+
+```text
+account info [username|email|id]
+account list [limit]
+account store
+```
+
+Account security notes:
+
+```text
+- Passwords are never stored in plain text.
+- Password hashes use PBKDF2-SHA256 with per-account salts.
+- Session tokens are stored client-side; only token hashes are stored server-side.
+- Account data is stored in server/data/accounts.json by default.
+- Set ACCOUNT_STORE_PATH to move the account store outside the deployed app folder.
+```
+
+Room/player console readouts now mark guests with `(guest)` so registered accounts and guest players are distinguishable.
+
+Registered usernames are reserved. Guests cannot create/join/queue using the exact name of a registered account unless they sign into it.
+
+Account stats currently track:
+
+```text
+- total games
+- wins
+- losses
+- draws
+- per-mode results
+- recent game history
+```
+
+## Account profile update
+
+Account management now lives in a profile modal instead of the settings menu. The settings cog opens only settings plus a button to open the account/profile modal.
+
+Profile icons are loaded from:
+
+```text
+client/public/profile-icons
+```
+
+Drop additional `.svg`, `.png`, `.jpg`, `.jpeg`, or `.webp` files into that folder and rebuild. The account modal will request the available icon list from the server and display them as circular choices.
+
+### Added account dev commands
+
+```text
+account info [username|email|id]
+account list [limit]
+account online [username|email|id]
+account locate [username|email|id]
+account create [email] [username] [password]
+account remove [username|email|id]
+account icon [username|email|id] [icon-file]
+account store
+```
+
+`account online` / `account locate` reports whether the account has active sockets and which room, colour, or spectator slot it is currently using.
+
+## UI cleanup note
+
+- Settings account panel is now a single compact clickable row.
+- Guest home row no longer has a separate Open Account button; clicking the guest avatar opens account login.
+
+## Reports, punishment, friends, profiles, leaderboards v1
+
+### Reports
+
+Players report during a game by typing in chat:
+
+```text
+!report [reason]
+```
+
+The server records a case containing room info, variant, recent chat, move list, illegal move attempts, clocks, players, and recent game-state snapshots. Evidence is scored as `weak`, `medium`, or `strong` based on harmful chat/name patterns, illegal move attempts, and reporter credibility.
+
+Dev commands:
+
+```text
+report list [date|strength|name]
+report view [caseId]
+report approve [caseId] [mute|ban] [duration|-1] [reason]
+report deny [caseId]
+report appeal list
+report appeal view [appealId]
+report appeal approve [appealId]
+report appeal deny [appealId]
+```
+
+`report view` opens a report review modal and also prints chat/illegal-move evidence in the console.
+
+### Punishments
+
+```text
+punish list
+punish all
+punish mute [target] [duration|-1] [reason]
+punish ban [target] [duration|-1] [reason]
+punish remove [punishmentId]
+```
+
+Targets may be account names, current-room player names/colours, connected client names, or device IDs. Account users are punished by account where possible; guests are punished by device ID.
+
+### Friends and challenges
+
+In-game chat shortcuts:
+
+```text
+!friend
+!friend [username]
+!accept [username|requestId]
+```
+
+UI: logged-in users get a right-side friends drawer. It supports friend requests, online/in-game status, profile viewing, friend messaging, and challenges. Accepting a challenge starts a private match and forfeits/leaves any current game for both involved players.
+
+Dev commands:
+
+```text
+friend list
+friend send [username]
+friend accept [username|requestId]
+```
+
+### Profiles
+
+```text
+profile [username|email|id]
+```
+
+Public profile UI shows profile image, overall games, mode stats, ranks, and game history summary. Account info in the dev console also shows hidden credibility and punishment history.
+
+### Leaderboards
+
+```text
+leaderboard show [variant] [month|allTime]
+```
+
+Home screen has a leaderboard tab. Only registered accounts appear. Monthly leaderboards reset by month key. All-time leaderboards persist. Baseline ELO is 800; winners get the normal ELO delta plus a flat +10 win bonus.
+
+### Timer/new-game/rematch changes
+
+- Clocks do not decrement until both players have made their first move.
+- Public-queue games use New Game to re-enter the queue with the same mode/time.
+- Private games use New Game to create a new private room with the same mode/time.
+- Game-over modal has a Rematch button; both players must request rematch to restart the same room.
+
+## Social v1 bugfix update
+
+- Added missing `normaliseDeviceId()` server helper so `identifyDevice` no longer crashes the Render process.
+- Moved Leaderboards out of the main Online/Vs AI/Private mode tab group.
+- Leaderboards now appears as a separate side button beside the play-mode tabs.
+- Added `UI_TEXT.lobby.privateModeLabel` so the private-mode tab text remains editable in `client/src/game/text.js`.
+
+## Social/account/moderation commands
+
+These are now included in `help`, `help 1`, and individual category help:
+
+```text
+help account
+help report
+help punish
+help friend
+help leaderboard
+help profile
+```
+
+Useful examples:
+
+```text
+account info [username|email|id]
+account list [limit]
+account online [username|email|id]
+account create [email] [username] [password]
+account remove [username|email|id]
+account icon [username|email|id] [icon-file]
+account store
+
+report list [date|strength|name]
+report view [caseId]
+report approve [caseId] [mute|ban] [duration|-1] [reason]
+report deny [caseId]
+report appeal list
+report appeal view [appealId]
+report appeal approve [appealId]
+report appeal deny [appealId]
+
+punish list
+punish all
+punish mute [target] [duration|-1] [reason]
+punish ban [target] [duration|-1] [reason]
+punish remove [punishmentId]
+
+friend list
+friend send [username]
+friend accept [requestId|username]
+
+leaderboard show [variant] [month|allTime]
+profile [username|email|id]
+```
+
+## Accounts / reports / friends / leaderboards
+
+```text
+account info [username|email|id]
+account list [limit]
+account online [username|email|id]
+account create [email] [username] [password]
+account remove [username|email|id]
+account icon [username|email|id] [icon-file]
+account wipe [username|email|id] [game|all]
+account store
+
+report list [date|strength|name]
+report view [caseId]
+report approve [caseId] [mute|ban] [duration|-1] [reason]
+report deny [caseId]
+report appeal list|view|approve|deny ...
+
+punish list
+punish all
+punish mute [target] [duration|-1] [reason]
+punish ban [target] [duration|-1] [reason]
+punish remove [punishmentId]
+
+friend list
+friend send [username]
+friend accept [requestId|username]
+
+leaderboard show [variant] [month|allTime]
+leaderboard reset [variant] month
+leaderboard reset [variant] allTime
+leaderboard reset [variant] both
+
+profile [username|email|id]
+```
+
+`leaderboard reset` only resets the mode/variant you specify. It does not wipe every leaderboard globally.
+
+## Launch variant commands
+
+### 3-Check
+
+```text
+threecheck state
+threecheck set [white|black] [0-3]
+threecheck add [white|black]
+```
+
+### Anti-Chess
+
+```text
+antichess state
+```
+
+### Anarchy Chess
+
+```text
+anarchy state
+anarchy event [text]
+anarchy fire [rank|file] [1-8]
+anarchy riot
+anarchy clear
+```
+
+### Rule Lab
+
+```text
+rulelab state
+rulelab reveal
+rulelab guess [rule id/name]
+rulelab solve
+rulelab fail
+```
+
+## Support/Stripe UI commands
+
+Use these in the dev console to show/hide the Support button without redeploying:
+
+```text
+support status
+support enable
+support disable
+```
+
+Aliases:
+
+```text
+stripe status
+site support status
+site support enable
+site support disable
+```
+
+The setting is persistent in `server/data/siteSettings.json`. The Render environment variable `SUPPORT_UI_ENABLED=false` can set the first-run default, but the dev-console setting takes over once the JSON store exists.

@@ -476,6 +476,15 @@ function emitProfileIcons(socket) {
   socket.emit("profileIcons", payload);
 }
 
+function cleanBadgeArg(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  const withoutPrefix = raw.replace(/^Badge=/i, "").trim();
+  const unquoted = withoutPrefix.replace(/^(["'])(.*)\1$/, "$2").trim();
+  if (!unquoted || ["null", "none", "false", "no", "off"].includes(unquoted.toLowerCase())) return null;
+  return unquoted;
+}
+
 function getBadgeCatalog() {
   const allowed = new Set();
   for (const dir of badgeIconDirs) {
