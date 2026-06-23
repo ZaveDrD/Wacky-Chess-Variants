@@ -9,6 +9,7 @@ import { chooseAIMove, evaluateAIPosition, isAITurn, runAIMove, scoreAICandidate
 import { cloneGame } from "./rules/utils.js";
 import { createHash, pbkdf2Sync, timingSafeEqual } from "crypto";
 import os from "os";
+import { createAccount, loginAccount, logoutAccount, getPublicAccountByToken, getAccountByToken, participantAccount, getAccountInfoLines, getAccountListLines, recordCompletedGameForAccounts, accountStorePath, isRegisteredUsername } from "./accountStore.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -234,6 +235,12 @@ function capitalise(text) {
   return value ? value[0].toUpperCase() + value.slice(1) : value;
 }
 
+function guestNameBlocked(socket, requestedName) {
+  if (socket.data?.account) return false;
+  const clean = String(requestedName || "").trim();
+  return clean && isRegisteredUsername(clean);
+}
+
 function bytesToMb(value) {
   return Math.round((Number(value) || 0) / 1024 / 1024 * 10) / 10;
 }
@@ -407,6 +414,7 @@ function emitGameStateToSocket(socket, game) {
 
 function emitGameStateToRoom(io, game) {
   if (!game) return;
+  recordCompletedGameForAccounts(game);
   const targets = new Set([game.players?.white?.id, game.players?.black?.id, ...(game.spectators || []).map((spectator) => spectator.id)].filter(Boolean));
   for (const socketId of targets) {
     const targetSocket = io.sockets.sockets.get(socketId);
@@ -415,7 +423,7 @@ function emitGameStateToRoom(io, game) {
 }
 
 io.on("connection", (socket) => {
-  connectedClients.set(socket.id, { id: socket.id, name: "Guest", connectedAt: Date.now(), lastRoomCode: null });
+  connectedClients.set(socket.id, { id: socket.id, name: "Guest", connectedAt: Date.now(), lastRoomCode: null, accountId: null, accountName: null });
   socket.emit("aiAvailability", getAIAvailabilityPayload());
   recordOutgoing("aiAvailability", getAIAvailabilityPayload(), "GLOBAL", 1);
   socket.onAny((eventName, payload = {}) => {
@@ -428,13 +436,57 @@ io.on("connection", (socket) => {
     socket.emit("aiAvailability", payload);
   });
 
+  socket.on("accountCreate", ({ email, username, password } = {}) => {
+    const result = createAccount({ email, username, password });
+    if (!result.ok) {
+      socket.emit("accountError", result.reason || "Could not create account.");
+      return;
+    }
+    socket.data.account = getAccountByToken(result.token);
+    updateConnectedClient(socket.id, result.account.username, connectedClients.get(socket.id)?.lastRoomCode || null);
+    socket.emit("accountAuthenticated", { account: result.account, token: result.token });
+  });
+
+  socket.on("accountLogin", ({ login, password } = {}) => {
+    const result = loginAccount({ login, password });
+    if (!result.ok) {
+      socket.emit("accountError", result.reason || "Could not log in.");
+      return;
+    }
+    socket.data.account = getAccountByToken(result.token);
+    updateConnectedClient(socket.id, result.account.username, connectedClients.get(socket.id)?.lastRoomCode || null);
+    socket.emit("accountAuthenticated", { account: result.account, token: result.token });
+  });
+
+  socket.on("accountSession", ({ token } = {}) => {
+    const account = getPublicAccountByToken(token);
+    if (!account) {
+      socket.emit("accountSessionExpired");
+      return;
+    }
+    socket.data.account = getAccountByToken(token);
+    updateConnectedClient(socket.id, account.username, connectedClients.get(socket.id)?.lastRoomCode || null);
+    socket.emit("accountAuthenticated", { account, token });
+  });
+
+  socket.on("accountLogout", ({ token } = {}) => {
+    logoutAccount(token);
+    socket.data.account = null;
+    updateConnectedClient(socket.id, "Guest", connectedClients.get(socket.id)?.lastRoomCode || null);
+    socket.emit("accountLoggedOut");
+  });
+
   socket.on("createRoom", ({ name, variant, timeControl, gameMode, aiDifficulty } = {}) => {
     updateConnectedClient(socket.id, name, null);
+    if (guestNameBlocked(socket, name)) {
+      socket.emit("joinError", "That name belongs to an account. Sign in or choose another guest name.");
+      return;
+    }
     if (gameMode === "ai" && !isAIDifficultyEnabled(aiDifficulty)) {
       socket.emit("joinError", `${capitalise(normaliseDevDifficulty(aiDifficulty))} AI is currently disabled by the server.`);
       return;
     }
-    const game = createRoom(socket, name, { variant, timeControl, gameMode, aiDifficulty });
+    const game = createRoom(socket, name, { variant, timeControl, gameMode, aiDifficulty, account: participantAccount(socket.data.account) });
     updateConnectedClient(socket.id, name, game.roomCode);
     socket.emit("roomCreated", { roomCode: game.roomCode, color: "white", role: "player", game: sanitiseGameForViewer(game, socket.id) });
     emitGameStateToRoom(io, game);
@@ -443,7 +495,11 @@ io.on("connection", (socket) => {
 
   socket.on("joinRoom", ({ roomCode, name } = {}) => {
     updateConnectedClient(socket.id, name, roomCode);
-    const result = joinRoom(socket, roomCode, name);
+    if (guestNameBlocked(socket, name)) {
+      socket.emit("joinError", "That name belongs to an account. Sign in or choose another guest name.");
+      return;
+    }
+    const result = joinRoom(socket, roomCode, name, { account: participantAccount(socket.data.account) });
     if (!result.ok) {
       socket.emit("joinError", result.reason);
       return;
@@ -458,7 +514,11 @@ io.on("connection", (socket) => {
 
   socket.on("quickMatch", ({ name, variant, timeControl, scope } = {}) => {
     updateConnectedClient(socket.id, name, null);
-    const result = quickMatch(socket, name, { variant, timeControl, scope });
+    if (guestNameBlocked(socket, name)) {
+      socket.emit("matchmakingError", "That name belongs to an account. Sign in or choose another guest name.");
+      return;
+    }
+    const result = quickMatch(socket, name, { variant, timeControl, scope, account: participantAccount(socket.data.account) });
     if (!result.ok) {
       socket.emit("matchmakingError", result.reason || "Quick match failed.");
       return;
@@ -810,6 +870,22 @@ function handleDevCommand(socket, payload = {}) {
     return { response: { ok: false, lines: ["Usage: ai enable|disable [easy|medium|hard] OR ai availability"] } };
   }
 
+  if (action === "accountCommand") {
+    const sub = String(args[0] || "info").toLowerCase();
+    if (["info", "view", "show"].includes(sub)) {
+      const query = args.slice(1).join(" ") || name;
+      const result = getAccountInfoLines(query);
+      return { response: { ok: result.ok, lines: result.lines } };
+    }
+    if (["list", "recent"].includes(sub)) {
+      return { response: { ok: true, lines: getAccountListLines(args[1]) } };
+    }
+    if (sub === "store") {
+      return { response: { ok: true, lines: [`Account store: ${accountStorePath()}`] } };
+    }
+    return { response: { ok: false, lines: ["Usage: account info [name|email|id] | account list [limit] | account store"] } };
+  }
+
   if (action === "networkCommand") {
     const sub = String(args[0] || "summary").toLowerCase();
     let roomCode = null;
@@ -881,7 +957,7 @@ function handleDevCommand(socket, payload = {}) {
       : requested;
     if (!roomCode) return { response: { ok: false, lines: ["No open matches available to spectate."] } };
     const affected = leaveCurrentRooms(socket, socket.id);
-    const result = spectateRoom(socket, roomCode, name);
+    const result = spectateRoom(socket, roomCode, name, { account: participantAccount(socket.data.account) });
     if (!result.ok) return { response: { ok: false, lines: [result.reason] } };
     return {
       response: { ok: true, lines: [`Spectating ${result.game.roomCode}.`] },
@@ -897,7 +973,7 @@ function handleDevCommand(socket, payload = {}) {
     const roomCode = String(args[0] || "").trim().toUpperCase();
     if (!roomCode) return { response: { ok: false, lines: ["Usage: joincode [room code]"] } };
     const affected = leaveCurrentRooms(socket, socket.id);
-    const result = joinRoom(socket, roomCode, name);
+    const result = joinRoom(socket, roomCode, name, { account: participantAccount(socket.data.account) });
     if (!result.ok) return { response: { ok: false, lines: [result.reason] } };
     return {
       response: { ok: true, lines: [`Joined ${result.game.roomCode} as ${result.role === "spectator" ? "spectator" : result.color}.`] },
@@ -921,7 +997,8 @@ function handleDevCommand(socket, payload = {}) {
       variant,
       timeControl: selectedTimeControl,
       botCount,
-      aiDifficulty: difficulty
+      aiDifficulty: difficulty,
+      account: participantAccount(socket.data.account)
     });
     if (!result.ok) return { response: { ok: false, lines: [result.reason || "Could not create match."] } };
     return {
@@ -1302,6 +1379,10 @@ function routeStructuredDevCommand(action, args = []) {
     if (first === "top") return { action: "topMoves", args: args.slice(1) };
   }
 
+  if (action === "account" || action === "accounts") {
+    return { action: "accountCommand", args };
+  }
+
   if (action === "network") {
     return { action: "networkCommand", args };
   }
@@ -1334,16 +1415,21 @@ function routeStructuredDevCommand(action, args = []) {
 function updateConnectedClient(socketId, name = "", roomCode = null, presence = null) {
   if (!socketId) return;
   const existing = connectedClients.get(socketId) || { id: socketId, connectedAt: Date.now() };
-  const clean = String(name || existing.name || "Guest").trim().slice(0, 32) || "Guest";
+  const account = socketId && io?.sockets?.sockets?.get(socketId)?.data?.account;
+  const clean = String(account?.username || name || existing.name || "Guest").trim().slice(0, 32) || "Guest";
   connectedClients.set(socketId, {
     ...existing,
     id: socketId,
     name: clean,
-    lastRoomCode: roomCode || (presence === "lobby" ? null : existing.lastRoomCode || null),
+    guest: !account,
+    accountId: account?.id || null,
+    accountName: account?.username || null,
+    lastRoomCode: roomCode || existing.lastRoomCode || null,
     presence: presence || existing.presence || (roomCode ? "room" : "lobby"),
     lastSeen: Date.now()
   });
 }
+
 
 function socketIsInAnyGameRoom(socketId) {
   for (const game of rooms.values()) {

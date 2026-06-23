@@ -354,3 +354,38 @@ Local censor:
 - Settings -> Local censor filters names and chat on that player's screen only.
 - Raw names and messages are still sent/stored normally.
 - Censoring is local and does not affect the other player.
+
+## Account system v1
+
+Player accounts are now available from the settings cog.
+
+```text
+account info [username|email|id]
+account list [limit]
+account store
+```
+
+Account security notes:
+
+```text
+- Passwords are never stored in plain text.
+- Password hashes use PBKDF2-SHA256 with per-account salts.
+- Session tokens are stored client-side; only token hashes are stored server-side.
+- Account data is stored in server/data/accounts.json by default.
+- Set ACCOUNT_STORE_PATH to move the account store outside the deployed app folder.
+```
+
+Room/player console readouts now mark guests with `(guest)` so registered accounts and guest players are distinguishable.
+
+Registered usernames are reserved. Guests cannot create/join/queue using the exact name of a registered account unless they sign into it.
+
+Account stats currently track:
+
+```text
+- total games
+- wins
+- losses
+- draws
+- per-mode results
+- recent game history
+```

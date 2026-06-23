@@ -5862,3 +5862,307 @@ select {
   .choice-card-grid { max-height: 55vh; }
   .lab-footer-row { flex-direction: column; align-items: flex-start; }
 }
+
+/* Responsive Chess Lab lobby refinements */
+.lab-lobby {
+  min-height: 100dvh;
+  height: 100dvh;
+  grid-template-rows: auto minmax(0, 1fr);
+  align-items: stretch;
+  padding-top: clamp(0.75rem, 2.1dvh, 1.55rem);
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+  overflow: hidden;
+}
+
+.lab-hero {
+  margin-top: clamp(0.25rem, 1.8dvh, 1.35rem);
+  margin-bottom: clamp(0.55rem, 1.45dvh, 1.1rem);
+}
+
+.lab-title {
+  font-size: clamp(2.55rem, min(7.2vw, 10dvh), 6.7rem);
+}
+
+.lab-home-card {
+  min-height: 0;
+  height: 100%;
+  max-height: 100%;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
+.choice-gallery,
+.queue-search-panel {
+  min-height: 0;
+}
+
+.choice-gallery {
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.choice-gallery-header {
+  margin-bottom: clamp(0.55rem, 1.4dvh, 1rem);
+}
+
+.choice-gallery-header p {
+  max-width: 70ch;
+}
+
+.choice-card-grid {
+  max-height: none;
+  min-height: 0;
+  overflow: auto;
+  align-content: start;
+  padding-bottom: 0.25rem;
+}
+
+.choice-card {
+  min-height: clamp(118px, 20dvh, 158px);
+}
+
+.queue-search-panel {
+  height: 100%;
+  min-height: 0;
+  padding-block: clamp(0.8rem, 2dvh, 1.4rem);
+}
+
+.settings-menu-head {
+  justify-content: flex-start;
+}
+
+@media (max-width: 860px) {
+  .lab-lobby {
+    padding-inline: max(0.55rem, env(safe-area-inset-left));
+    padding-top: max(0.62rem, env(safe-area-inset-top));
+  }
+
+  .lab-title {
+    font-size: clamp(2.25rem, 12vw, 4.2rem);
+    line-height: 0.95;
+  }
+
+  .lab-hero p {
+    font-size: clamp(0.82rem, 3.1vw, 0.98rem);
+  }
+
+  .lab-home-card {
+    width: min(100%, 96vw);
+    border-radius: 20px;
+    padding: clamp(0.7rem, 2.2vw, 1rem);
+  }
+
+  .lab-user-row,
+  .lab-selection-row,
+  .mode-panel-inner,
+  .private-panel,
+  .ai-panel {
+    gap: 0.7rem;
+  }
+
+  .lab-big-select {
+    min-height: 118px;
+    padding: 0.85rem;
+    border-radius: 18px;
+  }
+
+  .lab-big-select strong {
+    font-size: clamp(1.35rem, 7vw, 2.1rem);
+  }
+
+  .lab-big-select small,
+  .mode-panel-inner p,
+  .choice-gallery p,
+  .lab-user-row p {
+    font-size: 0.82rem;
+  }
+
+  .lab-mode-tabs {
+    gap: 0.4rem;
+    margin: 0.7rem 0;
+  }
+
+  .lab-mode-tabs button {
+    padding: 0.62rem;
+  }
+
+  .lab-mode-panel {
+    padding: 0.7rem;
+  }
+
+  .choice-gallery-header {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: start;
+    gap: 0.65rem;
+  }
+
+  .choice-gallery-header h2 {
+    font-size: clamp(1.15rem, 5.2vw, 1.65rem);
+  }
+
+  .choice-card-grid {
+    grid-template-columns: repeat(auto-fill, minmax(min(150px, 100%), 1fr));
+    gap: 0.55rem;
+  }
+
+  .choice-card {
+    min-height: 116px;
+    border-radius: 16px;
+    padding: 0.75rem;
+  }
+
+  .choice-card strong {
+    font-size: 1rem;
+  }
+
+  .choice-card small {
+    font-size: 0.75rem;
+  }
+
+  .settings-menu {
+    top: 50px;
+    max-height: calc(100dvh - 64px - env(safe-area-inset-top));
+    overflow: auto;
+  }
+}
+
+@media (max-height: 720px) {
+  .lab-lobby {
+    padding-top: 0.45rem;
+    padding-bottom: 0.45rem;
+  }
+
+  .lab-hero {
+    margin-top: 0.15rem;
+    margin-bottom: 0.45rem;
+  }
+
+  .lab-title {
+    font-size: clamp(2rem, 8dvh, 4.5rem);
+  }
+
+  .lab-hero p {
+    display: none;
+  }
+
+  .lab-home-card {
+    border-radius: 18px;
+  }
+
+  .lab-user-row,
+  .lab-selection-row,
+  .lab-mode-tabs {
+    margin-top: 0.55rem;
+  }
+
+  .lab-big-select {
+    min-height: 108px;
+  }
+
+  .choice-card {
+    min-height: 104px;
+  }
+}
+
+@media (max-width: 520px) {
+  .lab-title i {
+    display: none;
+  }
+
+  .settings-cluster {
+    top: max(0.5rem, env(safe-area-inset-top));
+    right: max(0.5rem, env(safe-area-inset-right));
+  }
+
+  .settings-cog {
+    width: 40px;
+    height: 40px;
+  }
+
+  .choice-gallery-header {
+    grid-template-columns: 1fr;
+  }
+
+  .choice-gallery-header button {
+    justify-self: start;
+    padding: 0.45rem 0.7rem;
+  }
+}
+
+/* Account system v1 */
+.account-placeholder.signed-in {
+  border-color: rgba(132, 204, 22, 0.5);
+  box-shadow: 0 0 24px rgba(132, 204, 22, 0.12);
+}
+
+.lab-name-input input:disabled {
+  opacity: 0.72;
+  cursor: not-allowed;
+}
+
+.settings-account-panel {
+  display: grid;
+  gap: 0.45rem;
+  padding-top: 0.75rem;
+  margin-top: 0.65rem;
+  border-top: 1px solid rgba(238,238,210,0.14);
+}
+
+.settings-account-panel strong {
+  color: var(--lab-text, #eeeed2);
+}
+
+.settings-account-panel small,
+.account-message {
+  color: var(--lab-muted, #b8b8a8);
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.account-mode-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.35rem;
+}
+
+.account-mode-tabs button,
+.account-form button,
+.settings-account-panel > button {
+  border: 1px solid rgba(238,238,210,0.16);
+  border-radius: 999px;
+  background: rgba(238,238,210,0.08);
+  color: var(--lab-text, #eeeed2);
+  padding: 0.45rem 0.65rem;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.account-mode-tabs button.active,
+.account-form button {
+  background: linear-gradient(135deg, rgba(96,165,250,0.45), rgba(132,204,22,0.22));
+  border-color: rgba(96,165,250,0.55);
+}
+
+.account-form {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.account-form label {
+  display: grid;
+  gap: 0.2rem;
+  color: var(--lab-muted, #b8b8a8);
+  font-size: 0.78rem;
+}
+
+.account-form input {
+  min-width: 0;
+  border: 1px solid rgba(238,238,210,0.16);
+  border-radius: 10px;
+  padding: 0.55rem 0.6rem;
+  background: rgba(0,0,0,0.24);
+  color: var(--lab-text, #eeeed2);
+}

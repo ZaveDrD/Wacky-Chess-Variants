@@ -24,6 +24,11 @@ const MOBILE_DEV_TOUCH_SEQUENCE = ["topLeft", "topRight", "bottomLeft", "bottomR
 
 export default function App() {
   const [name, setName] = useState(localStorage.getItem("playerName") || "");
+  const [account, setAccount] = useState(null);
+  const [accountToken, setAccountToken] = useState(localStorage.getItem("tclAccountToken") || "");
+  const [accountMode, setAccountMode] = useState("login");
+  const [accountForm, setAccountForm] = useState({ email: "", username: "", login: "", password: "" });
+  const [accountMessage, setAccountMessage] = useState("");
   const [roomInput, setRoomInput] = useState("");
   const [roomCode, setRoomCode] = useState("");
   const [color, setColor] = useState(null);
@@ -87,6 +92,8 @@ export default function App() {
     socket.on("connect", () => {
       setNotice(UI_TEXT.notices.connected);
       socket.emit("requestAIAvailability");
+      const storedToken = localStorage.getItem("tclAccountToken") || accountToken;
+      if (storedToken) socket.emit("accountSession", { token: storedToken });
     });
     socket.on("disconnect", () => setNotice(UI_TEXT.notices.disconnected));
 
@@ -176,6 +183,38 @@ export default function App() {
       if (lines.length) appendDevLines(lines.map((line) => result.ok === false ? `! ${line}` : String(line)));
     });
 
+    socket.on("accountAuthenticated", ({ account: nextAccount, token } = {}) => {
+      if (token) {
+        localStorage.setItem("tclAccountToken", token);
+        setAccountToken(token);
+      }
+      setAccount(nextAccount || null);
+      if (nextAccount?.username) {
+        setName(nextAccount.username);
+        localStorage.setItem("playerName", nextAccount.username);
+      }
+      setAccountMessage(accountMode === "register" ? UI_TEXT.account.created : UI_TEXT.account.loggedIn);
+    });
+
+    socket.on("accountError", (message) => {
+      setAccountMessage(message || UI_TEXT.account.authFailed);
+      playSoundEffect("illegal", { enabled: soundEnabled, volume: soundVolume });
+    });
+
+    socket.on("accountSessionExpired", () => {
+      localStorage.removeItem("tclAccountToken");
+      setAccountToken("");
+      setAccount(null);
+      setAccountMessage(UI_TEXT.account.sessionExpired);
+    });
+
+    socket.on("accountLoggedOut", () => {
+      localStorage.removeItem("tclAccountToken");
+      setAccountToken("");
+      setAccount(null);
+      setAccountMessage(UI_TEXT.account.loggedOut);
+    });
+
     socket.on("devKickedHome", ({ reason } = {}) => {
       returnHome();
       setNotice(reason || "You've been kicked.");
@@ -235,6 +274,10 @@ export default function App() {
       socket.off("invalidMove");
       socket.off("chatError");
       socket.off("devCommandResult");
+      socket.off("accountAuthenticated");
+      socket.off("accountError");
+      socket.off("accountSessionExpired");
+      socket.off("accountLoggedOut");
       socket.off("devKickedHome");
       socket.off("devRoomClosed");
       socket.off("aiAvailability");
@@ -256,6 +299,10 @@ export default function App() {
   useEffect(() => {
     const id = window.setInterval(() => setClockTick(Date.now()), 250);
     return () => window.clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    if (accountToken) socket.emit("accountSession", { token: accountToken });
   }, []);
 
   useEffect(() => {
@@ -1106,8 +1153,26 @@ export default function App() {
     return sub.toUpperCase();
   }
 
+  function updateAccountForm(field, value) {
+    setAccountForm((current) => ({ ...current, [field]: value }));
+  }
+
+  function submitAccountLogin(event) {
+    event?.preventDefault?.();
+    socket.emit("accountLogin", { login: accountForm.login, password: accountForm.password });
+  }
+
+  function submitAccountCreate(event) {
+    event?.preventDefault?.();
+    socket.emit("accountCreate", { email: accountForm.email, username: accountForm.username, password: accountForm.password });
+  }
+
+  function logoutAccount() {
+    socket.emit("accountLogout", { token: accountToken });
+  }
+
   function saveName() {
-    const clean = name.trim() || "Player";
+    const clean = account?.username || name.trim() || "Player";
     localStorage.setItem("playerName", clean);
     localStorage.setItem("selectedVariant", selectedVariant);
     localStorage.setItem("selectedTimeControl", selectedTimeControl);
@@ -1372,6 +1437,15 @@ export default function App() {
           soundEnabled={soundEnabled}
           soundVolume={soundVolume}
           censorContent={censorContent}
+          account={account}
+          accountMode={accountMode}
+          accountForm={accountForm}
+          accountMessage={accountMessage}
+          onAccountMode={setAccountMode}
+          onAccountForm={updateAccountForm}
+          onAccountLogin={submitAccountLogin}
+          onAccountCreate={submitAccountCreate}
+          onAccountLogout={logoutAccount}
           onSoundToggle={() => { unlockAudio(); setSoundEnabled((value) => !value); }}
           onVolume={(value) => { unlockAudio(); setSoundVolume(value); }}
           onCensorToggle={() => setCensorContent((value) => !value)}
@@ -1422,18 +1496,18 @@ export default function App() {
             <>
               <div className="lab-user-row">
                 <div>
-                  <span className="eyebrow">Guest access</span>
-                  <h2>Play as guest</h2>
-                  <p>Accounts come next. For now, pick any display name and start testing.</p>
+                  <span className="eyebrow">{account ? UI_TEXT.account.accountBadge : UI_TEXT.lobby.guestAccessEyebrow}</span>
+                  <h2>{account ? account.username : UI_TEXT.lobby.playAsGuestTitle}</h2>
+                  <p>{account ? UI_TEXT.account.statsSaved : UI_TEXT.lobby.guestHelp}</p>
                 </div>
                 <label className="lab-name-input">
-                  <span>Display name</span>
-                  <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Name yourself anything" />
+                  <span>{UI_TEXT.lobby.displayNameLabel}</span>
+                  <input value={account?.username || name} disabled={Boolean(account)} onChange={(event) => setName(event.target.value)} placeholder={UI_TEXT.lobby.displayNamePlaceholder} />
                 </label>
-                <div className="account-placeholder" title="Accounts are planned for the next stage">
-                  <span>◎</span>
-                  <strong>Account slot</strong>
-                  <small>Coming soon</small>
+                <div className={`account-placeholder ${account ? "signed-in" : ""}`} title={account ? UI_TEXT.account.statsSaved : UI_TEXT.account.signedOutBody}>
+                  <span>{account ? "●" : "◎"}</span>
+                  <strong>{account ? UI_TEXT.account.accountReady : UI_TEXT.account.accountSlot}</strong>
+                  <small>{account ? account.email : UI_TEXT.account.guestBadge}</small>
                 </div>
               </div>
 
@@ -1572,6 +1646,15 @@ export default function App() {
         soundEnabled={soundEnabled}
         soundVolume={soundVolume}
         censorContent={censorContent}
+        account={account}
+        accountMode={accountMode}
+        accountForm={accountForm}
+        accountMessage={accountMessage}
+        onAccountMode={setAccountMode}
+        onAccountForm={updateAccountForm}
+        onAccountLogin={submitAccountLogin}
+        onAccountCreate={submitAccountCreate}
+        onAccountLogout={logoutAccount}
         onSoundToggle={() => { unlockAudio(); setSoundEnabled((value) => !value); }}
         onVolume={(value) => { unlockAudio(); setSoundVolume(value); }}
         onCensorToggle={() => setCensorContent((value) => !value)}
@@ -1832,31 +1915,84 @@ export default function App() {
 
 
 
-function SettingsButton({ open, onToggle, soundEnabled, soundVolume, censorContent, onSoundToggle, onVolume, onCensorToggle }) {
+function SettingsButton({
+  open,
+  onToggle,
+  soundEnabled,
+  soundVolume,
+  censorContent,
+  account,
+  accountMode,
+  accountForm,
+  accountMessage,
+  onAccountMode,
+  onAccountForm,
+  onAccountLogin,
+  onAccountCreate,
+  onAccountLogout,
+  onSoundToggle,
+  onVolume,
+  onCensorToggle
+}) {
+  const isRegister = accountMode === "register";
   return (
     <div className="settings-cluster">
       <button className="settings-cog" type="button" onClick={onToggle} aria-label="Open settings" title="Settings">⚙</button>
       {open && (
-        <section className="settings-menu" aria-label="Settings">
+        <section className="settings-menu" aria-label={UI_TEXT.settings.title}>
           <div className="settings-menu-head">
-            <strong>Settings</strong>
-            <button type="button" onClick={onToggle}>×</button>
+            <strong>{UI_TEXT.settings.title}</strong>
           </div>
           <label className="settings-toggle-row">
-            <span>Sound</span>
-            <button type="button" className={soundEnabled ? "enabled" : ""} onClick={onSoundToggle}>{soundEnabled ? "On" : "Off"}</button>
+            <span>{UI_TEXT.settings.sound}</span>
+            <button type="button" className={soundEnabled ? "enabled" : ""} onClick={onSoundToggle}>{soundEnabled ? UI_TEXT.settings.on : UI_TEXT.settings.off}</button>
           </label>
           {soundEnabled && (
             <label className="settings-slider-row">
-              <span>Volume</span>
+              <span>{UI_TEXT.settings.volume}</span>
               <input type="range" min="0" max="1" step="0.05" value={soundVolume} onChange={(event) => onVolume(Number(event.target.value))} />
             </label>
           )}
           <label className="settings-toggle-row">
-            <span>Local censor</span>
-            <button type="button" className={censorContent ? "enabled" : ""} onClick={onCensorToggle}>{censorContent ? "On" : "Off"}</button>
+            <span>{UI_TEXT.settings.localCensor}</span>
+            <button type="button" className={censorContent ? "enabled" : ""} onClick={onCensorToggle}>{censorContent ? UI_TEXT.settings.on : UI_TEXT.settings.off}</button>
           </label>
-          <p>Filters names and chat on your screen only. Other players keep their own setting.</p>
+          <p>{UI_TEXT.settings.censorHelp}</p>
+
+          <div className="settings-account-panel">
+            {account ? (
+              <>
+                <span className="eyebrow">{UI_TEXT.account.accountBadge}</span>
+                <strong>{UI_TEXT.account.signedInAs} {account.username}</strong>
+                <small>{account.email}</small>
+                <small>{UI_TEXT.account.statsSaved}: {account.stats?.totalGames || 0} games</small>
+                <button type="button" onClick={onAccountLogout}>{UI_TEXT.account.logOut}</button>
+              </>
+            ) : (
+              <>
+                <span className="eyebrow">{UI_TEXT.account.guestBadge}</span>
+                <strong>{UI_TEXT.account.signedOutTitle}</strong>
+                <small>{UI_TEXT.account.signedOutBody}</small>
+                <div className="account-mode-tabs">
+                  <button type="button" className={!isRegister ? "active" : ""} onClick={() => onAccountMode("login")}>{UI_TEXT.account.showLogin}</button>
+                  <button type="button" className={isRegister ? "active" : ""} onClick={() => onAccountMode("register")}>{UI_TEXT.account.showRegister}</button>
+                </div>
+                <form className="account-form" onSubmit={isRegister ? onAccountCreate : onAccountLogin}>
+                  {isRegister ? (
+                    <>
+                      <label><span>{UI_TEXT.account.emailLabel}</span><input value={accountForm.email} onChange={(event) => onAccountForm("email", event.target.value)} type="email" autoComplete="email" /></label>
+                      <label><span>{UI_TEXT.account.usernameLabel}</span><input value={accountForm.username} onChange={(event) => onAccountForm("username", event.target.value)} autoComplete="username" /></label>
+                    </>
+                  ) : (
+                    <label><span>{UI_TEXT.account.loginLabel}</span><input value={accountForm.login} onChange={(event) => onAccountForm("login", event.target.value)} autoComplete="username" /></label>
+                  )}
+                  <label><span>{UI_TEXT.account.passwordLabel}</span><input value={accountForm.password} onChange={(event) => onAccountForm("password", event.target.value)} type="password" autoComplete={isRegister ? "new-password" : "current-password"} /></label>
+                  <button type="submit">{isRegister ? UI_TEXT.account.createAccount : UI_TEXT.account.logIn}</button>
+                </form>
+              </>
+            )}
+            {accountMessage && <small className="account-message">{accountMessage}</small>}
+          </div>
         </section>
       )}
     </div>

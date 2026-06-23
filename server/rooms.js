@@ -10,15 +10,29 @@ export const ROOM_CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
 export const CLOSED_ROOM_REPLAY_GRACE_MS = 60 * 60 * 1000;
 
 
+function makeParticipant(socketId, playerName, fallbackName, account = null) {
+  const clean = account?.username || cleanName(playerName) || fallbackName;
+  return {
+    id: socketId,
+    name: clean,
+    guest: !account,
+    accountId: account?.id || null,
+    accountName: account?.username || null
+  };
+}
+
+function displayParticipantName(participant) {
+  if (!participant) return "open";
+  if (String(participant.id || "").startsWith("AI:")) return participant.name;
+  return `${participant.name}${participant.accountId ? "" : " (guest)"}`;
+}
+
 export function createRoom(hostSocket, hostName, options = {}) {
   let roomCode = nanoid();
   while (rooms.has(roomCode)) roomCode = nanoid();
 
   const game = createGame(roomCode, options);
-  game.players.white = {
-    id: hostSocket.id,
-    name: cleanName(hostName) || "White"
-  };
+  game.players.white = makeParticipant(hostSocket.id, hostName, "White", options.account);
 
   game.visibility = options.publicMatch ? "public" : "private";
   game.publicMatch = Boolean(options.publicMatch);
@@ -66,7 +80,7 @@ export function findPublicMatch(options = {}) {
 export function quickMatch(socket, playerName, options = {}) {
   const existing = findPublicMatch(options);
   if (existing) {
-    const result = joinRoom(socket, existing.roomCode, playerName);
+    const result = joinRoom(socket, existing.roomCode, playerName, { account: options.account });
     if (!result.ok) return result;
     existing.publicMatch = false;
     existing.matchmakingScope = options.scope === "any" ? "any" : "selected";
@@ -84,7 +98,8 @@ export function quickMatch(socket, playerName, options = {}) {
     variant: options.variant,
     timeControl: options.timeControl,
     gameMode: "online",
-    publicMatch: true
+    publicMatch: true,
+    account: options.account
   });
   game.matchmakingScope = options.scope === "any" ? "any" : "selected";
   return {
@@ -134,10 +149,7 @@ export function createDevMatch(socket, playerName, options = {}) {
       id: `AI:${roomCode}:black`,
       name: `AI ${capitalise(game.ai.difficulty)} Black`
     };
-    game.spectators.push({
-      id: socket.id,
-      name: cleanName(playerName) || "Developer"
-    });
+    game.spectators.push(makeParticipant(socket.id, playerName, "Developer", options.account));
     game.status = "playing";
     game.message = "white to move.";
     game.lastTurnStartedAt = Date.now();
@@ -147,10 +159,7 @@ export function createDevMatch(socket, playerName, options = {}) {
     return { ok: true, game, roomCode, color: "spectator", role: "spectator" };
   }
 
-  game.players.white = {
-    id: socket.id,
-    name: cleanName(playerName) || "White"
-  };
+  game.players.white = makeParticipant(socket.id, playerName, "White", options.account);
 
   if (botCount === 1) {
     game.ai.enabled = true;
@@ -171,7 +180,7 @@ export function createDevMatch(socket, playerName, options = {}) {
   return { ok: true, game, roomCode, color: "white", role: "player" };
 }
 
-export function spectateRoom(socket, roomCodeRaw, playerName) {
+export function spectateRoom(socket, roomCodeRaw, playerName, options = {}) {
   const roomCode = String(roomCodeRaw ?? "").trim().toUpperCase();
   const game = rooms.get(roomCode);
   if (!game) return { ok: false, reason: "Room not found." };
@@ -183,10 +192,7 @@ export function spectateRoom(socket, roomCodeRaw, playerName) {
 
   const existingSpectator = game.spectators.find((spectator) => spectator.id === socket.id);
   if (!existingSpectator) {
-    game.spectators.push({
-      id: socket.id,
-      name: cleanName(playerName) || `Spectator ${game.spectators.length + 1}`
-    });
+    game.spectators.push(makeParticipant(socket.id, playerName, `Spectator ${game.spectators.length + 1}`, options.account));
   }
 
   return { ok: true, game, roomCode, color: "spectator", role: "spectator" };
@@ -203,8 +209,8 @@ export function getOpenMatches() {
       gameMode: game.gameMode,
       status: game.status,
       turn: game.turn,
-      white: game.players.white?.name || null,
-      black: game.players.black?.name || null,
+      white: displayParticipantName(game.players.white) || null,
+      black: displayParticipantName(game.players.black) || null,
       spectators: game.spectators?.length || 0,
       moveCount: game.moveHistory?.length || 0,
       hasAI: Boolean(game.ai?.enabled),
@@ -225,8 +231,8 @@ export function getRoomSnapshot(roomCodeRaw) {
     gameMode: game.gameMode,
     status: game.status,
     turn: game.turn,
-    white: game.players.white?.name || null,
-    black: game.players.black?.name || null,
+    white: displayParticipantName(game.players.white) || null,
+    black: displayParticipantName(game.players.black) || null,
     spectators: game.spectators?.length || 0,
     moveCount: game.moveHistory?.length || 0,
     hasAI: Boolean(game.ai?.enabled),
@@ -277,7 +283,7 @@ export function leaveCurrentRooms(socket, socketId) {
   return affected;
 }
 
-export function joinRoom(socket, roomCodeRaw, playerName) {
+export function joinRoom(socket, roomCodeRaw, playerName, options = {}) {
   const roomCode = String(roomCodeRaw ?? "").trim().toUpperCase();
   const game = rooms.get(roomCode);
   if (!game) return { ok: false, reason: "Room not found." };
@@ -285,10 +291,7 @@ export function joinRoom(socket, roomCodeRaw, playerName) {
   socket.join(roomCode);
 
   if (!game.players.black) {
-    game.players.black = {
-      id: socket.id,
-      name: cleanName(playerName) || "Black"
-    };
+    game.players.black = makeParticipant(socket.id, playerName, "Black", options.account);
     game.status = "playing";
     game.publicMatch = false;
     game.message = "white to move.";
@@ -299,10 +302,7 @@ export function joinRoom(socket, roomCodeRaw, playerName) {
 
   const existingSpectator = game.spectators.find((spectator) => spectator.id === socket.id);
   if (!existingSpectator) {
-    game.spectators.push({
-      id: socket.id,
-      name: cleanName(playerName) || `Spectator ${game.spectators.length + 1}`
-    });
+    game.spectators.push(makeParticipant(socket.id, playerName, `Spectator ${game.spectators.length + 1}`, options.account));
   }
 
   return { ok: true, game, color: "spectator", role: "spectator" };
@@ -593,12 +593,12 @@ export function findPlayersByName(nameRaw) {
     for (const color of ["white", "black"]) {
       const player = game.players[color];
       if (player?.name?.toLowerCase().includes(needle)) {
-        matches.push({ roomCode: game.roomCode, name: player.name, role: "player", color, status: game.status, variantName: game.variantName });
+        matches.push({ roomCode: game.roomCode, name: displayParticipantName(player), role: player.accountId ? "player" : "player (guest)", color, status: game.status, variantName: game.variantName, accountId: player.accountId || null });
       }
     }
     for (const spectator of game.spectators || []) {
       if (spectator?.name?.toLowerCase().includes(needle)) {
-        matches.push({ roomCode: game.roomCode, name: spectator.name, role: "spectator", color: "spectator", status: game.status, variantName: game.variantName });
+        matches.push({ roomCode: game.roomCode, name: displayParticipantName(spectator), role: spectator.accountId ? "spectator" : "spectator (guest)", color: "spectator", status: game.status, variantName: game.variantName, accountId: spectator.accountId || null });
       }
     }
   }
@@ -1599,7 +1599,7 @@ export function runDevUtilityCommand(roomCodeRaw, action, args = [], requesterSo
 export function getDetailedRoomLines() {
   const matches = Array.from(rooms.values());
   if (!matches.length) return ["No rooms."];
-  return matches.map((g) => `${g.roomCode} | ${g.visibility || (g.publicMatch ? "public" : "private")} | ${g.displayName || g.variantName} | ${g.status} | ${g.players.white?.name || "open"} vs ${g.players.black?.name || "open"} | spectators ${(g.spectators||[]).length} | bots ${(g.ai?.colors||[]).join(",") || "none"} | timers ${formatClock(g.clocks?.white)}-${formatClock(g.clocks?.black)}`);
+  return matches.map((g) => `${g.roomCode} | ${g.visibility || (g.publicMatch ? "public" : "private")} | ${g.displayName || g.variantName} | ${g.status} | ${displayParticipantName(g.players.white)} vs ${displayParticipantName(g.players.black)} | spectators ${(g.spectators||[]).map(displayParticipantName).join(",") || 0} | bots ${(g.ai?.colors||[]).join(",") || "none"} | timers ${formatClock(g.clocks?.white)}-${formatClock(g.clocks?.black)}`);
 }
 
 function consumeDevLocationArgs(args, startIndex = 0) {

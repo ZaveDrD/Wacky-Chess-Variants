@@ -8,6 +8,7 @@ export const DEV_COMMANDS = [
   { name: "clear", action: "clear", aliases: ["cls"], usage: "clear", summary: "Clears the developer console output." },
   { name: "room", action: "room", usage: "room [list|join|start|spectate|kick|lock|unlock|rename|exit|info] ...", summary: "Room and matchmaking commands." },
   { name: "player", action: "player", usage: "player [bot|takeover|find|count|override|colour|rename] ...", summary: "Player slot and identity commands." },
+  { name: "account", action: "account", aliases: ["accounts"], usage: "account [info|list|store] ...", summary: "Inspect registered player accounts." },
   { name: "match", action: "match", usage: "match [end|turn|reset|validate|forfeit]", summary: "Match state commands." },
   { name: "chat", action: "chat", usage: "chat [shout|announce|system|sudo|whisper|quote] ...", summary: "Chat, announcements, and fake-message commands." },
   { name: "board", action: "board", usage: "board [clear|copy|load|mirror|shuffle] ...", summary: "Whole-board editing commands." },
@@ -61,6 +62,15 @@ const GROUPS = {
       ["override", "player override [self|name] [on|off]", "Allow moving all pieces."],
       ["colour", "player colour [name] [white|black|spectator]", "Move participant to slot."],
       ["rename", "player rename [white|black|name] [new name]", "Temporarily rename a player."]
+    ]
+  },
+  account: {
+    page: 1,
+    summary: "Registered account inspection.",
+    subcommands: [
+      ["info", "account info [username|email|id]", "Show account email, stats, and recent games."],
+      ["list", "account list [limit]", "List recently created accounts."],
+      ["store", "account store", "Show the account JSON store path."]
     ]
   },
   match: {
@@ -393,7 +403,7 @@ export function getDevCommandListLines(page = null) {
       "Use: help [category] for category commands, e.g. help chat",
       "Use: help [command] for aliases, e.g. help sudo",
       "Pages:",
-      "1 room / player / match / chat",
+      "1 room / player / account / match / chat",
       "2 board / piece / view / mark / ai / clock",
       "3 network / fx / cosmetic",
       "4 chaos / predict",

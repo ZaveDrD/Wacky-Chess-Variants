@@ -15,7 +15,46 @@ export const UI_TEXT = {
     cancelSearchButton: "Cancel Search",
     hostPrivateButton: "Host Private",
     joinButton: "Join",
-    roomPlaceholder: "Lab Code"
+    roomPlaceholder: "Lab Code",
+    guestAccessEyebrow: "Guest access",
+    playAsGuestTitle: "Play as guest",
+    guestHelp: "Pick any display name and start testing, or sign into an account to save stats.",
+    displayNameLabel: "Display name",
+    displayNamePlaceholder: "Name yourself anything"
+  },
+  settings: {
+    title: "Settings",
+    sound: "Sound",
+    volume: "Volume",
+    localCensor: "Local censor",
+    on: "On",
+    off: "Off",
+    censorHelp: "Filters names and chat on your screen only. Other players keep their own setting."
+  },
+  account: {
+    signedOutTitle: "Player Account",
+    signedOutBody: "Create an account to reserve your name and start saving game stats.",
+    signedInAs: "Signed in as",
+    emailLabel: "Email",
+    usernameLabel: "Username",
+    passwordLabel: "Password",
+    loginLabel: "Username or Email",
+    createAccount: "Create Account",
+    logIn: "Log In",
+    logOut: "Log Out",
+    showLogin: "Log In",
+    showRegister: "Create Account",
+    playAsGuest: "Continue as guest",
+    accountSlot: "Account slot",
+    accountReady: "Account ready",
+    guestBadge: "Guest",
+    accountBadge: "Account",
+    statsSaved: "Stats saved to account",
+    sessionExpired: "Account session expired. You are playing as guest.",
+    created: "Account created.",
+    loggedIn: "Logged in.",
+    loggedOut: "Logged out.",
+    authFailed: "Account action failed."
   },
   variants: {
     threeD: {
