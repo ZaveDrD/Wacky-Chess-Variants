@@ -11,6 +11,7 @@ import { cloneGame } from "./rules/utils.js";
 import { createHash, pbkdf2Sync, timingSafeEqual } from "crypto";
 import os from "os";
 import { createAccount, loginAccount, logoutAccount, getPublicAccountByToken, getAccountByToken, participantAccount, getAccountInfoLines, getAccountListLines, recordCompletedGameForAccounts, accountStorePath, isRegisteredUsername, updateAccount, deleteAccount, devCreateAccount, forceProfileIcon, findAccount } from "./accountStore.js";
+import { createReport, listReports, getReportCase, reportCaseLines, resolveReport, listAppeals, appealLines, resolveAppeal, submitAppeal, getActivePunishments, punishmentSummaryForClient, hasActivePunishment, listPunishments, addPunishmentForTarget, removePunishment, getSocialState, sendFriendRequest, respondFriendRequest, sendFriendMessage, createChallenge, respondChallenge, getLeaderboard, leaderboardLines, recordLeaderboardGame, publicProfile, socialStorePath } from "./socialStore.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -503,7 +504,9 @@ function emitGameStateToSocket(socket, game) {
 
 function emitGameStateToRoom(io, game) {
   if (!game) return;
+  captureReportSnapshot(game);
   recordCompletedGameForAccounts(game);
+  recordLeaderboardGame(game);
   const targets = new Set([game.players?.white?.id, game.players?.black?.id, ...(game.spectators || []).map((spectator) => spectator.id)].filter(Boolean));
   for (const socketId of targets) {
     const targetSocket = io.sockets.sockets.get(socketId);
@@ -528,6 +531,11 @@ io.on("connection", (socket) => {
 
   socket.on("requestProfileIcons", () => emitProfileIcons(socket));
 
+  socket.on("identifyDevice", ({ deviceId } = {}) => {
+    socket.data.deviceId = normaliseDeviceId(deviceId);
+    sendPunishmentNotice(socket);
+  });
+
   socket.on("accountCreate", ({ email, username, password } = {}) => {
     const result = createAccount({ email, username, password });
     if (!result.ok) {
@@ -537,6 +545,7 @@ io.on("connection", (socket) => {
     socket.data.account = getAccountByToken(result.token);
     updateConnectedClient(socket.id, result.account.username, connectedClients.get(socket.id)?.lastRoomCode || null);
     socket.emit("accountAuthenticated", { account: result.account, token: result.token });
+    sendPunishmentNotice(socket);
   });
 
   socket.on("accountLogin", ({ login, password } = {}) => {
@@ -548,6 +557,7 @@ io.on("connection", (socket) => {
     socket.data.account = getAccountByToken(result.token);
     updateConnectedClient(socket.id, result.account.username, connectedClients.get(socket.id)?.lastRoomCode || null);
     socket.emit("accountAuthenticated", { account: result.account, token: result.token });
+    sendPunishmentNotice(socket);
   });
 
   socket.on("accountSession", ({ token } = {}) => {
@@ -559,6 +569,7 @@ io.on("connection", (socket) => {
     socket.data.account = getAccountByToken(token);
     updateConnectedClient(socket.id, account.username, connectedClients.get(socket.id)?.lastRoomCode || null);
     socket.emit("accountAuthenticated", { account, token });
+    sendPunishmentNotice(socket);
   });
 
   socket.on("accountUpdate", ({ token, updates } = {}) => {
@@ -572,6 +583,7 @@ io.on("connection", (socket) => {
     const affected = refreshAccountParticipantInRooms(socket.id, result.account);
     socket.emit("accountUpdated", { account: result.account });
     socket.emit("accountAuthenticated", { account: result.account, token });
+    sendPunishmentNotice(socket);
     for (const game of affected) emitGameStateToRoom(io, game);
   });
 
@@ -584,6 +596,8 @@ io.on("connection", (socket) => {
 
   socket.on("createRoom", ({ name, variant, timeControl, gameMode, aiDifficulty } = {}) => {
     updateConnectedClient(socket.id, name, null);
+    const ban = getBlockingPunishment(socket, "ban");
+    if (ban) { socket.emit("joinError", punishmentBlockedMessage(ban)); sendPunishmentNotice(socket); return; }
     if (guestNameBlocked(socket, name)) {
       socket.emit("joinError", "That name belongs to an account. Sign in or choose another guest name.");
       return;
@@ -601,6 +615,8 @@ io.on("connection", (socket) => {
 
   socket.on("joinRoom", ({ roomCode, name } = {}) => {
     updateConnectedClient(socket.id, name, roomCode);
+    const ban = getBlockingPunishment(socket, "ban");
+    if (ban) { socket.emit("joinError", punishmentBlockedMessage(ban)); sendPunishmentNotice(socket); return; }
     if (guestNameBlocked(socket, name)) {
       socket.emit("joinError", "That name belongs to an account. Sign in or choose another guest name.");
       return;
@@ -620,6 +636,8 @@ io.on("connection", (socket) => {
 
   socket.on("quickMatch", ({ name, variant, timeControl, scope } = {}) => {
     updateConnectedClient(socket.id, name, null);
+    const ban = getBlockingPunishment(socket, "ban");
+    if (ban) { socket.emit("matchmakingError", punishmentBlockedMessage(ban)); sendPunishmentNotice(socket); return; }
     if (guestNameBlocked(socket, name)) {
       socket.emit("matchmakingError", "That name belongs to an account. Sign in or choose another guest name.");
       return;
@@ -652,7 +670,8 @@ io.on("connection", (socket) => {
       searching: false,
       matched: result.matched,
       roomCode: result.roomCode || result.game.roomCode,
-      scope: result.scope
+      scope: result.scope,
+      match: result.matched ? makeMatchFoundPayload(result.game, socket.id) : null
     });
 
     if (result.matchedSocketId) {
@@ -665,7 +684,7 @@ io.on("connection", (socket) => {
           role: "player",
           game: sanitiseGameForViewer(result.game, result.matchedSocketId)
         });
-        hostSocket.emit("matchmakingStatus", { searching: false, matched: true, roomCode: result.game.roomCode, scope: result.scope });
+        hostSocket.emit("matchmakingStatus", { searching: false, matched: true, roomCode: result.game.roomCode, scope: result.scope, match: makeMatchFoundPayload(result.game, result.matchedSocketId) });
       }
     }
 
@@ -708,9 +727,11 @@ io.on("connection", (socket) => {
       devOverride: hasDeveloperMoveOverride(socket.id, game.roomCode)
     });
     if (!result.ok) {
+      recordIllegalMoveAttempt(game, socket, result.reason);
       socket.emit("invalidMove", result.reason);
       return;
     }
+    markFirstMoveAndMaybeStartTimer(game);
 
     emitGameStateToRoom(io, game);
     scheduleAIMoveIfNeeded(game);
@@ -728,9 +749,11 @@ io.on("connection", (socket) => {
       devOverride: hasDeveloperMoveOverride(socket.id, game.roomCode)
     });
     if (!result.ok) {
+      recordIllegalMoveAttempt(game, socket, result.reason);
       socket.emit("invalidMove", result.reason);
       return;
     }
+    markFirstMoveAndMaybeStartTimer(game);
 
     emitGameStateToRoom(io, game);
     scheduleAIMoveIfNeeded(game);
@@ -750,9 +773,11 @@ io.on("connection", (socket) => {
       devOverride: hasDeveloperMoveOverride(socket.id, game.roomCode)
     });
     if (!result.ok) {
+      recordIllegalMoveAttempt(game, socket, result.reason);
       socket.emit("invalidMove", result.reason);
       return;
     }
+    markFirstMoveAndMaybeStartTimer(game);
 
     emitGameStateToRoom(io, game);
     scheduleAIMoveIfNeeded(game);
@@ -770,9 +795,11 @@ io.on("connection", (socket) => {
       devOverride: hasDeveloperMoveOverride(socket.id, game.roomCode)
     });
     if (!result.ok) {
+      recordIllegalMoveAttempt(game, socket, result.reason);
       socket.emit("invalidMove", result.reason);
       return;
     }
+    markFirstMoveAndMaybeStartTimer(game);
 
     emitGameStateToRoom(io, game);
     scheduleAIMoveIfNeeded(game);
@@ -790,9 +817,11 @@ io.on("connection", (socket) => {
       devOverride: hasDeveloperMoveOverride(socket.id, game.roomCode)
     });
     if (!result.ok) {
+      recordIllegalMoveAttempt(game, socket, result.reason);
       socket.emit("invalidMove", result.reason);
       return;
     }
+    markFirstMoveAndMaybeStartTimer(game);
 
     emitGameStateToRoom(io, game);
     scheduleAIMoveIfNeeded(game);
@@ -808,13 +837,125 @@ io.on("connection", (socket) => {
     emitGameStateToRoom(io, result.game);
   });
 
+  socket.on("requestRematch", ({ roomCode } = {}) => {
+    const code = String(roomCode || "").trim().toUpperCase();
+    const game = rooms.get(code);
+    if (!game) { socket.emit("invalidMove", "Room not found."); return; }
+    const color = game.players?.white?.id === socket.id ? "white" : game.players?.black?.id === socket.id ? "black" : null;
+    if (!color) { socket.emit("invalidMove", "Only players can request a rematch."); return; }
+    if (!(game.status === "finished" || game.status === "abandoned")) { socket.emit("invalidMove", "Rematch is available after the game ends."); return; }
+    if (!game.rematchRequests) game.rematchRequests = {};
+    game.rematchRequests[color] = true;
+    game.message = `${capitalise(color)} requested a rematch.`;
+    if (game.rematchRequests.white && game.rematchRequests.black) {
+      const utility = runDevUtilityCommand(code, "resetMatch", [], socket.id, "Rematch");
+      if (!utility?.ok) { socket.emit("invalidMove", utility?.reason || "Could not start rematch."); return; }
+      game.rematchRequests = {};
+      game.message = "Rematch started.";
+    }
+    emitGameStateToRoom(io, game);
+    scheduleAIMoveIfNeeded(game);
+  });
+
   socket.on("sendChatMessage", ({ roomCode, body } = {}) => {
+    const game = rooms.get(String(roomCode ?? "").trim().toUpperCase());
+    const text = String(body || "").trim();
+    if (text.toLowerCase().startsWith("!report")) {
+      const report = createReport({ game, reporterSocket: socket, reason: text.replace(/^!report\s*/i, "") });
+      if (!report.ok) socket.emit("chatError", report.reason);
+      else socket.emit("chatError", `Report ${report.report.id} recorded as ${report.report.evidence.strength} evidence.`);
+      return;
+    }
+    if (text.toLowerCase().startsWith("!friend")) {
+      const opponent = game ? opponentAccountForSocket(game, socket.id) : null;
+      const target = text.replace(/^!friend\s*/i, "").trim() || opponent?.accountName || opponent?.name || "";
+      handleFriendRequestCommand(socket, target);
+      return;
+    }
+    if (text.toLowerCase().startsWith("!accept")) {
+      const from = text.replace(/^!accept\s*/i, "").trim();
+      handleFriendAcceptCommand(socket, from);
+      return;
+    }
+    const mute = getBlockingPunishment(socket, "mute");
+    if (mute) { socket.emit("chatError", punishmentBlockedMessage(mute)); sendPunishmentNotice(socket); return; }
     const result = appendChatMessage(socket.id, roomCode, body);
     if (!result.ok) {
       socket.emit("chatError", result.reason);
       return;
     }
     emitGameStateToRoom(io, result.game);
+  });
+
+  socket.on("requestSocialState", ({ token } = {}) => {
+    const account = getAccountByToken(token) || socket.data.account;
+    if (!account) return;
+    emitSocialStateToSocket(socket);
+  });
+
+  socket.on("friendRequest", ({ token, target } = {}) => {
+    const account = getAccountByToken(token) || socket.data.account;
+    if (!account) { socket.emit("socialError", "Log in first."); return; }
+    const result = sendFriendRequest(account.id, target);
+    if (!result.ok) socket.emit("socialError", result.reason);
+    else {
+      socket.emit("socialNotice", `Friend request sent to ${result.targetAccount.username}.`);
+      emitSocialStateForAccounts([account.id, result.targetAccount.id]);
+    }
+  });
+
+  socket.on("friendRespond", ({ token, requestId, accept } = {}) => {
+    const account = getAccountByToken(token) || socket.data.account;
+    if (!account) { socket.emit("socialError", "Log in first."); return; }
+    const result = respondFriendRequest(account.id, requestId, Boolean(accept));
+    if (!result.ok) socket.emit("socialError", result.reason);
+    else emitSocialStateForAccounts([result.request.fromAccountId, result.request.toAccountId]);
+  });
+
+  socket.on("friendMessage", ({ token, toAccountId, body } = {}) => {
+    const account = getAccountByToken(token) || socket.data.account;
+    if (!account) { socket.emit("socialError", "Log in first."); return; }
+    const result = sendFriendMessage(account.id, toAccountId, body);
+    if (!result.ok) socket.emit("socialError", result.reason);
+    else emitSocialStateForAccounts([account.id, toAccountId]);
+  });
+
+  socket.on("friendChallenge", ({ token, target, variant, timeControl } = {}) => {
+    const account = getAccountByToken(token) || socket.data.account;
+    if (!account) { socket.emit("socialError", "Log in first."); return; }
+    const result = createChallenge(account.id, target, { variant, timeControl });
+    if (!result.ok) socket.emit("socialError", result.reason);
+    else {
+      emitSocialStateForAccounts([account.id, result.targetAccount.id]);
+      notifyChallenge(result.challenge);
+    }
+  });
+
+  socket.on("friendChallengeRespond", ({ token, challengeId, accept, name } = {}) => {
+    const account = getAccountByToken(token) || socket.data.account;
+    if (!account) { socket.emit("socialError", "Log in first."); return; }
+    const result = respondChallenge(account.id, challengeId, Boolean(accept));
+    if (!result.ok) { socket.emit("socialError", result.reason); return; }
+    emitSocialStateForAccounts([result.challenge.fromAccountId, result.challenge.toAccountId]);
+    if (accept) startAcceptedChallenge(socket, result.challenge, name || account.username);
+  });
+
+  socket.on("requestLeaderboard", ({ variant = "normal", scope = "month" } = {}) => {
+    const payload = getLeaderboard(variant, scope, 100);
+    socket.emit("leaderboardData", payload);
+  });
+
+  socket.on("requestPublicProfile", ({ query } = {}) => {
+    const result = publicProfile(query, socket.data.account?.id || null);
+    if (!result.ok) socket.emit("profileError", result.reason);
+    else socket.emit("publicProfile", result.profile);
+  });
+
+  socket.on("punishmentAppeal", ({ punishmentId, text } = {}) => {
+    const identity = socketIdentity(socket);
+    const result = submitAppeal({ punishmentId, identity, text });
+    if (!result.ok) socket.emit("appealError", result.reason);
+    else socket.emit("appealSubmitted", { appeal: result.appeal });
   });
 
   socket.on("devNetworkMetrics", (payload = {}) => {
@@ -1394,9 +1535,88 @@ function handleDevCommand(socket, payload = {}) {
       const aiStarted = performance.now();
       const result = runAIMove(game);
       recordAIMetrics(game, game.ai?.difficulty, performance.now() - aiStarted);
+      if (result.ok) markFirstMoveAndMaybeStartTimer(game);
       if (!result.ok) game.turn = previousTurn;
       return { response: { ok: result.ok, lines: [result.ok ? `Forced ${color} AI move.` : result.reason] }, gameStateRoom: currentRoomCode, scheduleRoomCode: currentRoomCode };
     }
+  }
+
+  if (action === "reportCommand") {
+    const sub = String(args[0] || "list").toLowerCase();
+    if (["list", "open"].includes(sub)) return { response: { ok: true, lines: listReports(args[1] || "date") } };
+    if (["view", "case", "opencase"].includes(sub)) {
+      const result = reportCaseLines(args[1]);
+      const reportCase = getReportCase(args[1]);
+      return { response: { ok: result.ok, lines: result.lines, reportCase } };
+    }
+    if (["approve", "deny", "resolve"].includes(sub)) {
+      const id = args[1];
+      const decision = sub === "approve" ? "approve" : sub === "deny" ? "deny" : args[2];
+      const offset = sub === "resolve" ? 3 : 2;
+      const punishmentType = args[offset] || "mute";
+      const duration = args[offset + 1] || "24h";
+      const reason = args.slice(offset + 2).join(" ") || "Report resolved";
+      const result = resolveReport({ id, decision, punishmentType, duration, reason, createdBy: name });
+      if (!result.ok) return { response: { ok: false, lines: [result.reason] } };
+      notifyPunishedClients(result.punishment);
+      return { response: { ok: true, lines: [result.punishment ? `Approved ${id}; ${result.punishment.type} ${result.punishment.id}.` : `Denied ${id}.`] } };
+    }
+    if (sub === "appeals") return { response: { ok: true, lines: listAppeals() } };
+    if (sub === "appeal") {
+      const mode = String(args[1] || "list").toLowerCase();
+      if (mode === "list") return { response: { ok: true, lines: listAppeals() } };
+      if (mode === "view") { const result = appealLines(args[2]); return { response: { ok: result.ok, lines: result.lines } }; }
+      if (["approve", "deny"].includes(mode)) { const result = resolveAppeal(args[2], mode); return { response: { ok: result.ok, lines: [result.ok ? `${mode}d appeal ${args[2]}.` : result.reason] } }; }
+    }
+    return { response: { ok: false, lines: ["Usage: report list [date|strength|name] | report view [id] | report approve [id] [mute|ban] [duration|-1] [reason] | report deny [id] | report appeal list|view|approve|deny ..."] } };
+  }
+
+  if (action === "punishCommand") {
+    const sub = String(args[0] || "list").toLowerCase();
+    if (["list", "active"].includes(sub)) return { response: { ok: true, lines: listPunishments(true) } };
+    if (sub === "all") return { response: { ok: true, lines: listPunishments(false) } };
+    if (["mute", "ban"].includes(sub)) {
+      const targetQuery = args[1];
+      const duration = args[2] || "24h";
+      const reason = args.slice(3).join(" ") || `${sub} by developer`;
+      const target = devPunishmentTarget(targetQuery, currentRoomCode);
+      if (!target) return { response: { ok: false, lines: ["Target not found. Use account username, white/black/current room player, or device id."] } };
+      const result = addPunishmentForTarget(target, sub, duration, reason);
+      notifyPunishedClients(result.punishment);
+      return { response: { ok: true, lines: [`${sub} created: ${result.punishment.id} for ${target.accountName || target.name || target.deviceId}.`] } };
+    }
+    if (["remove", "unpunish", "clear"].includes(sub)) {
+      const result = removePunishment(args[1]);
+      return { response: { ok: result.ok, lines: [result.ok ? `Removed ${args[1]}.` : result.reason] } };
+    }
+    return { response: { ok: false, lines: ["Usage: punish list|all|mute|ban|remove ..."] } };
+  }
+
+  if (action === "friendCommand") {
+    const sub = String(args[0] || "list").toLowerCase();
+    const account = socket.data?.account;
+    if (!account) return { response: { ok: false, lines: ["Developer socket is not logged into an account for friend test commands."] } };
+    if (sub === "list") return { response: { ok: true, lines: JSON.stringify(getSocialState(account.id), null, 2).split("\n") } };
+    if (sub === "send") { const result = sendFriendRequest(account.id, args.slice(1).join(" ")); return { response: { ok: result.ok, lines: [result.ok ? `Friend request sent to ${result.targetAccount.username}.` : result.reason] } }; }
+    if (sub === "accept") { const result = respondFriendRequest(account.id, args[1], true); return { response: { ok: result.ok, lines: [result.ok ? "Friend request accepted." : result.reason] } }; }
+    return { response: { ok: false, lines: ["Usage: friend list|send [name]|accept [id/name]"] } };
+  }
+
+  if (action === "leaderboardCommand") {
+    const sub = String(args[0] || "show").toLowerCase();
+    const variant = args[1] || selectedVariant || "normal";
+    const scope = args[2] || "month";
+    if (["show", "list", "top"].includes(sub)) return { response: { ok: true, lines: leaderboardLines(variant, scope, 100) } };
+    return { response: { ok: false, lines: ["Usage: leaderboard show [variant] [month|allTime]"] } };
+  }
+
+  if (action === "profileCommand") {
+    const query = args.join(" ") || name;
+    const result = publicProfile(query, socket.data?.account?.id || null);
+    if (!result.ok) return { response: { ok: false, lines: [result.reason] } };
+    const p = result.profile;
+    const byMode = Object.entries(p.stats?.byVariant || {}).map(([variant, stat]) => `${variant}: ${stat.games}G ${stat.wins}W ${stat.losses}L ${stat.draws}D`).join(" | ") || "none";
+    return { response: { ok: true, lines: [`${p.username} | created ${new Date(p.createdAt).toISOString()}`, `Games ${p.stats.totalGames} | W ${p.stats.wins} L ${p.stats.losses} D ${p.stats.draws}`, `By mode: ${byMode}`, `Ranks: ${JSON.stringify(p.ranks || {})}`] } };
   }
 
   const utility = runDevUtilityCommand(currentRoomCode, action, args, socket.id, name);
@@ -1511,6 +1731,11 @@ function routeStructuredDevCommand(action, args = []) {
   if (action === "account" || action === "accounts") {
     return { action: "accountCommand", args };
   }
+  if (action === "report" || action === "reports") return { action: "reportCommand", args };
+  if (action === "punish" || action === "punishment" || action === "punishments") return { action: "punishCommand", args };
+  if (action === "friend" || action === "friends") return { action: "friendCommand", args };
+  if (action === "leaderboard" || action === "leaderboards" || action === "lb") return { action: "leaderboardCommand", args };
+  if (action === "profile") return { action: "profileCommand", args };
 
   if (action === "network") {
     return { action: "networkCommand", args };
@@ -1730,6 +1955,7 @@ function scheduleAIMoveIfNeeded(game) {
     const aiStarted = performance.now();
     const result = runAIMove(currentGame);
     recordAIMetrics(currentGame, currentGame.ai?.difficulty, performance.now() - aiStarted);
+    if (result.ok) markFirstMoveAndMaybeStartTimer(currentGame);
     if (!result.ok) {
       currentGame.message = result.reason || "AI could not move.";
     }

@@ -5,7 +5,7 @@ import { fileURLToPath } from "url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const ACCOUNT_STORE_VERSION = 2;
+const ACCOUNT_STORE_VERSION = 3;
 const PASSWORD_ITERATIONS = 210000;
 const SESSION_DAYS = 30;
 const DEFAULT_STORE_PATH = path.join(__dirname, "data", "accounts.json");
@@ -42,6 +42,10 @@ function migrateState(raw) {
     account.profile = account.profile || {};
     account.profile.icon = normaliseProfileIcon(account.profile.icon || account.profileIcon || DEFAULT_PROFILE_ICON);
     account.profile.displayBio = String(account.profile.displayBio || "");
+    account.moderation = account.moderation || {};
+    account.moderation.credibility = Number.isFinite(Number(account.moderation.credibility)) ? Number(account.moderation.credibility) : 50;
+    account.moderation.punishmentHistory = Array.isArray(account.moderation.punishmentHistory) ? account.moderation.punishmentHistory : [];
+    account.eloHistory = Array.isArray(account.eloHistory) ? account.eloHistory : [];
     account.updatedAt = account.updatedAt || account.createdAt || Date.now();
   }
   return next;
@@ -130,7 +134,9 @@ export function createAccount({ email, username, password }) {
     stats: makeEmptyStats(),
     gameHistory: [],
     flags: { disabled: false },
-    profile: { icon: DEFAULT_PROFILE_ICON, displayBio: "" }
+    profile: { icon: DEFAULT_PROFILE_ICON, displayBio: "" },
+    moderation: { credibility: 50, punishmentHistory: [] },
+    eloHistory: []
   };
   state.accounts.push(account);
   const session = createSessionForAccount(account);
@@ -204,7 +210,8 @@ export function publicAccount(account) {
     lastLoginAt: account.lastLoginAt,
     profile: account.profile || { icon: DEFAULT_PROFILE_ICON, displayBio: "" },
     stats: account.stats || makeEmptyStats(),
-    gameHistory: Array.isArray(account.gameHistory) ? account.gameHistory.slice(-25) : []
+    gameHistory: Array.isArray(account.gameHistory) ? account.gameHistory.slice(-25) : [],
+    eloHistory: Array.isArray(account.eloHistory) ? account.eloHistory.slice(-100) : []
   };
 }
 
@@ -221,6 +228,12 @@ export function findAccount(queryRaw) {
   const query = String(queryRaw || "").trim().toLowerCase();
   if (!query) return null;
   return state.accounts.find((account) => account.id.toLowerCase() === query || account.usernameLower === query || account.emailLower === query || account.usernameLower.includes(query) || account.emailLower.includes(query)) || null;
+}
+
+export function findAccountById(accountId) {
+  const id = String(accountId || "").trim();
+  if (!id) return null;
+  return state.accounts.find((account) => account.id === id) || null;
 }
 
 
@@ -310,6 +323,8 @@ export function getAccountInfoLines(queryRaw) {
       `Last login: ${account.lastLoginAt ? new Date(account.lastLoginAt).toISOString() : "never"}`,
       `Games: ${stats.totalGames || 0} | Wins: ${stats.wins || 0} | Losses: ${stats.losses || 0} | Draws: ${stats.draws || 0}`,
       `By mode: ${byVariant}`,
+      `Credibility: ${account.moderation?.credibility ?? 50}`,
+      `Punishment history: ${(account.moderation?.punishmentHistory || []).slice(-5).map((p) => `${p.type}:${p.reason}`).join(", ") || "none"}`,
       `Recent games: ${(account.gameHistory || []).slice(-5).map((game) => `${game.roomCode}:${game.variant}:${game.result}`).join(", ") || "none"}`
     ]
   };
@@ -368,6 +383,49 @@ export function recordCompletedGameForAccounts(game) {
   saveState();
   return true;
 }
+
+export function adjustAccountCredibility(accountId, delta, reason = "") {
+  const account = findAccountById(accountId);
+  if (!account) return false;
+  account.moderation = account.moderation || { credibility: 50, punishmentHistory: [] };
+  const current = Number(account.moderation.credibility ?? 50);
+  account.moderation.credibility = Math.max(0, Math.min(100, current + Number(delta || 0)));
+  account.moderation.lastCredibilityChange = { delta: Number(delta || 0), reason: String(reason || ""), at: Date.now() };
+  account.updatedAt = Date.now();
+  saveState();
+  return true;
+}
+
+export function recordAccountPunishment(accountId, punishment) {
+  const account = findAccountById(accountId);
+  if (!account) return false;
+  account.moderation = account.moderation || { credibility: 50, punishmentHistory: [] };
+  account.moderation.punishmentHistory = account.moderation.punishmentHistory || [];
+  account.moderation.punishmentHistory.push({
+    id: punishment.id,
+    type: punishment.type,
+    reason: punishment.reason,
+    createdAt: punishment.createdAt,
+    expiresAt: punishment.expiresAt,
+    reportId: punishment.reportId || null
+  });
+  account.moderation.punishmentHistory = account.moderation.punishmentHistory.slice(-100);
+  account.updatedAt = Date.now();
+  saveState();
+  return true;
+}
+
+export function recordAccountEloHistory(accountId, entry) {
+  const account = findAccountById(accountId);
+  if (!account) return false;
+  account.eloHistory = Array.isArray(account.eloHistory) ? account.eloHistory : [];
+  account.eloHistory.push({ ...entry, at: entry.at || Date.now() });
+  account.eloHistory = account.eloHistory.slice(-500);
+  account.updatedAt = Date.now();
+  saveState();
+  return true;
+}
+
 
 export function isRegisteredUsername(username) {
   const key = usernameKey(username);

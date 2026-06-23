@@ -786,7 +786,7 @@ export function appendChatMessage(socketId, roomCodeRaw, bodyRaw) {
 }
 
 export function tickGameClock(game) {
-  if (!game || game.status !== "playing" || game.timerPaused || !game.lastTurnStartedAt) return false;
+  if (!game || game.status !== "playing" || game.timerPaused || !game.timerStarted || !game.lastTurnStartedAt) return false;
   const now = Date.now();
   const elapsed = Math.max(0, now - game.lastTurnStartedAt);
   if (elapsed <= 0) return false;

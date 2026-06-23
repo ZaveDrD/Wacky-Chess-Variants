@@ -219,7 +219,13 @@ export const UI_TEXT = {
     forfeit: "Forfeit",
     confirmForfeit: "Confirm Forfeit",
     cancel: "Cancel",
-    sendChat: "Send"
+    sendChat: "Send",
+    rematch: "Rematch",
+    rematchRequested: "Rematch Requested",
+    viewProfile: "View Profile",
+    addFriend: "Add Friend",
+    challenge: "Challenge",
+    message: "Message"
   },
   labels: {
     room: "Lab Room",
@@ -236,6 +242,53 @@ export const UI_TEXT = {
     black: "Black",
     spectators: "Spectators",
     chatPlaceholder: "Type Message..."
+  },
+  social: {
+    friendsTitle: "Friends",
+    friendRequests: "Friend Requests",
+    addFriendPlaceholder: "Find player by name",
+    sendRequest: "Send Request",
+    noFriends: "No friends yet.",
+    noRequests: "No friend requests.",
+    online: "Online",
+    offline: "Offline",
+    inGame: "In game",
+    messagePlaceholder: "Message your friend...",
+    challengeReceived: "Challenge received",
+    accept: "Accept",
+    deny: "Deny"
+  },
+  reports: {
+    punishmentTitle: "Account Notice",
+    appealPlaceholder: "Explain why this punishment should be removed...",
+    submitAppeal: "Submit Appeal",
+    appealSubmitted: "Appeal submitted.",
+    reportRecorded: "Report recorded."
+  },
+  leaderboard: {
+    title: "Leaderboards",
+    monthly: "Monthly",
+    allTime: "All Time",
+    elo: "ELO",
+    rank: "Rank",
+    games: "Games",
+    top100: "Top 100"
+  },
+  profile: {
+    title: "Player Profile",
+    overallStats: "Overall Stats",
+    modeStats: "Mode Stats",
+    eloHistory: "ELO History",
+    gameHistory: "Game History",
+    worldRank: "World Rank"
+  },
+  versus: {
+    finding: "Finding match...",
+    matched: "Match Found",
+    white: "White",
+    black: "Black",
+    rank: "Rank",
+    elo: "ELO"
   },
   gameOver: {
     checkmateTitle: "Checkmate",

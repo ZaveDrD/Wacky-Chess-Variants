@@ -421,3 +421,85 @@ account store
 
 - Settings account panel is now a single compact clickable row.
 - Guest home row no longer has a separate Open Account button; clicking the guest avatar opens account login.
+
+## Reports, punishment, friends, profiles, leaderboards v1
+
+### Reports
+
+Players report during a game by typing in chat:
+
+```text
+!report [reason]
+```
+
+The server records a case containing room info, variant, recent chat, move list, illegal move attempts, clocks, players, and recent game-state snapshots. Evidence is scored as `weak`, `medium`, or `strong` based on harmful chat/name patterns, illegal move attempts, and reporter credibility.
+
+Dev commands:
+
+```text
+report list [date|strength|name]
+report view [caseId]
+report approve [caseId] [mute|ban] [duration|-1] [reason]
+report deny [caseId]
+report appeal list
+report appeal view [appealId]
+report appeal approve [appealId]
+report appeal deny [appealId]
+```
+
+`report view` opens a report review modal and also prints chat/illegal-move evidence in the console.
+
+### Punishments
+
+```text
+punish list
+punish all
+punish mute [target] [duration|-1] [reason]
+punish ban [target] [duration|-1] [reason]
+punish remove [punishmentId]
+```
+
+Targets may be account names, current-room player names/colours, connected client names, or device IDs. Account users are punished by account where possible; guests are punished by device ID.
+
+### Friends and challenges
+
+In-game chat shortcuts:
+
+```text
+!friend
+!friend [username]
+!accept [username|requestId]
+```
+
+UI: logged-in users get a right-side friends drawer. It supports friend requests, online/in-game status, profile viewing, friend messaging, and challenges. Accepting a challenge starts a private match and forfeits/leaves any current game for both involved players.
+
+Dev commands:
+
+```text
+friend list
+friend send [username]
+friend accept [username|requestId]
+```
+
+### Profiles
+
+```text
+profile [username|email|id]
+```
+
+Public profile UI shows profile image, overall games, mode stats, ranks, and game history summary. Account info in the dev console also shows hidden credibility and punishment history.
+
+### Leaderboards
+
+```text
+leaderboard show [variant] [month|allTime]
+```
+
+Home screen has a leaderboard tab. Only registered accounts appear. Monthly leaderboards reset by month key. All-time leaderboards persist. Baseline ELO is 800; winners get the normal ELO delta plus a flat +10 win bonus.
+
+### Timer/new-game/rematch changes
+
+- Clocks do not decrement until both players have made their first move.
+- Public-queue games use New Game to re-enter the queue with the same mode/time.
+- Private games use New Game to create a new private room with the same mode/time.
+- Game-over modal has a Rematch button; both players must request rematch to restart the same room.

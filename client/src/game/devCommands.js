@@ -9,6 +9,11 @@ export const DEV_COMMANDS = [
   { name: "room", action: "room", usage: "room [list|join|start|spectate|kick|lock|unlock|rename|exit|info] ...", summary: "Room and matchmaking commands." },
   { name: "player", action: "player", usage: "player [bot|takeover|find|count|override|colour|rename] ...", summary: "Player slot and identity commands." },
   { name: "account", action: "account", aliases: ["accounts"], usage: "account [info|list|online|create|remove|icon|store] ...", summary: "Inspect and manage registered player accounts." },
+  { name: "report", action: "report", aliases: ["reports"], usage: "report [list|view|approve|deny|appeal] ...", summary: "Review and resolve report cases." },
+  { name: "punish", action: "punish", aliases: ["punishment", "punishments"], usage: "punish [list|mute|ban|remove] ...", summary: "Create and remove mutes/bans." },
+  { name: "friend", action: "friend", aliases: ["friends"], usage: "friend [list|send|accept] ...", summary: "Friend-system test commands." },
+  { name: "leaderboard", action: "leaderboard", aliases: ["leaderboards", "lb"], usage: "leaderboard show [variant] [month|allTime]", summary: "Inspect leaderboard standings." },
+  { name: "profile", action: "profile", usage: "profile [username|email|id]", summary: "View a public player profile." },
   { name: "match", action: "match", usage: "match [end|turn|reset|validate|forfeit]", summary: "Match state commands." },
   { name: "chat", action: "chat", usage: "chat [shout|announce|system|sudo|whisper|quote] ...", summary: "Chat, announcements, and fake-message commands." },
   { name: "board", action: "board", usage: "board [clear|copy|load|mirror|shuffle] ...", summary: "Whole-board editing commands." },
@@ -76,6 +81,47 @@ const GROUPS = {
       ["icon", "account icon [username|email|id] [icon-file]", "Set an account profile icon."],
       ["store", "account store", "Show the account JSON store path and available profile icons."]
     ]
+  },
+  report: {
+    page: 1,
+    summary: "Reports and moderation cases.",
+    subcommands: [
+      ["list", "report list [date|strength|name]", "List open report cases."],
+      ["view", "report view [caseId]", "Print case evidence, illegal moves, and chat logs."],
+      ["approve", "report approve [caseId] [mute|ban] [duration|-1] [reason]", "Approve report and punish reported player."],
+      ["deny", "report deny [caseId]", "Deny report and reduce reporter credibility."],
+      ["appeal", "report appeal list|view|approve|deny ...", "Review punishment appeals."]
+    ]
+  },
+  punish: {
+    page: 1,
+    summary: "Manual punishment tools.",
+    subcommands: [
+      ["list", "punish list", "List active punishments."],
+      ["all", "punish all", "List all punishments."],
+      ["mute", "punish mute [target] [duration|-1] [reason]", "Mute account/device."],
+      ["ban", "punish ban [target] [duration|-1] [reason]", "Ban account/device from joining games."],
+      ["remove", "punish remove [punishmentId]", "Remove punishment."]
+    ]
+  },
+  friend: {
+    page: 1,
+    summary: "Friend test commands.",
+    subcommands: [
+      ["list", "friend list", "Show your social state."],
+      ["send", "friend send [username]", "Send a friend request."],
+      ["accept", "friend accept [requestId|username]", "Accept a friend request."]
+    ]
+  },
+  leaderboard: {
+    page: 1,
+    summary: "Leaderboard commands.",
+    subcommands: [["show", "leaderboard show [variant] [month|allTime]", "Show top 100 for a mode."]]
+  },
+  profile: {
+    page: 1,
+    summary: "Public profile command.",
+    subcommands: [["view", "profile [username|email|id]", "Show public profile stats."]]
   },
   match: {
     page: 1,
