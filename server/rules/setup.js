@@ -188,18 +188,18 @@ export function createGame(roomCode, options = {}) {
 
 
 const RULE_LAB_RULE_POOL = [
-  { id: "knight_echo", name: "Knight Echo", difficulty: "easy", clue: "One hidden rule involves knights helping pawns.", summary: "When a knight moves, the nearest friendly pawn may advance." },
-  { id: "heavy_rooks", name: "Heavy Rooks", difficulty: "easy", clue: "One hidden rule limits a major piece's distance.", summary: "Rooks can only move up to 3 squares." },
-  { id: "fragile_queens", name: "Fragile Queens", difficulty: "easy", clue: "One hidden rule punishes queen captures.", summary: "Queens vanish after capturing." },
-  { id: "mirror_pawns", name: "Mirror Pawns", difficulty: "easy", clue: "One hidden rule mirrors pawn movement.", summary: "When a pawn moves, the opposite pawn on the file may move too." },
-  { id: "colourbound_curse", name: "Colourbound Curse", difficulty: "medium", clue: "One hidden rule cares about square colour.", summary: "Pieces on dark squares cannot capture." },
-  { id: "bishop_portals", name: "Bishop Portals", difficulty: "medium", clue: "One hidden rule involves bishops and the centre.", summary: "Bishops reaching the centre teleport across it." },
-  { id: "pawn_infection", name: "Pawn Infection", difficulty: "medium", clue: "One hidden rule triggers after pawn captures.", summary: "Pawn captures remove nearby enemy pawns." },
-  { id: "delayed_capture", name: "Delayed Capture", difficulty: "medium", clue: "One hidden rule delays consequences of captures.", summary: "Captures are logged as delayed anomalies." },
-  { id: "parity_law", name: "Parity Law", difficulty: "hard", clue: "One hidden rule depends on odd and even turns.", summary: "Turn parity affects which square colours are stable." },
-  { id: "gravity_file", name: "Gravity File", difficulty: "hard", clue: "One hidden rule pulls pieces along a file.", summary: "One hidden file has gravity-like movement." },
-  { id: "memory_board", name: "Memory Board", difficulty: "hard", clue: "One hidden rule remembers previous board states.", summary: "The board remembers where pieces recently stood." },
-  { id: "board_decay", name: "Board Decay", difficulty: "chaos", clue: "One hidden rule changes the board itself.", summary: "Some empty squares become unstable over time." }
+  { id: "knight_echo", name: "Knight Echo", subject: "knights", verb: "cause", effect: "nearby friendly pawns to advance", difficulty: "easy", clue: "One hidden rule involves knights helping pawns.", summary: "When a knight moves, the nearest friendly pawn may advance." },
+  { id: "heavy_rooks", name: "Heavy Rooks", subject: "rooks", verb: "are", effect: "limited to short moves", difficulty: "easy", clue: "One hidden rule limits a major piece's distance.", summary: "Rooks can only move up to 3 squares." },
+  { id: "fragile_queens", name: "Fragile Queens", subject: "queens", verb: "are", effect: "destroyed after capturing", difficulty: "easy", clue: "One hidden rule punishes queen captures.", summary: "Queens vanish after capturing." },
+  { id: "mirror_pawns", name: "Mirror Pawns", subject: "pawns", verb: "cause", effect: "opposite pawns to copy movement", difficulty: "easy", clue: "One hidden rule mirrors pawn movement.", summary: "When a pawn moves, the opposite pawn on the file may move too." },
+  { id: "colourbound_curse", name: "Colourbound Curse", subject: "dark-square pieces", verb: "cannot", effect: "capture enemy pieces", difficulty: "medium", clue: "One hidden rule cares about square colour.", summary: "Pieces on dark squares cannot capture." },
+  { id: "bishop_portals", name: "Bishop Portals", subject: "bishops", verb: "do", effect: "teleport through centre squares", difficulty: "medium", clue: "One hidden rule involves bishops and the centre.", summary: "Bishops reaching the centre teleport across it." },
+  { id: "pawn_infection", name: "Pawn Infection", subject: "pawn captures", verb: "cause", effect: "nearby enemy pawns to disappear", difficulty: "medium", clue: "One hidden rule triggers after pawn captures.", summary: "Pawn captures remove nearby enemy pawns." },
+  { id: "delayed_capture", name: "Delayed Capture", subject: "captures", verb: "are", effect: "delayed before fully resolving", difficulty: "medium", clue: "One hidden rule delays consequences of captures.", summary: "Captures are logged as delayed anomalies." },
+  { id: "parity_law", name: "Parity Law", subject: "turn number", verb: "changes", effect: "which square colours are stable", difficulty: "hard", clue: "One hidden rule depends on odd and even turns.", summary: "Turn parity affects which square colours are stable." },
+  { id: "gravity_file", name: "Gravity File", subject: "one file", verb: "causes", effect: "pieces to slide downward", difficulty: "hard", clue: "One hidden rule pulls pieces along a file.", summary: "One hidden file has gravity-like movement." },
+  { id: "memory_board", name: "Memory Board", subject: "the board", verb: "remembers", effect: "recently occupied squares", difficulty: "hard", clue: "One hidden rule remembers previous board states.", summary: "The board remembers where pieces recently stood." },
+  { id: "board_decay", name: "Board Decay", subject: "empty squares", verb: "become", effect: "unstable over time", difficulty: "chaos", clue: "One hidden rule changes the board itself.", summary: "Some empty squares become unstable over time." }
 ];
 
 function createRuleLabState(difficultyId) {
@@ -225,6 +225,6 @@ function createRuleLabState(difficultyId) {
     guesses: [],
     clues: selected.map((rule, index) => ({ id: rule.id, clue: rule.clue, revealed: index === 0, at: index === 0 ? Date.now() : null })),
     anomalyLog: [{ at: Date.now(), text: `Rule Lab started: find ${difficulty.rules} hidden rules in 15 minutes.` }],
-    availableGuesses: RULE_LAB_RULE_POOL.map(({ id, name, summary, difficulty }) => ({ id, name, summary, difficulty }))
+    availableGuesses: RULE_LAB_RULE_POOL.map(({ id, subject, verb, effect, difficulty }) => ({ id, subject, verb, effect, difficulty }))
   };
 }

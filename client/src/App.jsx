@@ -2191,7 +2191,7 @@ export default function App() {
         />
       )}
 
-      {showVariantGuide && game.variant !== "normal" && (
+      {showVariantGuide && !matchFoundOverlay && game.variant !== "normal" && (
         <VariantGuideModal
           variant={game.variant}
           step={guideStep}
@@ -2722,18 +2722,34 @@ function PunishmentNoticeModal({ notice, appealText, onAppealText, onSubmit, onC
 function PublicProfileModal({ profile, onClose }) {
   if (!profile) return null;
   const byVariant = Object.entries(profile.stats?.byVariant || {});
+  const overallRank = byVariant
+    .map(([variant]) => profile.ranks?.[variant])
+    .filter(Boolean)
+    .sort((a, b) => a - b)[0] || "—";
   return (
     <div className="modal-backdrop">
       <section className="game-over-modal pop-modal public-profile-modal">
         <button className="modal-close" onClick={onClose}>×</button>
         <div className="public-profile-head">
           <img src={`/profile-icons/${profile.profile?.icon || "anonymous.svg"}`} alt="" />
-          <div><h2>{profile.username}</h2><p>{UI_TEXT.account.memberSince} {formatDateShort(profile.createdAt)}</p></div>
+          <div>
+            <h2>{profile.username}</h2>
+            <p>{UI_TEXT.account.memberSince} {formatDateShort(profile.createdAt)}</p>
+            <p><strong>{UI_TEXT.profile.worldRank}:</strong> {overallRank}</p>
+          </div>
         </div>
         <h3>{UI_TEXT.profile.overallStats}</h3>
         <p>{profile.stats?.totalGames || 0} {UI_TEXT.account.gamesLabel} · {profile.stats?.wins || 0} {UI_TEXT.account.winsLabel} · {profile.stats?.losses || 0} {UI_TEXT.account.lossesLabel} · {profile.stats?.draws || 0} {UI_TEXT.account.drawsLabel}</p>
         <h3>{UI_TEXT.profile.modeStats}</h3>
-        {byVariant.length ? byVariant.map(([variant, stats]) => <p key={variant}><strong>{getVariantLabel(variant)}</strong>: {stats.games}G {stats.wins}W {stats.losses}L {stats.draws}D · {UI_TEXT.profile.worldRank}: {profile.ranks?.[variant] || "—"}</p>) : <p className="subtle">No games recorded.</p>}
+        <div className="public-profile-mode-list">
+          {byVariant.length ? byVariant.map(([variant, stats]) => (
+            <div key={variant} className="public-profile-mode-card">
+              <strong>{getVariantLabel(variant)}</strong>
+              <span>ELO {profile.elos?.[variant] || 800} · {UI_TEXT.profile.worldRank} {profile.ranks?.[variant] ? `#${profile.ranks[variant]}` : "—"}</span>
+              <small>{stats.games}G · {stats.wins}W · {stats.losses}L · {stats.draws}D</small>
+            </div>
+          )) : <p className="subtle">No games recorded.</p>}
+        </div>
       </section>
     </div>
   );
@@ -3179,40 +3195,85 @@ function ThreeCheckPanel({ game }) {
 }
 
 function AnarchyPanel({ game }) {
+  const [ruleBookOpen, setRuleBookOpen] = useState(false);
+  const [ruleBookStep, setRuleBookStep] = useState(0);
   const anarchy = game.anarchy || {};
   const events = (anarchy.events || []).slice(-7).reverse();
   const fires = (anarchy.fires || []).filter((fire) => fire.expiresAtTurn > (game.turnToken || 0));
   const responses = (anarchy.responses || []).filter((response) => response.expiresAtTurn >= (game.turnToken || 0));
   return (
     <section className="variant-control-card anarchy-panel">
-      <h2>Anarchy Feed</h2>
+      <div className="panel-title-row">
+        <h2>Anarchy Feed</h2>
+        <button className="mini-rulebook-button" type="button" onClick={() => { setRuleBookStep(0); setRuleBookOpen(true); }}>Rule book</button>
+      </div>
       <div className="anarchy-badges">
         {fires.map((fire, index) => <span key={`fire-${index}`} className="danger-text">🔥 {fire.kind} {fire.index + 1}</span>)}
         {responses.map((response, index) => <span key={`response-${index}`}>New response: {response.name}</span>)}
         {anarchy.pendingBoost && <span>Boost ready</span>}
       </div>
-      <details open>
-        <summary>Core rules</summary>
-        <ul className="compact-rule-list">
-          <li>Forced en passant.</li>
-          <li>Il Vaticano between bishops.</li>
-          <li>Knook promotion and vertical castling.</li>
-          <li>Special events can cause zombies, fire and riots.</li>
-        </ul>
-      </details>
       <div className="anarchy-log">
         {events.length ? events.map((event, index) => <p key={`${event.at}-${index}`}>{event.text}</p>) : <p className="subtle">No anarchy events yet.</p>}
       </div>
+      {ruleBookOpen && <AnarchyRuleBookModal step={ruleBookStep} onStep={setRuleBookStep} onClose={() => setRuleBookOpen(false)} />}
     </section>
   );
 }
 
+function AnarchyRuleBookModal({ step, onStep, onClose }) {
+  const slides = getAnarchyRuleSlides();
+  const current = slides[Math.min(step, slides.length - 1)];
+  return (
+    <div className="modal-backdrop anarchy-rulebook-backdrop">
+      <section className="game-over-modal pop-modal anarchy-rulebook-modal">
+        <button className="modal-close" onClick={onClose}>×</button>
+        <TutorialArt art={current.art} />
+        <span className="eyebrow">Anarchy rule {Math.min(step, slides.length - 1) + 1} / {slides.length}</span>
+        <h2>{current.title}</h2>
+        <p>{current.body}</p>
+        <div className="modal-actions">
+          <button type="button" onClick={() => onStep(Math.max(0, step - 1))} disabled={step === 0}>Back</button>
+          <button className="primary" type="button" onClick={() => step < slides.length - 1 ? onStep(step + 1) : onClose()}>{step < slides.length - 1 ? "Next" : "Done"}</button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function getAnarchyRuleSlides() {
+  return [
+    { title: "Forced en passant", body: "When en passant appears, take it. Declining drops a brick on a random friendly non-king piece.", art: "anarchyEnPassant" },
+    { title: "Il Vaticano", body: "Two bishops can pincer exactly two enemy pieces between them. The bishops swap and both middle pieces vanish.", art: "anarchyVaticano" },
+    { title: "Knooks and boosts", body: "Pawns can promote to a Knook. Knight or Knook promotions may immediately make a bonus knight-style boost.", art: "anarchyKnook" },
+    { title: "Vertical castling", body: "A king and rook on the same file may castle vertically if the path is clear and safe.", art: "anarchyVerticalCastle" },
+    { title: "New response dropped", body: "Special moves trigger temporary response rules. Watch the Anarchy Feed to see what changed.", art: "anarchyResponse" },
+    { title: "Zombies and exorcists", body: "Captured pieces can return as zombie pawns. Bishops can exorcise them, then go on vacation.", art: "anarchyZombie" },
+    { title: "Fire and riot", body: "Anarchy events can ignite ranks/files and failed check pressure can trigger a board-wide riot shift.", art: "anarchyFireRiot" }
+  ];
+}
+
 function RuleLabPanel({ game, roomCode }) {
+  const [guessSubject, setGuessSubject] = useState("");
+  const [guessVerb, setGuessVerb] = useState("");
+  const [guessEffect, setGuessEffect] = useState("");
   const lab = game.ruleLab || {};
   const discovered = new Set(lab.discovered || []);
   const clues = (lab.clues || []).filter((clue) => clue.revealed);
   const log = (lab.anomalyLog || []).slice(-7).reverse();
   const options = lab.availableGuesses || [];
+  const subjects = uniqueSorted(options.map((option) => option.subject));
+  const verbs = uniqueSorted(options.map((option) => option.verb));
+  const effects = uniqueSorted(options.map((option) => option.effect));
+  const matching = options.find((option) => option.subject === guessSubject && option.verb === guessVerb && option.effect === guessEffect);
+  const canSubmit = Boolean(guessSubject && guessVerb && guessEffect);
+  const submitGuess = () => {
+    if (!canSubmit) return;
+    socket.emit("ruleLabGuess", {
+      roomCode,
+      guessId: matching?.id,
+      guess: { subject: guessSubject, verb: guessVerb, effect: guessEffect }
+    });
+  };
   return (
     <section className="variant-control-card rule-lab-panel">
       <h2>Rule Lab</h2>
@@ -3221,21 +3282,34 @@ function RuleLabPanel({ game, roomCode }) {
         <summary>Revealed clues</summary>
         {clues.length ? clues.map((clue) => <p key={clue.id}>• {clue.clue}</p>) : <p className="subtle">More clues will reveal over time.</p>}
       </details>
-      <details>
-        <summary>Submit rule guess</summary>
-        <div className="rule-lab-guess-grid">
-          {options.map((option) => (
-            <button key={option.id} type="button" disabled={discovered.has(option.id)} onClick={() => socket.emit("ruleLabGuess", { roomCode, guessId: option.id })}>
-              {discovered.has(option.id) ? "✓ " : ""}{option.name}
-            </button>
-          ))}
+      <details open>
+        <summary>Build a rule hypothesis</summary>
+        <div className="rule-lab-builder">
+          <select value={guessSubject} onChange={(event) => setGuessSubject(event.target.value)}>
+            <option value="">[piece / trigger]</option>
+            {subjects.map((value) => <option key={value} value={value}>{value}</option>)}
+          </select>
+          <select value={guessVerb} onChange={(event) => setGuessVerb(event.target.value)}>
+            <option value="">[does / is]</option>
+            {verbs.map((value) => <option key={value} value={value}>{value}</option>)}
+          </select>
+          <select value={guessEffect} onChange={(event) => setGuessEffect(event.target.value)}>
+            <option value="">[effect]</option>
+            {effects.map((value) => <option key={value} value={value}>{value}</option>)}
+          </select>
+          <button type="button" disabled={!canSubmit} onClick={submitGuess}>Submit hypothesis</button>
         </div>
+        <p className="subtle">Guesses are built from logic pieces rather than rule names. Incorrect combinations can still be submitted.</p>
       </details>
       <div className="anarchy-log rule-lab-log">
         {log.length ? log.map((event, index) => <p key={`${event.at}-${index}`}>{event.text}</p>) : <p className="subtle">No anomalies yet.</p>}
       </div>
     </section>
   );
+}
+
+function uniqueSorted(values) {
+  return [...new Set((values || []).filter(Boolean))].sort((a, b) => String(a).localeCompare(String(b)));
 }
 
 function NukePanel({ game, color, disabled, targeting, onTarget }) {
@@ -3527,14 +3601,17 @@ function getVariantGuideSteps(variant) {
   }
   if (variant === "anarchy") {
     return [
-      { title: "Anarchy Chess", body: "Forced en passant, Il Vaticano, Knooks, vertical castling, fire, zombies, and riots all modify normal chess.", art: "anarchy" },
-      { title: "Special events", body: "Special moves create entries in the Anarchy Feed so players can track what happened without crowding the board.", art: "anarchyFeed" }
+      { title: "Forced en passant", body: "If en passant is available, taking it is expected. Declining triggers the brick penalty.", art: "anarchyEnPassant" },
+      { title: "Il Vaticano", body: "Bishops can pincer two enemy pieces, swap places, and remove both trapped pieces.", art: "anarchyVaticano" },
+      { title: "Knooks and vertical castling", body: "Promote to Knooks, boost after knight-style promotions, and castle vertically with a rook on the same file.", art: "anarchyKnook" },
+      { title: "Anarchy events", body: "Special moves can drop responses, zombies, fire, or riot events. Use the Anarchy Feed and rule book during play.", art: "anarchyFireRiot" }
     ];
   }
   if (variant === "ruleLab") {
     return [
-      { title: "Rule Lab: cooperate", body: "Both players work together against a shared 15-minute timer. Hidden rules mutate the game.", art: "ruleLab" },
-      { title: "Find every rule", body: "Read anomaly logs, use clues, and submit guesses from the Rule Lab panel. Find all hidden rules before time expires.", art: "ruleLabGuess" }
+      { title: "Rule Lab: cooperate", body: "Both players work together against a shared 15-minute timer. The board is hiding rule mutations.", art: "ruleLab" },
+      { title: "Observe anomalies", body: "Move pieces, read the anomaly log, and use revealed clues to narrow down what changed.", art: "ruleLabObserve" },
+      { title: "Build hypotheses", body: "Submit guesses by combining a trigger, a relation, and an effect. Find every hidden rule before time expires.", art: "ruleLabGuess" }
     ];
   }
   return [
@@ -3546,9 +3623,12 @@ function getVariantGuideSteps(variant) {
 }
 
 function TutorialArt({ art }) {
-  if (["threeCheck", "antichess", "antiKing", "anarchy", "anarchyFeed", "ruleLab", "ruleLabGuess"].includes(art)) {
-    const labels = { threeCheck: "Check 1 · Check 2 · Check 3", antichess: "Lose pieces to win", antiKing: "No royal check", anarchy: "♝ ✝ ♞♜ 🔥", anarchyFeed: "Event log stays visible", ruleLab: "Find hidden rules", ruleLabGuess: "Clues + guesses" };
-    return <div className={`tutorial-art variant-art ${art}-art`}><span>{labels[art]}</span><strong>{art}</strong></div>;
+  if (["threeCheck", "antichess", "antiKing", "ruleLab", "ruleLabObserve", "ruleLabGuess"].includes(art)) {
+    const labels = { threeCheck: "Check 1 · Check 2 · Check 3", antichess: "Capture if you can", antiKing: "No royal check", ruleLab: "15:00 shared timer", ruleLabObserve: "Move → anomaly log", ruleLabGuess: "[trigger] [does/is] [effect]" };
+    return <div className={`tutorial-art variant-art ${art}-art animated-variant-art`}><span>{labels[art]}</span><strong>{art}</strong></div>;
+  }
+  if (["anarchyEnPassant", "anarchyVaticano", "anarchyKnook", "anarchyVerticalCastle", "anarchyResponse", "anarchyZombie", "anarchyFireRiot"].includes(art)) {
+    return <AnarchyTutorialArt art={art} />;
   }
   if (art === "chess960") {
     const row = ["♗", "♞", "♕", "♜", "♔", "♝", "♞", "♖"];
@@ -3657,6 +3737,25 @@ function TutorialArt({ art }) {
         <span className="jump-board back" />
         <span className="jump-x">×</span>
       </div>
+    </div>
+  );
+}
+
+function AnarchyTutorialArt({ art }) {
+  const labels = {
+    anarchyEnPassant: ["♙", "↘", "♟", "🧱"],
+    anarchyVaticano: ["♝", "♙", "♙", "♝"],
+    anarchyKnook: ["♙", "→", "♞+♜", "↯"],
+    anarchyVerticalCastle: ["♔", "⇅", "♖", "castle"],
+    anarchyResponse: ["special", "→", "new response", "!"],
+    anarchyZombie: ["capture", "→", "♟", "zombie"],
+    anarchyFireRiot: ["🔥", "↔", "pieces shift", "🔥"]
+  };
+  const text = labels[art] || ["anarchy"];
+  return (
+    <div className={`tutorial-art variant-art anarchy-rule-art ${art}-art`}>
+      <div className="anarchy-rule-motion">{text.map((item, index) => <span key={index}>{item}</span>)}</div>
+      <strong>{art.replace("anarchy", "")}</strong>
     </div>
   );
 }
@@ -4206,10 +4305,10 @@ function PlayerLine({ label, player, active, formatText = (value) => value, onPr
   const name = player?.name ? formatText(player.name) : UI_TEXT.labels.waiting;
   const detail = player?.accountId ? `${player.elo ? `ELO ${player.elo}` : "ELO 800"}${player.rank ? ` · #${player.rank}` : ""}` : (player?.id?.startsWith?.("AI:") ? "Bot" : "Guest");
   const body = (
-    <>
+    <div className="player-line-main">
       <strong>{name}</strong>
       <small>{detail}</small>
-    </>
+    </div>
   );
   return (
     <div className={`player-line ${active ? "active" : ""} ${canOpenProfile ? "clickable" : ""}`}>

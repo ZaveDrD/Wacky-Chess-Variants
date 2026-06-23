@@ -1372,10 +1372,10 @@ io.on("connection", (socket) => {
   });
 
 
-  socket.on("ruleLabGuess", ({ roomCode, guessId } = {}) => {
+  socket.on("ruleLabGuess", ({ roomCode, guessId, guess } = {}) => {
     const game = rooms.get(String(roomCode || "").toUpperCase());
     if (!game) { socket.emit("chatError", "Rule Lab room not found."); return; }
-    const result = submitRuleLabGuess(game, socket.data.account?.id || socket.id, guessId);
+    const result = submitRuleLabGuess(game, socket.data.account?.id || socket.id, guess || guessId);
     if (!result.ok) socket.emit("chatError", result.reason);
     else {
       socket.emit("chatError", result.message);

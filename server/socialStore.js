@@ -638,10 +638,14 @@ export function publicProfile(query, viewerAccountId = null) {
   if (!account) return { ok: false, reason: "Account not found." };
   const stats = account.stats || { totalGames: 0, wins: 0, losses: 0, draws: 0, byVariant: {} };
   const ranks = {};
-  for (const variant of Object.keys(stats.byVariant || {})) {
+  const elos = {};
+  const variants = new Set([...Object.keys(stats.byVariant || {}), ...Object.keys(state.leaderboards?.allTime || {})]);
+  for (const variant of variants) {
     const entries = getLeaderboard(variant, "month", 1000).entries;
     const rank = entries.findIndex((entry) => entry.accountId === account.id) + 1;
+    const entry = entries.find((item) => item.accountId === account.id);
     ranks[variant] = rank || null;
+    elos[variant] = entry?.elo || getElo(account.id, variant, "month");
   }
-  return { ok: true, profile: { ...publicAccount(account), email: undefined, moderation: undefined, ranks, eloHistory: account.eloHistory || [] } };
+  return { ok: true, profile: { ...publicAccount(account), email: undefined, moderation: undefined, ranks, elos, eloHistory: account.eloHistory || [] } };
 }

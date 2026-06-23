@@ -1412,25 +1412,34 @@ function removeAdjacentEnemyPawns(game, piece, add) { let n=0; for (const p of [
 function gravityFileShift(game, file, add) { let n=0; for (const p of game.pieces||[]) { if (p.x===file&&p.type!=="king") { const z=Math.max(0,p.z-1); if (z!==p.z&&!getPieceAt(game,{x:p.x,y:p.y,z})) { p.z=z;n++; } } } if(n) add(`Gravity File anomaly: ${n} piece(s) slid along file ${file+1}.`); }
 function revealRuleLabClues(game) { const lab=game.ruleLab; const elapsed=Date.now()-(lab.startedAt||Date.now()); const interval={easy:180000,medium:240000,hard:300000,chaos:300000}[lab.difficulty]||240000; const revealCount=Math.min(lab.clues.length,1+Math.floor(elapsed/interval)); for(let i=0;i<revealCount;i++){ if(lab.clues[i]&&!lab.clues[i].revealed){ lab.clues[i].revealed=true; lab.clues[i].at=Date.now(); lab.anomalyLog.push({at:Date.now(),text:`Clue revealed: ${lab.clues[i].clue}`}); } } }
 
-export function submitRuleLabGuess(game, accountOrSocketId, guessId) {
+export function submitRuleLabGuess(game, accountOrSocketId, guessInput) {
   if (!game || game.variant !== "ruleLab" || !game.ruleLab) return { ok: false, reason: "Rule Lab is not active." };
   const lab = game.ruleLab;
-  const guess = String(guessId || "").trim();
-  const available = lab.availableGuesses?.find((g) => g.id === guess || g.name.toLowerCase() === guess.toLowerCase());
-  if (!available) return { ok: false, reason: "Unknown rule guess." };
-  const correct = lab.hiddenRules.includes(available.id);
-  const already = lab.discovered.includes(available.id);
-  lab.guesses.push({ id: available.id, name: available.name, correct, already, by: accountOrSocketId || null, at: Date.now() });
+  const availableGuesses = lab.availableGuesses || [];
+  const guessText = typeof guessInput === "string" ? String(guessInput || "").trim() : "";
+  const parts = typeof guessInput === "object" && guessInput ? {
+    subject: String(guessInput.subject || "").trim(),
+    verb: String(guessInput.verb || "").trim(),
+    effect: String(guessInput.effect || "").trim()
+  } : null;
+  const available = parts
+    ? availableGuesses.find((g) => g.subject === parts.subject && g.verb === parts.verb && g.effect === parts.effect)
+    : availableGuesses.find((g) => g.id === guessText || String(g.name || "").toLowerCase() === guessText.toLowerCase());
+  const id = available?.id || `free:${parts ? `${parts.subject}|${parts.verb}|${parts.effect}` : guessText}`;
+  const label = available ? `${available.subject} ${available.verb} ${available.effect}` : (parts ? `${parts.subject} ${parts.verb} ${parts.effect}` : guessText || "blank hypothesis");
+  const correct = Boolean(available && lab.hiddenRules.includes(available.id));
+  const already = Boolean(available && lab.discovered.includes(available.id));
+  lab.guesses.push({ id, label, correct, already, by: accountOrSocketId || null, at: Date.now() });
   if (correct && !already) {
     lab.discovered.push(available.id);
-    lab.anomalyLog.push({ at: Date.now(), text: `Rule discovered: ${available.name}.` });
+    lab.anomalyLog.push({ at: Date.now(), text: `Hypothesis confirmed: ${label}.` });
   } else if (!correct && lab.wrongGuessPenaltyMs) {
     lab.endsAt = Math.max(Date.now(), lab.endsAt - lab.wrongGuessPenaltyMs);
-    lab.anomalyLog.push({ at: Date.now(), text: `Incorrect hypothesis: ${available.name}. Time penalty applied.` });
+    lab.anomalyLog.push({ at: Date.now(), text: `Incorrect hypothesis: ${label}. Time penalty applied.` });
   } else {
-    lab.anomalyLog.push({ at: Date.now(), text: already ? `${available.name} was already discovered.` : `Incorrect hypothesis: ${available.name}.` });
+    lab.anomalyLog.push({ at: Date.now(), text: already ? `Hypothesis already confirmed: ${label}.` : `Incorrect hypothesis: ${label}.` });
   }
   const end = getRuleLabEndState(game);
   if (end) Object.assign(game, end);
-  return { ok: true, correct, already, game, message: correct ? `Rule discovered: ${available.name}` : `Incorrect hypothesis: ${available.name}` };
+  return { ok: true, correct, already, game, message: correct ? `Hypothesis confirmed: ${label}` : `Incorrect hypothesis: ${label}` };
 }
