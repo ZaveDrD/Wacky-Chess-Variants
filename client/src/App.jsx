@@ -17,14 +17,6 @@ import {
 import { buildReviewTimeline } from "./game/replay.js";
 import { DEV_CONSOLE_UNLOCK_SEQUENCE, findDevCommand, applyCommandPrefix, getDevCommandHelp, getDevCommandListLines } from "./game/devCommands.js";
 import { playSoundEffect, unlockAudio } from "./game/sound.js";
-import { profileIconUrl, getModeStats, formatModeStats, formatDateShort, formatElapsed, getTimeControlDescription, getAIDifficultyDescription, getVariantCategory, censorText, getViewportDevTouchZone, parseDevLocation, coordText, hillSquares, siloSquares, circularBlastSquares, squareBlastSquares, countdownStage, getDisplayedClocks, formatClock, formatChatTime, getClientMembership, layerLabel, sameCoord, key, capitalise, parseCommandLine, shouldClearLocalSelection, isTurnOnlyMessage } from "./game/uiHelpers.js";
-import { DevFxLayer } from "./components/DevFxLayer.jsx";
-import { NetworkDashboardModal } from "./components/NetworkDashboardModal.jsx";
-import { VariantControls } from "./components/VariantPanels.jsx";
-import { FriendsDrawer, FriendMessageWindow, ChallengeNotice, PunishmentNoticeModal, PublicProfileModal, ReportCaseModal } from "./components/SocialPanels.jsx";
-import { AccountModal, ProfileAvatar, GuestAvatar, SettingsButton } from "./components/AccountUI.jsx";
-import { ChoiceGallery, QueueSearchPanel, MatchFoundOverlay, LeaderboardPanel } from "./components/LobbyPanels.jsx";
-import { TimerBar, GameChat, MatchReviewControls, GameOverModal, ConfirmModal, LayerRailControl, OrientationGizmo, PlayerLine } from "./components/GameShell.jsx";
 
 const VIEWS = ["XZ", "XY", "YZ", "ISO"];
 const REVIEW_PLAY_DELAY_MS = 650;
@@ -2226,6 +2218,302 @@ export default function App() {
 
 
 
+function AccountModal({
+  open,
+  account,
+  accountMode,
+  accountForm,
+  accountEditForm,
+  accountMessage,
+  profileIcons,
+  selectedVariant,
+  onClose,
+  onAccountMode,
+  onAccountForm,
+  onAccountEditForm,
+  onAccountLogin,
+  onAccountCreate,
+  onProfileUpdate,
+  onEmailUpdate,
+  onPasswordUpdate,
+  onAccountLogout
+}) {
+  if (!open) return null;
+  const isRegister = accountMode === "register";
+  const modeStats = getModeStats(account, selectedVariant);
+  return (
+    <div className="account-modal-backdrop">
+      <section className="account-modal" role="dialog" aria-modal="true" aria-label={UI_TEXT.account.modalTitle}>
+        <header className="account-modal-head">
+          <div>
+            <span className="eyebrow">{account ? UI_TEXT.account.accountBadge : UI_TEXT.account.guestBadge}</span>
+            <h2>{account ? UI_TEXT.account.manageAccount : UI_TEXT.account.signedOutTitle}</h2>
+          </div>
+          <button type="button" onClick={onClose} aria-label={UI_TEXT.buttons.closeOverlay}>×</button>
+        </header>
+
+        {account ? (
+          <div className="account-modal-grid">
+            <aside className="account-profile-summary">
+              <ProfileAvatar account={account} size="xl" />
+              <h3>{account.username}</h3>
+              <p>{account.email}</p>
+              <small>{UI_TEXT.account.memberSince} {formatDateShort(account.createdAt)}</small>
+              <div className="account-stat-strip">
+                <span><strong>{account.stats?.totalGames || 0}</strong>{UI_TEXT.account.gamesLabel}</span>
+                <span><strong>{account.stats?.wins || 0}</strong>{UI_TEXT.account.winsLabel}</span>
+                <span><strong>{account.stats?.losses || 0}</strong>{UI_TEXT.account.lossesLabel}</span>
+                <span><strong>{account.stats?.draws || 0}</strong>{UI_TEXT.account.drawsLabel}</span>
+              </div>
+              <div className="account-mode-stat-card">
+                <strong>{getVariantLabel(selectedVariant)}</strong>
+                <span>{modeStats.games}G · {modeStats.wins}W · {modeStats.losses}L · {modeStats.draws}D</span>
+              </div>
+            </aside>
+
+            <div className="account-edit-panels">
+              <form className="account-form account-edit-form" onSubmit={onProfileUpdate}>
+                <h3>{UI_TEXT.account.profileSectionTitle}</h3>
+                <label><span>{UI_TEXT.account.usernameLabel}</span><input value={accountEditForm.username} onChange={(event) => onAccountEditForm("username", event.target.value)} autoComplete="username" /></label>
+                <div className="profile-icon-grid" aria-label={UI_TEXT.account.profileIconLabel}>
+                  {profileIcons.map((icon) => (
+                    <button key={icon} type="button" className={accountEditForm.profileIcon === icon ? "active" : ""} onClick={() => onAccountEditForm("profileIcon", icon)} title={icon}>
+                      <img src={profileIconUrl(icon)} alt="" />
+                    </button>
+                  ))}
+                </div>
+                <button type="submit">{UI_TEXT.account.saveProfile}</button>
+              </form>
+
+              <form className="account-form account-edit-form" onSubmit={onEmailUpdate}>
+                <h3>{UI_TEXT.account.emailSectionTitle}</h3>
+                <label><span>{UI_TEXT.account.emailLabel}</span><input value={accountEditForm.email} onChange={(event) => onAccountEditForm("email", event.target.value)} type="email" autoComplete="email" /></label>
+                <label><span>{UI_TEXT.account.currentPasswordLabel}</span><input value={accountEditForm.currentPassword} onChange={(event) => onAccountEditForm("currentPassword", event.target.value)} type="password" autoComplete="current-password" /></label>
+                <button type="submit">{UI_TEXT.account.saveEmail}</button>
+              </form>
+
+              <form className="account-form account-edit-form" onSubmit={onPasswordUpdate}>
+                <h3>{UI_TEXT.account.passwordSectionTitle}</h3>
+                <label><span>{UI_TEXT.account.currentPasswordLabel}</span><input value={accountEditForm.currentPassword} onChange={(event) => onAccountEditForm("currentPassword", event.target.value)} type="password" autoComplete="current-password" /></label>
+                <label><span>{UI_TEXT.account.newPasswordLabel}</span><input value={accountEditForm.newPassword} onChange={(event) => onAccountEditForm("newPassword", event.target.value)} type="password" autoComplete="new-password" /></label>
+                <button type="submit">{UI_TEXT.account.savePassword}</button>
+              </form>
+
+              <button className="account-logout-button" type="button" onClick={onAccountLogout}>{UI_TEXT.account.logOut}</button>
+            </div>
+          </div>
+        ) : (
+          <div className="account-modal-auth">
+            <p>{UI_TEXT.account.signedOutBody}</p>
+            <div className="account-mode-tabs">
+              <button type="button" className={!isRegister ? "active" : ""} onClick={() => onAccountMode("login")}>{UI_TEXT.account.showLogin}</button>
+              <button type="button" className={isRegister ? "active" : ""} onClick={() => onAccountMode("register")}>{UI_TEXT.account.showRegister}</button>
+            </div>
+            <form className="account-form" onSubmit={isRegister ? onAccountCreate : onAccountLogin}>
+              {isRegister ? (
+                <>
+                  <label><span>{UI_TEXT.account.emailLabel}</span><input value={accountForm.email} onChange={(event) => onAccountForm("email", event.target.value)} type="email" autoComplete="email" /></label>
+                  <label><span>{UI_TEXT.account.usernameLabel}</span><input value={accountForm.username} onChange={(event) => onAccountForm("username", event.target.value)} autoComplete="username" /></label>
+                </>
+              ) : (
+                <label><span>{UI_TEXT.account.loginLabel}</span><input value={accountForm.login} onChange={(event) => onAccountForm("login", event.target.value)} autoComplete="username" /></label>
+              )}
+              <label><span>{UI_TEXT.account.passwordLabel}</span><input value={accountForm.password} onChange={(event) => onAccountForm("password", event.target.value)} type="password" autoComplete={isRegister ? "new-password" : "current-password"} /></label>
+              <button type="submit">{isRegister ? UI_TEXT.account.createAccount : UI_TEXT.account.logIn}</button>
+            </form>
+          </div>
+        )}
+        {accountMessage && <small className="account-message modal-message">{accountMessage}</small>}
+      </section>
+    </div>
+  );
+}
+
+function ProfileAvatar({ account, size = "normal" }) {
+  const icon = account?.profile?.icon || "lab-pawn.svg";
+  return <img className={`profile-avatar ${size}`} src={profileIconUrl(icon)} alt="" />;
+}
+
+function GuestAvatar({ size = "normal" }) {
+  return <img className={`profile-avatar guest-avatar ${size}`} src={profileIconUrl("anonymous.svg")} alt="" />;
+}
+
+function profileIconUrl(icon) {
+  return `/profile-icons/${encodeURIComponent(icon || "lab-pawn.svg")}`;
+}
+
+function getModeStats(account, variant) {
+  return account?.stats?.byVariant?.[variant] || { games: 0, wins: 0, losses: 0, draws: 0 };
+}
+
+function formatModeStats(account, variant) {
+  const stats = getModeStats(account, variant);
+  return `${stats.games || 0}G · ${stats.wins || 0}W · ${stats.losses || 0}L · ${stats.draws || 0}D`;
+}
+
+function formatDateShort(value) {
+  if (!value) return "—";
+  return new Date(value).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+}
+
+function SettingsButton({
+  open,
+  onToggle,
+  soundEnabled,
+  soundVolume,
+  censorContent,
+  account,
+  accountMode,
+  accountForm,
+  accountMessage,
+  onAccountMode,
+  onAccountForm,
+  onAccountLogin,
+  onAccountCreate,
+  onAccountLogout,
+  onAccountOpen,
+  onSoundToggle,
+  onVolume,
+  onCensorToggle
+}) {
+  return (
+    <div className="settings-cluster">
+      <button className="settings-cog" type="button" onClick={onToggle} aria-label="Open settings" title="Settings">⚙</button>
+      {open && (
+        <section className="settings-menu" aria-label={UI_TEXT.settings.title}>
+          <div className="settings-menu-head">
+            <strong>{UI_TEXT.settings.title}</strong>
+          </div>
+          <label className="settings-toggle-row">
+            <span>{UI_TEXT.settings.sound}</span>
+            <button type="button" className={soundEnabled ? "enabled" : ""} onClick={onSoundToggle}>{soundEnabled ? UI_TEXT.settings.on : UI_TEXT.settings.off}</button>
+          </label>
+          {soundEnabled && (
+            <label className="settings-slider-row">
+              <span>{UI_TEXT.settings.volume}</span>
+              <input type="range" min="0" max="1" step="0.05" value={soundVolume} onChange={(event) => onVolume(Number(event.target.value))} />
+            </label>
+          )}
+          <label className="settings-toggle-row">
+            <span>{UI_TEXT.settings.localCensor}</span>
+            <button type="button" className={censorContent ? "enabled" : ""} onClick={onCensorToggle}>{censorContent ? UI_TEXT.settings.on : UI_TEXT.settings.off}</button>
+          </label>
+          <p>{UI_TEXT.settings.censorHelp}</p>
+
+          <button className="settings-account-panel compact-account-panel settings-account-clickable" type="button" onClick={onAccountOpen} title={account ? UI_TEXT.account.manageAccountHelp : UI_TEXT.account.signedOutBody}>
+            {account ? <ProfileAvatar account={account} /> : <GuestAvatar />}
+            <span className="settings-account-copy">
+              <span className="eyebrow">{account ? UI_TEXT.account.accountBadge : UI_TEXT.account.guestBadge}</span>
+              <strong>{account ? account.username : UI_TEXT.account.signedOutTitle}</strong>
+              <small>{account ? UI_TEXT.account.manageAccountHelp : UI_TEXT.account.signedOutBody}</small>
+            </span>
+          </button>
+        </section>
+      )}
+    </div>
+  );
+}
+
+function ChoiceGallery({ title, subtitle, items, selectedId, getDescription, getMeta, onSelect, onBack }) {
+  return (
+    <div className="choice-gallery">
+      <header className="choice-gallery-header">
+        <div>
+          <span className="eyebrow">Experiment Gallery</span>
+          <h2>{title}</h2>
+          <p>{subtitle}</p>
+        </div>
+        <button type="button" onClick={onBack}>Back</button>
+      </header>
+      <div className="choice-card-grid">
+        {items.map((item, index) => (
+          <button
+            key={item.id}
+            className={`choice-card ${selectedId === item.id ? "selected" : ""}`}
+            type="button"
+            style={{ "--delay": `${index * 45}ms` }}
+            onClick={() => onSelect(item.id)}
+          >
+            <span>{getMeta(item.id)}</span>
+            <strong>{item.label}</strong>
+            <small>{getDescription(item.id)}</small>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function QueueSearchPanel({ variant, timeControl, scope, elapsed, onCancel }) {
+  return (
+    <div className="queue-search-panel">
+      <div className="queue-orbit" aria-hidden="true">
+        <span>♔</span><span>♞</span><span>♜</span><i />
+      </div>
+      <span className="eyebrow">Open Lab Queue</span>
+      <h2>Finding match...</h2>
+      <p>{scope === "any" ? "Searching every public experiment queue." : `Searching ${variant} · ${timeControl}.`}</p>
+      <strong className="queue-timer">{formatElapsed(elapsed)}</strong>
+      <button className="secondary-action-button" type="button" onClick={onCancel}>Cancel Search</button>
+    </div>
+  );
+}
+
+function formatElapsed(seconds) {
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins}:${String(secs).padStart(2, "0")}`;
+}
+
+function getTimeControlDescription(id) {
+  return {
+    classical: "Slow, deliberate games for deeper testing.",
+    rapid: "Balanced pace for most experiments.",
+    blitz: "Fast games with enough time to think.",
+    bullet: "Unstable speed tests. Expect chaos."
+  }[id] || "Custom experiment pace.";
+}
+
+function getAIDifficultyDescription(id) {
+  return {
+    easy: "Fast, light CPU use, good for testing rules.",
+    medium: "More tactical and moderately heavier.",
+    hard: "Deepest search, highest server load."
+  }[id] || "Bot difficulty.";
+}
+
+function getVariantCategory(id) {
+  return {
+    normal: "Classic",
+    chess960: "Classic",
+    crazyhouse: "Classic / Experimental",
+    kingOfTheHill: "Experimental",
+    atomic: "Chaos",
+    threeD: "3D",
+    nuke: "Chaos",
+    tycoon: "Experimental",
+    predict: "Experimental",
+    scooby: "Party / Chaos"
+  }[id] || "Experiment";
+}
+
+function censorText(value) {
+  const raw = String(value ?? "");
+  const blocked = [
+    "fuck", "shit", "cunt", "bitch", "bastard", "dick", "pussy", "asshole", "nigger", "nigga", "faggot", "retard", "slut", "whore", "kys"
+  ];
+  let output = raw;
+  for (const word of blocked) {
+    const pattern = new RegExp(`\\b${escapeRegExp(word)}\\b`, "gi");
+    output = output.replace(pattern, (match) => "#".repeat(match.length));
+  }
+  return output;
+}
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function SoundControls({ enabled, volume, onToggle, onVolume, compact = false }) {
   return (
     <div className={`sound-controls ${compact ? "compact" : ""}`}>
@@ -2267,6 +2555,410 @@ function FeedbackOverlay({ text, type }) {
   );
 }
 
+
+
+function FriendsDrawer({ open, account, socialState, friendTarget, onToggle, onTarget, onSendRequest, onRespondRequest, onProfile, onMessage, onChallenge }) {
+  if (!account) return null;
+  const friends = socialState?.friends || [];
+  const requests = socialState?.requests || [];
+  return (
+    <aside className={`friends-drawer ${open ? "open" : ""}`}>
+      <button className="friends-tab" type="button" onClick={onToggle}>{UI_TEXT.social.friendsTitle}</button>
+      <div className="friends-panel">
+        <h2>{UI_TEXT.social.friendsTitle}</h2>
+        <div className="friend-add-row">
+          <input value={friendTarget} onChange={(event) => onTarget(event.target.value)} placeholder={UI_TEXT.social.addFriendPlaceholder} />
+          <button type="button" onClick={onSendRequest}>{UI_TEXT.social.sendRequest}</button>
+        </div>
+        <h3>{UI_TEXT.social.friendRequests}</h3>
+        {requests.length ? requests.map((request) => (
+          <div className="friend-row" key={request.id}>
+            <strong>{request.fromUsername}</strong>
+            <span>
+              <button onClick={() => onRespondRequest(request.id, true)}>{UI_TEXT.social.accept}</button>
+              <button onClick={() => onRespondRequest(request.id, false)}>{UI_TEXT.social.deny}</button>
+            </span>
+          </div>
+        )) : <p className="subtle">{UI_TEXT.social.noRequests}</p>}
+        <h3>{UI_TEXT.social.friendsTitle}</h3>
+        {friends.length ? friends.map((friend) => (
+          <div className="friend-row" key={friend.accountId}>
+            <button className="friend-name" onClick={() => onProfile(friend.accountId)}>{friend.username}</button>
+            <small>{friend.online ? UI_TEXT.social.online : UI_TEXT.social.offline}{friend.inGame ? ` · ${UI_TEXT.social.inGame}` : ""}</small>
+            <span className="friend-actions">
+              <button onClick={() => onProfile(friend.accountId)}>{UI_TEXT.buttons.viewProfile}</button>
+              <button onClick={() => onChallenge(friend)}>{UI_TEXT.buttons.challenge}</button>
+              <button onClick={() => onMessage(friend)}>{UI_TEXT.buttons.message}</button>
+            </span>
+          </div>
+        )) : <p className="subtle">{UI_TEXT.social.noFriends}</p>}
+      </div>
+    </aside>
+  );
+}
+
+function FriendMessageWindow({ friend, messages, draft, onDraft, onSend, onClose }) {
+  if (!friend) return null;
+  const relevant = (messages || []).filter((message) => message.fromAccountId === friend.accountId || message.toAccountId === friend.accountId).slice(-40);
+  return (
+    <section className="friend-chat-window">
+      <header><strong>{friend.username}</strong><button onClick={onClose}>×</button></header>
+      <div className="friend-chat-messages">
+        {relevant.map((message) => <p key={message.id} className={message.fromAccountId === friend.accountId ? "incoming" : "outgoing"}>{message.body}</p>)}
+      </div>
+      <footer>
+        <input value={draft} onChange={(event) => onDraft(event.target.value)} placeholder={UI_TEXT.social.messagePlaceholder} />
+        <button onClick={onSend}>{UI_TEXT.buttons.sendChat}</button>
+      </footer>
+    </section>
+  );
+}
+
+function ChallengeNotice({ challenge, onAccept, onDeny }) {
+  if (!challenge) return null;
+  return (
+    <div className="challenge-toast">
+      <strong>{UI_TEXT.social.challengeReceived}</strong>
+      <p>{challenge.fromUsername || "Friend"} · {getVariantLabel(challenge.variant)} · {getTimeControlLabel(challenge.timeControl)}</p>
+      <button onClick={onAccept}>{UI_TEXT.social.accept}</button>
+      <button onClick={onDeny}>{UI_TEXT.social.deny}</button>
+    </div>
+  );
+}
+
+function PunishmentNoticeModal({ notice, appealText, onAppealText, onSubmit, onClose }) {
+  if (!notice?.punishments?.length) return null;
+  const punishment = notice.punishments[0];
+  const expiry = punishment.expiresAt === -1 ? "Permanent" : new Date(punishment.expiresAt).toLocaleString();
+  return (
+    <div className="modal-backdrop">
+      <section className="game-over-modal pop-modal punishment-modal">
+        <button className="modal-close" onClick={onClose}>×</button>
+        <h2>{UI_TEXT.reports.punishmentTitle}</h2>
+        <p><strong>{punishment.type}</strong> · {expiry}</p>
+        <p>{punishment.reason}</p>
+        <textarea value={appealText} onChange={(event) => onAppealText(event.target.value)} placeholder={UI_TEXT.reports.appealPlaceholder} />
+        <button className="primary" onClick={onSubmit}>{UI_TEXT.reports.submitAppeal}</button>
+      </section>
+    </div>
+  );
+}
+
+function PublicProfileModal({ profile, onClose }) {
+  if (!profile) return null;
+  const byVariant = Object.entries(profile.stats?.byVariant || {});
+  return (
+    <div className="modal-backdrop">
+      <section className="game-over-modal pop-modal public-profile-modal">
+        <button className="modal-close" onClick={onClose}>×</button>
+        <div className="public-profile-head">
+          <img src={`/profile-icons/${profile.profile?.icon || "anonymous.svg"}`} alt="" />
+          <div><h2>{profile.username}</h2><p>{UI_TEXT.account.memberSince} {formatDateShort(profile.createdAt)}</p></div>
+        </div>
+        <h3>{UI_TEXT.profile.overallStats}</h3>
+        <p>{profile.stats?.totalGames || 0} {UI_TEXT.account.gamesLabel} · {profile.stats?.wins || 0} {UI_TEXT.account.winsLabel} · {profile.stats?.losses || 0} {UI_TEXT.account.lossesLabel} · {profile.stats?.draws || 0} {UI_TEXT.account.drawsLabel}</p>
+        <h3>{UI_TEXT.profile.modeStats}</h3>
+        {byVariant.length ? byVariant.map(([variant, stats]) => <p key={variant}><strong>{getVariantLabel(variant)}</strong>: {stats.games}G {stats.wins}W {stats.losses}L {stats.draws}D · {UI_TEXT.profile.worldRank}: {profile.ranks?.[variant] || "—"}</p>) : <p className="subtle">No games recorded.</p>}
+      </section>
+    </div>
+  );
+}
+
+function ReportCaseModal({ reportCase, onClose }) {
+  if (!reportCase) return null;
+  return (
+    <div className="modal-backdrop">
+      <section className="game-over-modal pop-modal report-case-modal">
+        <button className="modal-close" onClick={onClose}>×</button>
+        <h2>{reportCase.id}</h2>
+        <p><strong>{reportCase.evidence?.strength}</strong> evidence · {reportCase.reporter?.name} → {reportCase.reported?.name}</p>
+        <p>{reportCase.reason}</p>
+        <h3>Illegal moves</h3>
+        <div className="report-scroll-list">{(reportCase.slice?.illegalMoveAttempts || []).slice(-30).map((item, index) => <p key={index}>{item.player}: {item.reason}</p>)}</div>
+        <h3>Chat logs</h3>
+        <div className="report-scroll-list">{(reportCase.slice?.chat || []).slice(-80).map((message) => <p key={message.id}>{message.name}: {message.body}</p>)}</div>
+      </section>
+    </div>
+  );
+}
+
+function MatchFoundOverlay({ match }) {
+  if (!match) return null;
+  return (
+    <div className="versus-overlay">
+      <div className="versus-card">
+        <span>{UI_TEXT.versus.matched}</span>
+        <div className="versus-row"><VersusPlayer player={match.white} /><strong>VS</strong><VersusPlayer player={match.black} /></div>
+      </div>
+    </div>
+  );
+}
+
+function VersusPlayer({ player }) {
+  return <div className="versus-player"><h3>{player?.name || "Player"}</h3><p>{player?.color} · {UI_TEXT.versus.elo} {player?.elo || "guest"} · {UI_TEXT.versus.rank} {player?.rank || "—"}</p></div>;
+}
+
+function LeaderboardPanel({ data, variant, scope, onScope, onRefresh, onProfile }) {
+  const entries = data?.entries || [];
+  return (
+    <div className="leaderboard-panel">
+      <header>
+        <div><h3>{UI_TEXT.leaderboard.title}</h3><p>{getVariantLabel(variant)} · {UI_TEXT.leaderboard.top100}</p></div>
+        <div><button className={scope === "month" ? "active" : ""} onClick={() => onScope("month")}>{UI_TEXT.leaderboard.monthly}</button><button className={scope === "allTime" ? "active" : ""} onClick={() => onScope("allTime")}>{UI_TEXT.leaderboard.allTime}</button><button onClick={onRefresh}>↻</button></div>
+      </header>
+      <div className="leaderboard-list">
+        {entries.length ? entries.map((entry, index) => (
+          <button key={entry.accountId} className={`leaderboard-row rank-${index + 1}`} onClick={() => onProfile(entry.accountId)}>
+            <span>{index === 0 ? "👑" : index === 1 ? "♕" : index === 2 ? "♔" : index + 1}</span>
+            <strong>{entry.username}</strong>
+            <em>{UI_TEXT.leaderboard.elo} {entry.elo}</em>
+            <small>{entry.games}G {entry.wins}W {entry.losses}L</small>
+          </button>
+        )) : <p className="subtle">No leaderboard entries yet.</p>}
+      </div>
+    </div>
+  );
+}
+
+
+function NetworkDashboardModal({ open, config, metrics, onClose }) {
+  if (!open) return null;
+  const title = config?.roomCode ? `Network dashboard · ${config.roomCode}` : "Network dashboard · overall";
+  const latest = metrics || {};
+  const history = latest.history || [];
+  return (
+    <div className="network-dashboard-backdrop">
+      <section className="network-dashboard" role="dialog" aria-modal="true" aria-label={title}>
+        <header className="network-dashboard-header">
+          <div>
+            <span className="eyebrow">Developer network monitor</span>
+            <h2>{title}</h2>
+          </div>
+          <button type="button" onClick={onClose}>Close</button>
+        </header>
+
+        <div className="network-stat-grid">
+          <NetworkStat label="Server CPU" value={`${formatMetricNumber(latest.server?.cpuPercent)}%`} />
+          <NetworkStat label="Heap" value={formatBytesClient(latest.server?.memoryHeapUsed)} />
+          <NetworkStat label="RSS" value={formatBytesClient(latest.server?.memoryRss)} />
+          <NetworkStat label="Clients" value={latest.overall?.clients ?? "—"} />
+          <NetworkStat label="Rooms" value={latest.overall?.rooms ?? "—"} />
+          <NetworkStat label="Bandwidth" value={`${formatMetricNumber((latest.overall?.bandwidthBps || 0) / 1024)} KB/s`} />
+          <NetworkStat label="AI CPU proxy" value={`${formatMetricNumber(latest.overall?.aiSharePercent)}%`} />
+          <NetworkStat label="AI moves" value={latest.ai?.totalMoves ?? "—"} />
+        </div>
+
+        {latest.room && (
+          <div className="network-room-panel">
+            <h3>Room detail</h3>
+            <div className="network-stat-grid compact">
+              <NetworkStat label="Variant" value={latest.room.variant} />
+              <NetworkStat label="Status" value={latest.room.status} />
+              <NetworkStat label="Room memory" value={formatBytesClient(latest.room.memoryBytes)} />
+              <NetworkStat label="Room bandwidth" value={`${formatMetricNumber((latest.room.bandwidthBps || 0) / 1024)} KB/s`} />
+              <NetworkStat label="Room AI ms" value={formatMetricNumber(latest.room.aiMs)} />
+              <NetworkStat label="AI difficulty" value={latest.room.aiDifficulty || "none"} />
+            </div>
+          </div>
+        )}
+
+        <div className="network-chart-grid">
+          <NetworkChart title="CPU %" history={history} field="cpuPercent" suffix="%" />
+          <NetworkChart title="Heap MB" history={history} field="heapMb" suffix=" MB" />
+          <NetworkChart title="Bandwidth KB/s" history={history} field="bandwidthKbps" suffix=" KB/s" />
+          <NetworkChart title="Room bandwidth KB/s" history={history} field="roomBandwidthKbps" suffix=" KB/s" />
+        </div>
+
+        <div className="network-ai-breakdown">
+          <h3>AI by difficulty</h3>
+          {Object.entries(latest.ai?.byDifficulty || {}).map(([difficulty, stat]) => (
+            <p key={difficulty}><strong>{difficulty}</strong>: {stat.moves} move(s), {formatMetricNumber(stat.ms)} ms</p>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function NetworkStat({ label, value }) {
+  return (
+    <div className="network-stat">
+      <span>{label}</span>
+      <strong>{value ?? "—"}</strong>
+    </div>
+  );
+}
+
+function NetworkChart({ title, history, field, suffix }) {
+  const values = (history || []).map((item) => Number(item[field]) || 0);
+  const max = Math.max(1, ...values);
+  const points = values.map((value, index) => {
+    const x = values.length <= 1 ? 0 : (index / (values.length - 1)) * 100;
+    const y = 42 - (value / max) * 38;
+    return `${x},${y}`;
+  }).join(" ");
+  const latest = values.length ? values[values.length - 1] : 0;
+  return (
+    <div className="network-chart">
+      <div className="network-chart-title">
+        <strong>{title}</strong>
+        <span>{formatMetricNumber(latest)}{suffix}</span>
+      </div>
+      <svg viewBox="0 0 100 44" preserveAspectRatio="none">
+        <polyline points={points} />
+      </svg>
+    </div>
+  );
+}
+
+function formatMetricNumber(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "0";
+  if (Math.abs(number) >= 100) return number.toFixed(0);
+  if (Math.abs(number) >= 10) return number.toFixed(1);
+  return number.toFixed(2);
+}
+
+function formatBytesClient(value) {
+  const bytes = Number(value) || 0;
+  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${Math.round(bytes)} B`;
+}
+
+function getViewportDevTouchZone(clientX, clientY) {
+  const width = window.innerWidth || document.documentElement.clientWidth || 0;
+  const height = window.innerHeight || document.documentElement.clientHeight || 0;
+  if (!width || !height) return null;
+
+  const shortest = Math.min(width, height);
+  const cornerSize = Math.max(54, Math.min(104, shortest * 0.18));
+  const centreSize = Math.max(74, Math.min(140, shortest * 0.24));
+  const centreX = width / 2;
+  const centreY = height / 2;
+
+  if (clientX <= cornerSize && clientY <= cornerSize) return "topLeft";
+  if (clientX >= width - cornerSize && clientY <= cornerSize) return "topRight";
+  if (clientX <= cornerSize && clientY >= height - cornerSize) return "bottomLeft";
+  if (clientX >= width - cornerSize && clientY >= height - cornerSize) return "bottomRight";
+
+  if (Math.abs(clientX - centreX) <= centreSize / 2 && Math.abs(clientY - centreY) <= centreSize / 2) {
+    return "centre";
+  }
+
+  return null;
+}
+
+function DevFxLayer({ items }) {
+  if (!items?.length) return null;
+  const confettiCount = 72;
+  const rainCount = 84;
+  const fireworksBursts = [
+    { x: "18%", y: "28%" },
+    { x: "50%", y: "22%" },
+    { x: "78%", y: "30%" },
+    { x: "33%", y: "56%" },
+    { x: "67%", y: "58%" }
+  ];
+  const fireworkParticles = 20;
+
+  return (
+    <div className="dev-fx-layer" aria-hidden="true">
+      {items.map((item) => {
+        if (item.type === "confetti") {
+          return (
+            <div key={item.id} className="fx-confetti">
+              {Array.from({ length: confettiCount }).map((_, index) => <span key={index} style={confettiStyle(index)} />)}
+            </div>
+          );
+        }
+        if (item.type === "fireworks") {
+          return (
+            <div key={item.id} className="fx-fireworks">
+              {fireworksBursts.map((burst, burstIndex) => (
+                <div key={burstIndex} className="fx-firework-burst" style={{ left: burst.x, top: burst.y, "--burst-delay": `${burstIndex * 0.24}s` }}>
+                  {Array.from({ length: fireworkParticles }).map((_, index) => <span key={index} style={fireworkStyle(index, burstIndex)} />)}
+                </div>
+              ))}
+            </div>
+          );
+        }
+        if (item.type === "rain") {
+          return (
+            <div key={item.id} className="fx-rain-items">
+              {Array.from({ length: rainCount }).map((_, index) => <span key={index} style={rainStyle(index)}>{item.icon}</span>)}
+            </div>
+          );
+        }
+        if (item.type === "emoji") return <div key={item.id} className="fx-emoji-big">{item.icon}</div>;
+        if (item.type === "freeze") return <div key={item.id} className="fx-freeze-pane">❄</div>;
+        if (item.type === "warning") return <div key={item.id} className="fx-warning">{item.text}</div>;
+        if (item.type === "victory") return <div key={item.id} className="fx-victory">{item.text}</div>;
+        if (item.type === "countdown") return <div key={item.id} className="fx-countdown">{item.text}</div>;
+        if (item.type === "bonk") return <div key={item.id} className="fx-bonk">BONK{item.target ? ` ${item.target}` : ""}</div>;
+        if (item.type === "jumpscare") return <div key={item.id} className="fx-jumpscare">BOO!</div>;
+        if (item.type === "toasty") return <div key={item.id} className="fx-toasty">Toasty!</div>;
+        if (item.type === "laser") return <div key={item.id} className="fx-laser"><span>{item.from}</span><i /><span>{item.to}</span></div>;
+        if (item.type === "mysterymachine") return <div key={item.id} className="fx-mystery-machine">🚐</div>;
+        if (item.type === "ghost") return <div key={item.id} className="fx-ghost">👻</div>;
+        if (item.type === "scoobyText") return <div key={item.id} className="fx-scooby-text">{item.text}</div>;
+        return <div key={item.id} className="fx-generic">{item.text || item.type}</div>;
+      })}
+    </div>
+  );
+}
+
+function confettiStyle(index) {
+  return {
+    left: `${(index * 37 + 11) % 100}%`,
+    "--delay": `${(index % 18) * -0.055}s`,
+    "--duration": `${2.7 + (index % 7) * 0.18}s`,
+    "--drift": `${((index * 23) % 31) - 15}vw`,
+    "--spin": `${360 + (index % 6) * 180}deg`,
+    "--hue": `${(index * 47) % 360}`
+  };
+}
+
+function rainStyle(index) {
+  return {
+    left: `${(index * 29 + 7) % 100}%`,
+    "--delay": `${(index % 28) * -0.13}s`,
+    "--duration": `${3.1 + (index % 9) * 0.19}s`,
+    "--drift": `${((index * 19) % 17) - 8}vw`,
+    "--rain-size": `${1.1 + (index % 5) * 0.18}rem`,
+    "--rain-rotation": `${180 + (index % 8) * 45}deg`
+  };
+}
+
+function fireworkStyle(index, burstIndex) {
+  const angle = (Math.PI * 2 * index) / 20;
+  const distance = 4.8 + ((index + burstIndex) % 5) * 1.05;
+  return {
+    "--dx": `${Math.cos(angle) * distance}rem`,
+    "--dy": `${Math.sin(angle) * distance}rem`,
+    "--spark-delay": `${burstIndex * 0.24 + (index % 4) * 0.025}s`,
+    "--hue": `${(burstIndex * 73 + index * 29) % 360}`
+  };
+}
+
+function normaliseRainIcon(value) {
+  const key = String(value || "").trim().toLowerCase();
+  const map = {
+    pawn: "♟", pawns: "♟", p: "♟",
+    knight: "♞", knights: "♞", n: "♞",
+    bishop: "♝", bishops: "♝", b: "♝",
+    rook: "♜", rooks: "♜", r: "♜",
+    queen: "♛", queens: "♛", q: "♛",
+    king: "♚", kings: "♚", k: "♚",
+    duck: "🦆", ducks: "🦆",
+    dog: "🐕", dogs: "🐕",
+    skull: "💀", skulls: "💀",
+    clown: "🤡", clowns: "🤡",
+    fire: "🔥", money: "💸", coins: "🪙", nuke: "☢️",
+    confetti: "🎊", heart: "♥"
+  };
+  return map[key] || value || "♟";
+}
 
 
 function DevConsole({ open, input, lines, unlocked, history, historyIndex, onHistoryIndexChange, onInputChange, onSubmit, onClose }) {
@@ -2322,6 +3014,259 @@ function DevConsole({ open, input, lines, unlocked, history, historyIndex, onHis
   );
 }
 
+
+function VariantControls({
+  game,
+  color,
+  disabled,
+  selectedDropType,
+  selectedTycoonAction,
+  selectedScoobyAction,
+  nukeTargeting,
+  onReserveSelect,
+  onNukeTarget,
+  onTycoonSelect,
+  onTycoonInstant,
+  onScoobySelect
+}) {
+  if (!game || !["crazyhouse", "nuke", "tycoon", "predict", "scooby"].includes(game.variant)) return null;
+  return (
+    <section className="variant-side-panel">
+      {game.variant === "crazyhouse" && (
+        <ReservePanel
+          reserves={game.reserves}
+          color={color}
+          selectedDropType={selectedDropType}
+          disabled={disabled}
+          onSelect={onReserveSelect}
+        />
+      )}
+      {game.variant === "nuke" && (
+        <NukePanel game={game} color={color} disabled={disabled} targeting={nukeTargeting} onTarget={onNukeTarget} />
+      )}
+      {game.variant === "tycoon" && (
+        <TycoonPanel
+          game={game}
+          color={color}
+          disabled={disabled}
+          selectedAction={selectedTycoonAction}
+          onSelect={onTycoonSelect}
+          onInstant={onTycoonInstant}
+        />
+      )}
+      {game.variant === "predict" && <PredictPanel game={game} color={color} />}
+      {game.variant === "scooby" && (
+        <ScoobyPanel
+          game={game}
+          color={color}
+          disabled={disabled}
+          selectedAction={selectedScoobyAction}
+          onSelect={onScoobySelect}
+        />
+      )}
+    </section>
+  );
+}
+
+function NukePanel({ game, color, disabled, targeting, onTarget }) {
+  const state = game.nuke?.[color] || { charge: 0, active: null };
+  const active = state.active;
+  const charge = Math.min(3, Number(state.charge) || 0);
+  return (
+    <section className="variant-control-card nuke-panel">
+      <h2>Nuke</h2>
+      <div className="nuke-meter" aria-label={`Nuke charge ${charge}`}>
+        {[1, 2, 3].map((level) => <span key={level} className={charge >= level ? "charged" : ""} />)}
+      </div>
+      <p className="subtle">Charge: <strong>{charge}</strong> / 3</p>
+      {active ? (
+        <p className="subtle danger-text">Active radius {active.radius}. About {Math.max(0, Math.ceil((active.targetTurn - (game.turnToken || 0)) / 2))} enemy move(s) left.</p>
+      ) : (
+        <button type="button" className={targeting ? "active" : ""} disabled={disabled || charge <= 0} onClick={onTarget}>
+          {targeting ? "Choose target square" : "Launch Nuke"}
+        </button>
+      )}
+    </section>
+  );
+}
+
+function TycoonPanel({ game, color, disabled, selectedAction, onSelect, onInstant }) {
+  const tycoon = game.tycoon || {};
+  const money = tycoon.money?.[color] || 0;
+  const maxMoney = tycoon.maxMoney?.[color] || 15;
+  const production = tycoon.production?.[color] || 0;
+  const storageLevel = tycoon.storageLevel?.[color] || 0;
+  const productionLevel = tycoon.productionLevel?.[color] || 0;
+  const costs = getTycoonCostsClient(storageLevel, productionLevel);
+  const canBuy = (cost) => !disabled && money >= cost;
+
+  return (
+    <section className="variant-control-card tycoon-panel">
+      <h2>Tycoon</h2>
+      <div className="money-card">
+        <strong>${money}</strong><span>/ ${maxMoney}</span>
+        <small>Production +${production}</small>
+      </div>
+      {tycoon.lastIncome?.[color] > 0 && <p className="income-flash">+${tycoon.lastIncome[color]} silo income</p>}
+
+      <div className="shop-section">
+        <h3>Pieces</h3>
+        <div className="shop-grid">
+          {["pawn", "knight", "bishop", "rook", "queen"].map((type) => (
+            <TycoonActionButton key={type} active={selectedAction === type} disabled={!canBuy(costs.pieces[type])} onClick={() => onSelect(type)} label={type} cost={costs.pieces[type]} />
+          ))}
+        </div>
+      </div>
+
+      <div className="shop-section">
+        <h3>Defence</h3>
+        <div className="shop-grid two">
+          <TycoonActionButton active={selectedAction === "wall"} disabled={!canBuy(costs.wall)} onClick={() => onSelect("wall")} label="Wall" cost={costs.wall} />
+          <TycoonActionButton active={selectedAction === "shield"} disabled={!canBuy(costs.shield)} onClick={() => onSelect("shield")} label="Shield" cost={costs.shield} />
+        </div>
+      </div>
+
+      <div className="shop-section">
+        <h3>Attack</h3>
+        <TycoonActionButton active={selectedAction === "bomb"} disabled={!canBuy(costs.bomb)} onClick={() => onSelect("bomb")} label="Bomb" cost={costs.bomb} wide />
+      </div>
+
+      <div className="shop-section">
+        <h3>Economy</h3>
+        <div className="shop-grid two">
+          <TycoonActionButton disabled={!canBuy(costs.storage)} onClick={() => onInstant("storage")} label={`Storage L${storageLevel + 1}`} cost={costs.storage} />
+          <TycoonActionButton disabled={productionLevel >= 3 || !canBuy(costs.production)} onClick={() => onInstant("production")} label={`Production L${Math.min(3, productionLevel + 1)}`} cost={Number.isFinite(costs.production) ? costs.production : "Max"} />
+        </div>
+      </div>
+      <p className="subtle action-hint">Buying does not end your turn. Move a piece when you are done shopping.</p>
+      {selectedAction && <p className="subtle action-hint">Click the board to place/use {selectedAction}.</p>}
+    </section>
+  );
+}
+
+function TycoonActionButton({ label, cost, active, disabled, onClick, wide }) {
+  return (
+    <button type="button" className={`${active ? "active" : ""} ${wide ? "wide" : ""}`} disabled={disabled} onClick={onClick}>
+      <span>{label}</span>
+      <strong>{typeof cost === "number" ? `$${cost}` : cost}</strong>
+    </button>
+  );
+}
+
+function getTycoonCostsClient(storageLevel, productionLevel) {
+  return {
+    pieces: { pawn: 3, knight: 7, bishop: 7, rook: 10, queen: 15 },
+    wall: 3,
+    shield: 5,
+    bomb: 5,
+    storage: [5, 8, 12, 16, 22][storageLevel] || 28,
+    production: [8, 14, 22][productionLevel] ?? Infinity
+  };
+}
+
+function PredictPanel({ game, color }) {
+  const round = game.predict?.round || 1;
+  const whiteLocked = Boolean(game.predict?.pending?.white);
+  const blackLocked = Boolean(game.predict?.pending?.black);
+  return (
+    <section className="variant-control-card predict-panel">
+      <h2>Predict</h2>
+      <p className="subtle">Round {round}. White locks first, black locks second, then both moves resolve.</p>
+      <div className="predict-status-grid">
+        <span className={whiteLocked ? "locked-pill" : "waiting-pill"}>White {whiteLocked ? "Locked" : "Waiting"}</span>
+        <span className={blackLocked ? "locked-pill" : "waiting-pill"}>Black {blackLocked ? "Locked" : "Waiting"}</span>
+      </div>
+      <p className="subtle">{game.turn === color ? "Your turn to lock a move." : `${game.turn} is choosing.`}</p>
+    </section>
+  );
+}
+
+function ScoobyPanel({ game, color, disabled, selectedAction, onSelect }) {
+  const scooby = game.scooby || {};
+  const limits = scooby.trapLimits || { mine: 1, pitfall: 2, smoke: 1, decoy: 2, mindControl: 1 };
+  const ownedCounts = Object.fromEntries(Object.keys(limits).map((type) => [type, (scooby.traps || []).filter((trap) => trap.owner === color && trap.type === type).length]));
+  const actions = [
+    { id: "mine", icon: "✹", label: "Mine" },
+    { id: "pitfall", icon: "◌", label: "Pitfall" },
+    { id: "smoke", icon: "☁", label: "Smoke" },
+    { id: "decoy", icon: "◇", label: "Decoy" },
+    { id: "mindControl", icon: "◈", label: "Mind Control" }
+  ];
+  return (
+    <section className="variant-control-card scooby-panel">
+      <h2>Scooby</h2>
+      <p className="subtle">Pick a trap to place, or choose defuse and click any square.</p>
+      <div className="scooby-legend">
+        <span className="scooby-legend-chip own"><strong>Yours</strong><small>green ring</small></span>
+        <span className="scooby-legend-chip detected"><strong>Detected enemy</strong><small>gold ring</small></span>
+      </div>
+      <div className="scooby-action-grid">
+        {actions.map((action) => {
+          const left = Math.max(0, (limits[action.id] || 0) - (ownedCounts[action.id] || 0));
+          return (
+            <button
+              key={action.id}
+              type="button"
+              disabled={disabled || left <= 0}
+              className={selectedAction === action.id ? "active" : ""}
+              onClick={() => onSelect(action.id)}
+            >
+              <span className={`trap-icon-preview ${color}`}>{action.icon}</span>
+              <strong>{action.label}</strong>
+              <small>{left} left</small>
+            </button>
+          );
+        })}
+        <button
+          type="button"
+          disabled={disabled}
+          className={selectedAction === "defuse" ? "active" : ""}
+          onClick={() => onSelect("defuse")}
+        >
+          <span className={`trap-icon-preview ${color}`}>✂</span>
+          <strong>Defuse</strong>
+          <small>Click any square</small>
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function ReservePanel({ reserves, color, selectedDropType, disabled, onSelect }) {
+  const pieces = (reserves?.[color] || []);
+  const counts = pieces.reduce((acc, type) => {
+    acc[type] = (acc[type] || 0) + 1;
+    return acc;
+  }, {});
+  const order = ["queen", "rook", "bishop", "knight", "pawn"];
+  const entries = order.filter((type) => counts[type]);
+
+  return (
+    <section className="reserve-panel">
+      <h2>Reserve</h2>
+      {entries.length === 0 ? (
+        <p className="subtle">No captured pieces to drop.</p>
+      ) : (
+        <div className="reserve-buttons">
+          {entries.map((type) => (
+            <button
+              key={type}
+              type="button"
+              className={selectedDropType === type ? "active" : ""}
+              disabled={disabled}
+              onClick={() => onSelect(type)}
+              title={`Drop ${type}`}
+            >
+              <span>{PIECE_SYMBOLS[color]?.[type]}</span>
+              <strong>×{counts[type]}</strong>
+            </button>
+          ))}
+        </div>
+      )}
+      {selectedDropType && <p className="subtle">Click an empty square to drop a {selectedDropType}.</p>}
+    </section>
+  );
+}
 
 function VariantGuideModal({ variant, step, onStep, onClose }) {
   const steps = getVariantGuideSteps(variant);
@@ -2525,6 +3470,24 @@ function isTutorialSiloIndex(index) {
   return (([1, 2].includes(col) && [3, 4].includes(z)) || ([5, 6].includes(col) && [3, 4].includes(z)));
 }
 
+function parseDevLocation(args, startIndex = 0) {
+  if (!Array.isArray(args) || args.length <= startIndex) return null;
+  const first = String(args[startIndex] || "").trim();
+  const chess = /^([a-h])([1-8])$/i.exec(first);
+  if (chess) return { location: { x: chess[1].toLowerCase().charCodeAt(0) - 97, y: 0, z: Number(chess[2]) - 1 }, nextIndex: startIndex + 1 };
+  const parts = first.replace(/[()\[\]{}]/g, "").split(/[,:/]/).map((part) => Number.parseInt(part.trim(), 10));
+  if (parts.length === 3 && parts.every(Number.isInteger)) return { location: { x: parts[0], y: parts[1], z: parts[2] }, nextIndex: startIndex + 1 };
+  if (args.length >= startIndex + 3) {
+    const xyz = [args[startIndex], args[startIndex + 1], args[startIndex + 2]].map((part) => Number.parseInt(part, 10));
+    if (xyz.every(Number.isInteger)) return { location: { x: xyz[0], y: xyz[1], z: xyz[2] }, nextIndex: startIndex + 3 };
+  }
+  return null;
+}
+
+function coordText(coord) {
+  return `(${coord.x},${coord.y},${coord.z})`;
+}
+
 function buildVariantHighlights(game) {
   if (!game) return [];
   const highlights = [];
@@ -2594,6 +3557,68 @@ function buildVariantHighlights(game) {
   return highlights;
 }
 
+function hillSquares() {
+  return [{ x: 3, y: 0, z: 3 }, { x: 4, y: 0, z: 3 }, { x: 3, y: 0, z: 4 }, { x: 4, y: 0, z: 4 }];
+}
+
+function siloSquares() {
+  return [
+    { x: 1, y: 0, z: 3 }, { x: 1, y: 0, z: 4 }, { x: 2, y: 0, z: 3 }, { x: 2, y: 0, z: 4 },
+    { x: 5, y: 0, z: 3 }, { x: 5, y: 0, z: 4 }, { x: 6, y: 0, z: 3 }, { x: 6, y: 0, z: 4 }
+  ];
+}
+
+function circularBlastSquares(centre, radius, game = null) {
+  const squares = [];
+  if (!centre) return squares;
+  for (let x = 0; x < 8; x += 1) {
+    for (let z = 0; z < 8; z += 1) {
+      const dx = x - centre.x;
+      const dz = z - centre.z;
+      const pos = { x, y: 0, z };
+      if (dx * dx + dz * dz <= radius * radius && !isClientNukeBlockedByRook(game, centre, pos)) squares.push(pos);
+    }
+  }
+  return squares;
+}
+
+function isClientNukeBlockedByRook(game, centre, target) {
+  if (!game) return false;
+  const sameFile = centre.x === target.x && centre.z !== target.z;
+  const sameRank = centre.z === target.z && centre.x !== target.x;
+  if (!sameFile && !sameRank) return false;
+  const stepX = Math.sign(target.x - centre.x);
+  const stepZ = Math.sign(target.z - centre.z);
+  let x = centre.x + stepX;
+  let z = centre.z + stepZ;
+  while (x !== target.x || z !== target.z) {
+    const blocker = (game.pieces || []).find((piece) => piece.x === x && piece.y === 0 && piece.z === z);
+    if (blocker?.type === "rook") return true;
+    x += stepX;
+    z += stepZ;
+  }
+  return false;
+}
+
+function squareBlastSquares(centre, radius) {
+  const squares = [];
+  if (!centre) return squares;
+  for (let dx = -radius; dx <= radius; dx += 1) {
+    for (let dz = -radius; dz <= radius; dz += 1) {
+      const pos = { x: centre.x + dx, y: 0, z: centre.z + dz };
+      if (pos.x >= 0 && pos.x < 8 && pos.z >= 0 && pos.z < 8) squares.push(pos);
+    }
+  }
+  return squares;
+}
+
+function countdownStage(targetTurn, turnToken) {
+  const remaining = Math.max(0, Number(targetTurn || 0) - Number(turnToken || 0));
+  if (remaining > 4) return "yellow";
+  if (remaining > 2) return "orange";
+  return "red";
+}
+
 class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
@@ -2619,3 +3644,412 @@ class ErrorBoundary extends React.Component {
   }
 }
 
+function TimerBar({ game, now }) {
+  const clocks = getDisplayedClocks(game, now);
+  return (
+    <div className="timer-bar" aria-label="Game clocks">
+      <div className={`clock-card white ${game.turn === "white" && game.status === "playing" ? "active" : ""}`}>
+        <span>{UI_TEXT.labels.white}</span>
+        <strong>{formatClock(clocks.white)}</strong>
+      </div>
+      <div className="timer-divider">⏱</div>
+      <div className={`clock-card black ${game.turn === "black" && game.status === "playing" ? "active" : ""}`}>
+        <span>{UI_TEXT.labels.black}</span>
+        <strong>{formatClock(clocks.black)}</strong>
+      </div>
+    </div>
+  );
+}
+
+function getDisplayedClocks(game, now) {
+  const clocks = { ...(game.clocks || { white: 0, black: 0 }) };
+  if (game.status === "playing" && game.lastTurnStartedAt && clocks[game.turn] != null) {
+    clocks[game.turn] = Math.max(0, clocks[game.turn] - Math.max(0, now - game.lastTurnStartedAt));
+  }
+  return clocks;
+}
+
+function formatClock(ms) {
+  const totalSeconds = Math.ceil(Math.max(0, ms || 0) / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+function formatMoveEntry(move) {
+  if (move.nukeLaunch) return <><strong>{move.pieceColor} nuke</strong> launch radius {move.radius} at ({move.to.x},{move.to.y},{move.to.z})</>;
+  if (move.nukeExplosion) return <><strong>{move.pieceColor} nuke</strong> explosion radius {move.radius} at ({move.to.x},{move.to.y},{move.to.z})</>;
+  if (move.tycoon) return <><strong>{move.pieceColor} tycoon</strong> {move.tycoonAction}{move.to ? ` at (${move.to.x},${move.to.y},${move.to.z})` : ""}</>;
+  if (move.tycoonExplosion) return <><strong>{move.pieceColor} bomb</strong> explosion at ({move.to.x},{move.to.y},{move.to.z})</>;
+  if (move.scooby) return <><strong>{move.pieceColor} scooby</strong> {move.scoobyAction}{move.to ? ` at (${move.to.x},${move.to.y},${move.to.z})` : ""}</>;
+  return <><strong>{move.pieceColor} {move.promotedTo ? "pawn" : move.pieceType}</strong> {move.drop ? "drop" : `(${move.from.x},${move.from.y},${move.from.z}) →`} ({move.to.x},{move.to.y},{move.to.z}){move.captured ? ` × ${move.captured.type}${move.shieldBlocked ? " shield" : ""}` : ""}{move.castle ? " castle" : ""}{move.enPassant ? " en passant" : ""}{move.promotedTo ? ` = ${move.promotedTo}` : ""}{move.scoobyTrap ? ` | trap: ${move.scoobyTrap.type}` : ""}{Array.isArray(move.atomicRemoved) && move.atomicRemoved.length ? ` explosion ${move.atomicRemoved.length}` : ""}</>;
+}
+
+function GameChat({ chat, draft, onDraftChange, onSend, onForfeit, canForfeit, formatText = (value) => value }) {
+  const chatMessagesRef = useRef(null);
+
+  useEffect(() => {
+    const node = chatMessagesRef.current;
+    if (!node) return;
+    node.scrollTop = node.scrollHeight;
+  }, [chat.length]);
+
+  return (
+    <section className="game-chat-panel" aria-label={UI_TEXT.headings.chat}>
+      <div className="game-chat-header">
+        <h2>{UI_TEXT.headings.chat}</h2>
+        {canForfeit && <button className="danger-button forfeit-button" type="button" onClick={onForfeit}>{UI_TEXT.buttons.forfeit}</button>}
+      </div>
+      <div className="chat-messages" ref={chatMessagesRef} aria-live="polite">
+        {chat.length === 0 ? (
+          <p className="chat-empty">{UI_TEXT.notices.noChatYet}</p>
+        ) : (
+          chat.slice(-80).map((message, index) => (
+            <div key={message.id} className={`chat-line ${message.color} ${index % 2 === 0 ? "even" : "odd"}`}>
+              <span className="chat-prefix">[{formatChatTime(message.time)}] [{formatText(message.name)}]:</span>
+              <span className="chat-body">{formatText(message.body)}</span>
+            </div>
+          ))
+        )}
+      </div>
+      <form className="chat-form" onSubmit={onSend}>
+        <input
+          value={draft}
+          onChange={(event) => onDraftChange(event.target.value)}
+          placeholder={UI_TEXT.labels.chatPlaceholder}
+          maxLength={240}
+        />
+        <button type="submit">{UI_TEXT.buttons.sendChat}</button>
+      </form>
+    </section>
+  );
+}
+
+function formatChatTime(time) {
+  const date = new Date(time || Date.now());
+  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+}
+
+function MatchReviewControls({
+  reviewIndex,
+  maxReviewIndex,
+  reviewPlaying,
+  onSetIndex,
+  onPlayToggle
+}) {
+  return (
+    <section className="match-review-dock" aria-label={UI_TEXT.headings.matchReview}>
+      <div className="match-review-header">
+        <h2>{UI_TEXT.headings.matchReview}</h2>
+        <span>{UI_TEXT.labels.move} {reviewIndex} / {maxReviewIndex}</span>
+      </div>
+      <input
+        className="review-scrubber compact-scrubber"
+        type="range"
+        min="0"
+        max={maxReviewIndex}
+        value={reviewIndex}
+        onChange={(event) => onSetIndex(Number(event.target.value))}
+        aria-label={`${UI_TEXT.labels.move} ${reviewIndex} / ${maxReviewIndex}`}
+      />
+      <div className="cassette-controls" aria-label={UI_TEXT.headings.matchReview}>
+        <IconButton label={UI_TEXT.buttons.jumpStart} onClick={() => onSetIndex(0)} disabled={reviewIndex <= 0} icon="skip-back" />
+        <IconButton label={UI_TEXT.buttons.backMove} onClick={() => onSetIndex(reviewIndex - 1)} disabled={reviewIndex <= 0} icon="step-back" />
+        <IconButton
+          label={reviewPlaying ? UI_TEXT.buttons.pauseReview : UI_TEXT.buttons.playReview}
+          onClick={onPlayToggle}
+          icon={reviewPlaying ? "pause" : "play"}
+          primary
+        />
+        <IconButton label={UI_TEXT.buttons.nextMove} onClick={() => onSetIndex(reviewIndex + 1)} disabled={reviewIndex >= maxReviewIndex} icon="step-forward" />
+        <IconButton label={UI_TEXT.buttons.jumpEnd} onClick={() => onSetIndex(maxReviewIndex)} disabled={reviewIndex >= maxReviewIndex} icon="skip-forward" />
+      </div>
+    </section>
+  );
+}
+
+function IconButton({ label, icon, onClick, disabled, primary }) {
+  return (
+    <button
+      className={`icon-button ${primary ? "primary" : ""}`}
+      onClick={onClick}
+      disabled={disabled}
+      title={label}
+      aria-label={label}
+    >
+      <ReviewIcon icon={icon} />
+    </button>
+  );
+}
+
+function ReviewIcon({ icon }) {
+  if (icon === "skip-back") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M5 4h2v16H5z" />
+        <path d="M19 5v14L8 12z" />
+      </svg>
+    );
+  }
+
+  if (icon === "step-back") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M18 5v14L7 12z" />
+      </svg>
+    );
+  }
+
+  if (icon === "pause") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M7 5h4v14H7z" />
+        <path d="M13 5h4v14h-4z" />
+      </svg>
+    );
+  }
+
+  if (icon === "step-forward") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M6 5v14l11-7z" />
+      </svg>
+    );
+  }
+
+  if (icon === "skip-forward") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M17 4h2v16h-2z" />
+        <path d="M5 5v14l11-7z" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="12" r="7" />
+    </svg>
+  );
+}
+
+function ReviewControls({ onStartReview }) {
+  return (
+    <div className="review-panel">
+      <h2>{UI_TEXT.headings.matchReview}</h2>
+      <button className="primary" onClick={onStartReview}>{UI_TEXT.buttons.reviewMatch}</button>
+    </div>
+  );
+}
+
+function GameOverModal({ game, color, onReturnHome, onReplay, onRematch, onReview, onClose }) {
+  const title = getGameOverTitle(game);
+  const winnerText = game.winner ? `${capitalise(game.winner)} player wins.` : "No winner.";
+
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label={title}>
+      <section className="game-over-modal pop-modal">
+        <button className="modal-close" onClick={onClose} aria-label={UI_TEXT.buttons.closeOverlay}>×</button>
+        <p className="modal-kicker">{game.status}</p>
+        <h2>{title}</h2>
+        <p className="winner-line">{winnerText}</p>
+        <p className="modal-message">{game.message}</p>
+        <p className="subtle">{UI_TEXT.gameOver.reviewHint}</p>
+        <div className="modal-actions">
+          <button onClick={onReturnHome}>{UI_TEXT.buttons.returnHome}</button>
+          <button className="primary" onClick={onReplay}>{UI_TEXT.buttons.newRoom}</button>
+          <button onClick={onRematch}>{game.rematchRequests?.[color] ? UI_TEXT.buttons.rematchRequested : UI_TEXT.buttons.rematch}</button>
+          <button onClick={onReview}>{UI_TEXT.buttons.reviewMatch}</button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function ConfirmModal({ title, body, confirmLabel, cancelLabel, onConfirm, onCancel }) {
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label={title}>
+      <section className="game-over-modal pop-modal confirm-modal">
+        <h2>{title}</h2>
+        <p className="modal-message">{body}</p>
+        <div className="modal-actions two-actions">
+          <button onClick={onCancel}>{cancelLabel}</button>
+          <button className="danger-button" onClick={onConfirm}>{confirmLabel}</button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function getGameOverTitle(game) {
+  if (game.status === "abandoned") return UI_TEXT.gameOver.abandonedTitle;
+  if (game.timeout) return UI_TEXT.gameOver.timeoutTitle;
+  if (game.forfeit) return UI_TEXT.gameOver.forfeitTitle;
+  if (game.checkmate) return UI_TEXT.gameOver.checkmateTitle;
+  if (game.stalemate) return UI_TEXT.gameOver.stalemateTitle;
+  return UI_TEXT.gameOver.finishedTitle;
+}
+
+function LayerRailControl({ view, layer, onSelect }) {
+  const disabled = view === "ISO";
+
+  return (
+    <div className={`layer-rail ${disabled ? "disabled" : ""}`} aria-label="Layer selector">
+      <span className="layer-rail-title">{disabled ? UI_TEXT.labels.layer : layerLabel(view)}</span>
+      <div className="layer-rail-buttons">
+        {[7, 6, 5, 4, 3, 2, 1, 0].map((candidate) => (
+          <button
+            key={candidate}
+            className={candidate === layer && !disabled ? "active" : ""}
+            onClick={() => onSelect(candidate)}
+            disabled={disabled}
+            title={disabled ? "Layers are only used in plane views" : `${layerLabel(view)} ${candidate}`}
+          >
+            {candidate}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function OrientationGizmo({ view, layer, isoAxes }) {
+  const layout = getOrientationLayout(view, isoAxes);
+
+  return (
+    <div className={`orientation-gizmo orientation-${view.toLowerCase()}`} aria-label={`Current view ${view}`}>
+      <div className="gizmo-origin" />
+      {Object.entries(layout.axes).map(([axis, definition]) => {
+        const axisClass = typeof definition === "string" ? definition : definition.className;
+        const axisStyle = typeof definition === "string" ? undefined : definition.style;
+
+        return (
+          <div key={axis} className={`gizmo-axis axis-${axis} ${axisClass}`} style={axisStyle}>
+            <span className="gizmo-line" />
+            <strong>{axis.toUpperCase()}</strong>
+          </div>
+        );
+      })}
+      <div className="gizmo-view-label">
+        <strong>{view}</strong>
+        <span>{layout.caption(view, layer)}</span>
+      </div>
+    </div>
+  );
+}
+
+function getOrientationLayout(view, isoAxes) {
+  if (view === "XZ") {
+    return {
+      axes: { x: "axis-right", z: "axis-up", y: "axis-out" },
+      caption: (_, layer) => `y=${layer}`
+    };
+  }
+
+  if (view === "XY") {
+    return {
+      axes: { x: "axis-right", y: "axis-up", z: "axis-out" },
+      caption: (_, layer) => `z=${layer}`
+    };
+  }
+
+  if (view === "YZ") {
+    return {
+      axes: { z: "axis-right", y: "axis-up", x: "axis-out" },
+      caption: (_, layer) => `x=${layer}`
+    };
+  }
+
+  if (isoAxes) {
+    return {
+      axes: Object.fromEntries(
+        Object.entries(isoAxes).map(([axis, axisData]) => [
+          axis,
+          {
+            className: "axis-dynamic",
+            style: {
+              "--axis-angle": `${axisData.angle}deg`,
+              "--axis-length": `${axisData.length}px`,
+              opacity: axisData.opacity
+            }
+          }
+        ])
+      ),
+      caption: () => "orbit"
+    };
+  }
+
+  return {
+    axes: { x: "axis-iso-x", y: "axis-up", z: "axis-iso-z" },
+    caption: () => "orbit"
+  };
+}
+
+
+function getClientMembership(game, socketId) {
+  if (!game || !socketId) return null;
+  if (game.players?.white?.id === socketId) return { role: "player", color: "white" };
+  if (game.players?.black?.id === socketId) return { role: "player", color: "black" };
+  if ((game.spectators || []).some((spectator) => spectator.id === socketId)) return { role: "spectator", color: "spectator" };
+  return null;
+}
+
+function PlayerLine({ label, player, active, formatText = (value) => value }) {
+  return (
+    <div className={`player-line ${active ? "active" : ""}`}>
+      <span>{label}</span>
+      <strong>{player?.name ? formatText(player.name) : UI_TEXT.labels.waiting}</strong>
+    </div>
+  );
+}
+
+function layerLabel(view) {
+  if (view === "XZ") return "Y layer";
+  if (view === "XY") return "Z layer";
+  return "X layer";
+}
+
+function sameCoord(a, b) {
+  return a.x === b.x && a.y === b.y && a.z === b.z;
+}
+
+function key(coord) {
+  return `${coord.x},${coord.y},${coord.z}`;
+}
+
+function capitalise(value) {
+  return String(value || "").slice(0, 1).toUpperCase() + String(value || "").slice(1);
+}
+
+
+function parseCommandLine(raw) {
+  const tokens = [];
+  const pattern = /"([^"]*)"|'([^']*)'|\S+/g;
+  let match;
+  while ((match = pattern.exec(String(raw || ""))) !== null) {
+    tokens.push(match[1] ?? match[2] ?? match[0]);
+  }
+  return tokens;
+}
+
+function shouldClearLocalSelection(previousGame, nextGame) {
+  if (!previousGame || !nextGame) return true;
+  if (previousGame.roomCode !== nextGame.roomCode) return true;
+  if (previousGame.variant !== nextGame.variant) return true;
+  if (previousGame.status !== nextGame.status) return true;
+  if (previousGame.turn !== nextGame.turn) return true;
+
+  const previousMoves = previousGame.moveHistory?.length || 0;
+  const nextMoves = nextGame.moveHistory?.length || 0;
+  if (previousMoves !== nextMoves) return true;
+
+  const previousPieces = previousGame.pieces?.length || 0;
+  const nextPieces = nextGame.pieces?.length || 0;
+  if (previousPieces !== nextPieces) return true;
+
+  return false;
+}
+
+function isTurnOnlyMessage(message) {
+  return /^(white|black) to move\.?$/i.test(String(message || "").trim());
+}

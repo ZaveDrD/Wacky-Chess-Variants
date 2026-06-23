@@ -243,6 +243,57 @@ function guestNameBlocked(socket, requestedName) {
   return clean && isRegisteredUsername(clean);
 }
 
+function punishmentIdentityForSocket(socket) {
+  return {
+    accountId: socket?.data?.account?.id || null,
+    deviceId: socket?.data?.deviceId || null
+  };
+}
+
+function getBlockingPunishment(socket, type) {
+  const identity = punishmentIdentityForSocket(socket);
+  const punishments = getActivePunishments(identity) || [];
+  return punishments.find((punishment) => {
+    if (!punishment?.active) return false;
+    if (type === "ban") return punishment.type === "ban";
+    if (type === "mute") return punishment.type === "mute";
+    return punishment.type === type;
+  }) || null;
+}
+
+function punishmentTimeLeftText(punishment) {
+  if (!punishment) return "";
+  if (punishment.expiresAt === -1) return "permanently";
+  const remainingMs = Math.max(0, Number(punishment.expiresAt || 0) - Date.now());
+  const minutes = Math.ceil(remainingMs / 60000);
+  if (minutes <= 1) return "for less than 1 minute";
+  if (minutes < 60) return `for ${minutes} minutes`;
+  const hours = Math.ceil(minutes / 60);
+  if (hours < 48) return `for ${hours} hours`;
+  return `until ${new Date(punishment.expiresAt).toLocaleString()}`;
+}
+
+function punishmentBlockedMessage(punishment) {
+  if (!punishment) return "Action blocked by active punishment.";
+  const typeText = punishment.type === "ban" ? "banned from joining games" : punishment.type === "mute" ? "muted from chat" : `punished (${punishment.type})`;
+  const reason = punishment.reason ? ` Reason: ${punishment.reason}` : "";
+  return `You are ${typeText} ${punishmentTimeLeftText(punishment)}.${reason}`;
+}
+
+function sendPunishmentNotice(socket) {
+  const identity = punishmentIdentityForSocket(socket);
+  const punishments = punishmentSummaryForClient(identity) || [];
+  if (!punishments.length) return;
+  const payload = {
+    punishments,
+    accountId: identity.accountId,
+    deviceId: identity.deviceId,
+    message: punishments.map((punishment) => punishmentBlockedMessage(punishment)).join("\n")
+  };
+  recordOutgoing("punishmentNotice", payload, connectedClients.get(socket.id)?.lastRoomCode || "GLOBAL", 1);
+  socket.emit("punishmentNotice", payload);
+}
+
 function bytesToMb(value) {
   return Math.round((Number(value) || 0) / 1024 / 1024 * 10) / 10;
 }
